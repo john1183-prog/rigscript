@@ -67,12 +67,6 @@ fun EditorScreen(
 
     // ── Compiled timeline ──────────────────────────────────────────────────────
     var keyframes by remember { mutableStateOf<List<BakedKeyframe>>(emptyList()) }
-    // Tracks which keyframes list has already been pushed into the surface view's
-    // engine, by REFERENCE. compileTimeline always returns a fresh list/arrays,
-    // so reference inequality reliably means "the script actually changed" —
-    // letting us call loadTimeline exactly once per change, from inside the
-    // AndroidView `update` lambda (which is guaranteed to run after `factory`,
-    // unlike a bare LaunchedEffect which can race ahead of view creation).
     var lastLoadedKeyframes by remember { mutableStateOf<List<BakedKeyframe>?>(null) }
     var surfaceView by remember { mutableStateOf<AnimationSurfaceView?>(null) }
 
@@ -299,8 +293,6 @@ private fun AudioBar(
             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             Spacer(Modifier.width(8.dp))
         }
-        // Playback (and the pose timeline preview) doesn't require audio — useful
-        // for checking script timing before audio is imported.
         IconButton(onClick = onStop, enabled = !isAnalysing) {
             Icon(Icons.Default.Stop, "Stop")
         }
@@ -374,12 +366,24 @@ private fun AppearancePanel(
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         Text("Colors", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        ColorPickerRow("Figure color", appearance.boneColor) { newColor ->
-            onAppearance(appearance.copy(boneColor = newColor, headColor = newColor, jointColor = newColor))
-        }
-        ColorPickerRow("Background color", appearance.previewBgColor) { newColor ->
-            onAppearance(appearance.copy(previewBgColor = newColor, exportBgColor = newColor))
-        }
+        
+        // Fixed: Explicitly binding names to bypass trailing lambda positioning mismatch
+        ColorPickerRow(
+            label = "Figure color",
+            colorArgb = appearance.boneColor,
+            onColorChange = { newColor ->
+                onAppearance(appearance.copy(boneColor = newColor, headColor = newColor, jointColor = newColor))
+            }
+        )
+        
+        // Fixed: Explicitly binding names to bypass trailing lambda positioning mismatch
+        ColorPickerRow(
+            label = "Background color",
+            colorArgb = appearance.previewBgColor,
+            onColorChange = { newColor ->
+                onAppearance(appearance.copy(previewBgColor = newColor, exportBgColor = newColor))
+            }
+        )
 
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         Text("Character", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

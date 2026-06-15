@@ -27,7 +27,7 @@ class AudioPlayer private constructor() {
 
     // ── Load / unload ─────────────────────────────────────────────────────────
 
-    fun load(filePath: String, envelope: FloatArray, fps: Int = 30) {
+    fun load(filePath: String, envelope: FloatArray, fps: Int = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS) {
         release()
         this.envelope    = envelope
         this.envelopeFps = fps

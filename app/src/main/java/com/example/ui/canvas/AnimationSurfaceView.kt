@@ -2,7 +2,6 @@ package com.example.ui.canvas
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.AttributeSet
@@ -15,15 +14,16 @@ import com.example.engine.*
 
 /**
  * A [SurfaceView] that drives [PlaybackEngine] on a dedicated background thread,
- * targeting 60 fps regardless of the Compose recomposition cycle.
+ * targeting ~60 fps independently of Compose recomposition.
  *
- * Usage in Compose via [AndroidView]:
- * ```kotlin
- * AndroidView(factory = { AnimationSurfaceView(it) }, update = { view ->
- *     view.setProject(keyframes, appearance, amplSettings)
- *     view.setAudioAmplitude(amplitude)
- * })
- * ```
+ * Two distinct usage modes:
+ *  - **Playback** (editor): [loadTimeline] + [play]/[pause]/[stop]. When an
+ *    [AudioPlayer] is attached via [setAudioPlayer], its amplitude is sampled
+ *    every frame on the render thread and fed into the engine so talk-motion
+ *    actually tracks the audio in real time.
+ *  - **Pose editing** (pose library): [poseEditorMode] = true enables dragging
+ *    joints; [applyPose]/[captureCurrentPose] read/write a pose directly without
+ *    touching the timeline at all.
  */
 class AnimationSurfaceView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
@@ -31,15 +31,20 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     // ── Engine ────────────────────────────────────────────────────────────────
 
-    private val engine       = PlaybackEngine()
-    private var appearance   = AppearanceSettings()
-    private var isPlaying    = false
-    private var lastTickMs   = 0L
+    private val engine     = PlaybackEngine()
+    private var appearance = AppearanceSettings()
+    private var isPlaying  = false
+    private var lastTickMs = 0L
 
-    // Amplitude written from UI thread, read from render thread (@Volatile)
-    @Volatile private var externalAmplitude: Float = 0f
+    /**
+     * Optional audio source for amplitude-reactive motion. Sampled once per
+     * render-thread frame via [AudioPlayer.updateAmplitude] — this is what makes
+     * the talk-motion respond to the actual audio in real time, as opposed to
+     * Compose recomposition (which doesn't fire every 16ms).
+     */
+    @Volatile private var audioPlayer: AudioPlayer? = null
 
-    // ── Background render thread ──────────────────────────────────────────────
+    // ── Background render thread ────────────────────────────────────────────
 
     private val renderThread  = HandlerThread("RigRenderThread").also { it.start() }
     private val renderHandler = Handler(renderThread.looper)
@@ -52,7 +57,12 @@ class AnimationSurfaceView @JvmOverloads constructor(
             lastTickMs = now
 
             if (isPlaying) {
-                engine.tick(dt.coerceIn(0f, 0.05f), externalAmplitude)
+                val player = audioPlayer
+                val amp = if (player != null) {
+                    player.updateAmplitude()
+                    player.currentAmplitude
+                } else 0f
+                engine.tick(dt.coerceIn(0f, 0.05f), amp)
             }
 
             drawFrame()
@@ -72,6 +82,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     override fun surfaceCreated(h: SurfaceHolder) {
         surfaceReady = true
+        lastTickMs = 0L
         renderHandler.post(frameRunnable)
     }
 
@@ -82,10 +93,16 @@ class AnimationSurfaceView @JvmOverloads constructor(
         renderHandler.removeCallbacks(frameRunnable)
     }
 
-    // ── Public API ────────────────────────────────────────────────────────────
+    // ── Playback API ──────────────────────────────────────────────────────────
 
+    /**
+     * Loads a compiled timeline. Does NOT reset playback position — see
+     * [PlaybackEngine.loadTimeline]. While paused, the new target pose is shown
+     * immediately; while playing, the spring eases toward it.
+     */
     fun loadTimeline(keyframes: List<BakedKeyframe>) {
-        renderHandler.post { engine.loadTimeline(keyframes) }
+        val snap = !isPlaying
+        renderHandler.post { engine.loadTimeline(keyframes, snapToCurrentTime = snap) }
     }
 
     fun setAppearance(a: AppearanceSettings) { appearance = a }
@@ -94,7 +111,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
         renderHandler.post { engine.amplitudeSettings = s }
     }
 
-    fun setAudioAmplitude(amp: Float) { externalAmplitude = amp }
+    /** Attach (or detach with null) the audio source for real-time amplitude motion. */
+    fun setAudioPlayer(player: AudioPlayer?) { audioPlayer = player }
 
     fun play()  { isPlaying = true;  lastTickMs = 0L }
     fun pause() { isPlaying = false }
@@ -109,6 +127,26 @@ class AnimationSurfaceView @JvmOverloads constructor(
         renderThread.quitSafely()
     }
 
+    // ── Pose-editor API ───────────────────────────────────────────────────────
+
+    /**
+     * Directly applies [joints] (relative bone-id -> degree offsets) to the rig.
+     * Used by the pose library to preview the currently-selected pose.
+     *
+     * Safe to call from the UI thread: this view is never [play]ed in pose-editor
+     * mode, so the render thread never concurrently writes engine angles.
+     */
+    fun applyPose(joints: Map<String, Float>) {
+        val bones = StickFigureRig.BONES
+        bones.forEachIndexed { i, bone ->
+            val total = bone.defaultAngleDegrees + (joints[bone.id] ?: 0f)
+            engine.setBoneAngle(i, total)
+        }
+    }
+
+    /** Returns the current pose as relative bone-id -> degree offsets, for saving. */
+    fun captureCurrentPose(): Map<String, Float> = engine.captureRelativeAngles()
+
     // ── Rendering ─────────────────────────────────────────────────────────────
 
     private fun drawFrame() {
@@ -116,9 +154,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
         val canvas: Canvas = try { holder.lockCanvas() ?: return }
         catch (e: Exception) { return }
         try {
-            val w = width; val h = height
             canvas.drawColor(appearance.previewBgColor.toInt())
-            RigRenderer.draw(canvas, engine.currentAngles, appearance, w, h)
+            RigRenderer.draw(canvas, engine.currentAngles, appearance, width, height)
         } finally {
             holder.unlockCanvasAndPost(canvas)
         }
@@ -140,7 +177,6 @@ class AnimationSurfaceView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (dragBoneIdx >= 0) {
-                    // Compute angle from bone's parent position to touch point
                     val bone   = StickFigureRig.BONES[dragBoneIdx]
                     val pIdx   = bone.parentId?.let { StickFigureRig.BONE_INDEX[it] } ?: -1
                     val pivotX = if (pIdx < 0) rootX else {
@@ -174,8 +210,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
         val bones    = StickFigureRig.BONES
 
         for (i in bones.indices) {
-            val bone  = bones[i]
-            val pIdx  = bone.parentId?.let { StickFigureRig.BONE_INDEX[it] } ?: -1
+            val bone = bones[i]
+            val pIdx = bone.parentId?.let { StickFigureRig.BONE_INDEX[it] } ?: -1
             val boneStartX = if (pIdx < 0) rootX else {
                 val pb = bones[pIdx]
                 rootX + pb.normalizedLength * scale *

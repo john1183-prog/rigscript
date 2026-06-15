@@ -12,11 +12,11 @@ import kotlinx.serialization.Serializable
 data class AppearanceSettings(
     // ── Figure colours ────────────────────────────────────────────────────────
     /** Main bone / limb colour. Default: pure blue. */
-    val boneColor: Long = 0xFF0000FFEL,
+    val boneColor: Long = 0xFF0000FFL,
     /** Head fill colour. */
-    val headColor: Long = 0xFF0000FFEL,
+    val headColor: Long = 0xFF0000FFL,
     /** Joint dot colour. */
-    val jointColor: Long = 0xFF0000FFEL,
+    val jointColor: Long = 0xFF0000FFL,
 
     // ── Stroke & size ─────────────────────────────────────────────────────────
     /** Bone stroke width as a fraction of min(canvasW, canvasH). */

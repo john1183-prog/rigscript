@@ -19,6 +19,8 @@ data class ProjectDef(
     val id: String = UUID.randomUUID().toString(),
     val projectName: String = "Untitled",
     val audioFilePath: String? = null,
+    /** Decoded audio duration in seconds — derived from the amplitude envelope, not container metadata. */
+    val audioDurationSec: Float = 0f,
     val amplitudeEnvelope: List<Float> = emptyList(),
     val script: AnimScript = AnimScript.EMPTY,
     val appearance: AppearanceSettings = AppearanceSettings(),

@@ -18,8 +18,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.PoseDef
-import com.example.engine.PlaybackEngine
-import com.example.engine.StickFigureRig
 import com.example.ui.canvas.AnimationSurfaceView
 import com.example.viewmodel.MainViewModel
 import java.util.UUID
@@ -37,25 +35,24 @@ fun PoseEditorScreen(
     val snackState = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { messages.collect { snackState.showSnackbar(it) } }
 
-    // Currently selected pose for preview/edit
     var selectedPose by remember { mutableStateOf<PoseDef?>(null) }
     var editingName  by remember { mutableStateOf("") }
     var isDirty      by remember { mutableStateOf(false) }
     var surfaceView  by remember { mutableStateOf<AnimationSurfaceView?>(null) }
 
-    // Internal PlaybackEngine for pose preview (separate from the editor's engine)
-    val engine = remember { PlaybackEngine() }
-
     fun loadPose(pose: PoseDef) {
         selectedPose = pose
         editingName  = pose.name
         isDirty      = false
-        // Apply pose angles to engine
-        val bones = StickFigureRig.BONES
-        bones.forEachIndexed { i, bone ->
-            val total = bone.defaultAngleDegrees + (pose.joints[bone.id] ?: 0f)
-            engine.setBoneAngle(i, total)
-        }
+    }
+
+    // Push the selected pose's joint angles into the SAME engine instance that
+    // AnimationSurfaceView renders. Previously this screen kept its own separate
+    // PlaybackEngine, which meant nothing the user selected (or dragged) ever
+    // reached the rendered figure. Re-fires once `surfaceView` becomes available,
+    // so selecting a pose before the view finishes initialising still works.
+    LaunchedEffect(selectedPose, surfaceView) {
+        selectedPose?.let { pose -> surfaceView?.applyPose(pose.joints) }
     }
 
     Scaffold(
@@ -87,17 +84,15 @@ fun PoseEditorScreen(
             )
         },
         floatingActionButton = {
-            // Create new pose from scratch
             FloatingActionButton(onClick = {
                 val blank = PoseDef(
-                    id       = UUID.randomUUID().toString(),
-                    name     = "New Pose",
-                    category = "custom",
+                    id        = UUID.randomUUID().toString(),
+                    name      = "New Pose",
+                    category  = "custom",
                     isBuiltIn = false,
-                    joints   = emptyMap()
+                    joints    = emptyMap()
                 )
                 loadPose(blank)
-                isDirty = true
             }) { Icon(Icons.Default.Add, "New Pose") }
         }
     ) { padding ->
@@ -123,11 +118,8 @@ fun PoseEditorScreen(
                             pose       = pose,
                             isSelected = pose.id == selectedPose?.id,
                             onClick    = {
-                                if (onPoseSelected != null) {
-                                    onPoseSelected(pose.id)
-                                } else {
-                                    loadPose(pose)
-                                }
+                                if (onPoseSelected != null) onPoseSelected(pose.id)
+                                else loadPose(pose)
                             }
                         )
                     }
@@ -139,11 +131,8 @@ fun PoseEditorScreen(
                             pose       = pose,
                             isSelected = pose.id == selectedPose?.id,
                             onClick    = {
-                                if (onPoseSelected != null) {
-                                    onPoseSelected(pose.id)
-                                } else {
-                                    loadPose(pose)
-                                }
+                                if (onPoseSelected != null) onPoseSelected(pose.id)
+                                else loadPose(pose)
                             }
                         )
                     }
@@ -155,82 +144,88 @@ fun PoseEditorScreen(
             // ── Right panel: pose canvas + editor ──────────────────────────────
             Column(Modifier.fillMaxSize()) {
 
-                // Pose preview canvas
                 Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(Color(0xFF1A1A2E))
+                    Modifier.fillMaxWidth().weight(1f).background(Color(0xFF1A1A2E))
                 ) {
                     AndroidView(
                         factory = { ctx ->
                             AnimationSurfaceView(ctx).also { sv ->
                                 surfaceView = sv
-                                sv.poseEditorMode = selectedPose != null && !selectedPose!!.isBuiltIn
+                                sv.poseEditorMode = selectedPose?.let { !it.isBuiltIn } ?: false
                                 sv.onBoneAngleChanged = { _, _ -> isDirty = true }
                             }
                         },
                         update = { sv ->
-                            sv.poseEditorMode = selectedPose != null && !selectedPose!!.isBuiltIn
+                            sv.poseEditorMode = selectedPose?.let { !it.isBuiltIn } ?: false
                         },
+                        onRelease = { it.release() },
                         modifier = Modifier.fillMaxSize()
                     )
 
                     if (selectedPose == null) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("← Select a pose to preview",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 14.sp)
+                                color = Color.White.copy(alpha = 0.4f), fontSize = 14.sp)
                         }
                     }
                 }
 
                 // ── Name + save bar ────────────────────────────────────────────
                 selectedPose?.let { pose ->
-                    Surface(
-                        color     = MaterialTheme.colorScheme.surfaceVariant,
-                        tonalElevation = 2.dp
-                    ) {
-                        Column(Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 2.dp) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
 
-                            OutlinedTextField(
-                                value         = editingName,
-                                onValueChange = { editingName = it; isDirty = true },
-                                label         = { Text("Pose name") },
-                                singleLine    = true,
-                                enabled       = !pose.isBuiltIn,
-                                modifier      = Modifier.fillMaxWidth()
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value         = editingName,
+                                    onValueChange = { editingName = it; isDirty = true },
+                                    label         = { Text("Pose name") },
+                                    singleLine    = true,
+                                    enabled       = !pose.isBuiltIn,
+                                    modifier      = Modifier.weight(1f)
+                                )
+                                if (isDirty && !pose.isBuiltIn) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("• unsaved", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
 
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                // Save (only for custom poses or when duplicating)
-                                if (!pose.isBuiltIn || isDirty) {
+                                if (pose.isBuiltIn) {
+                                    // Built-ins are read-only; "Save as Copy" duplicates the
+                                    // CURRENT (unmodified) pose as a custom, editable pose.
                                     Button(
                                         onClick = {
-                                            val captured = engine.captureRelativeAngles()
-                                            val toSave = if (pose.isBuiltIn) {
-                                                // Duplicate built-in as custom
-                                                pose.copy(
-                                                    id       = UUID.randomUUID().toString(),
-                                                    name     = "Copy of ${pose.name}",
-                                                    isBuiltIn = false,
-                                                    category  = "custom",
-                                                    joints   = captured
-                                                )
-                                            } else {
-                                                pose.copy(name = editingName.trim().ifBlank { "Pose" },
-                                                    joints = captured)
-                                            }
+                                            val captured = surfaceView?.captureCurrentPose() ?: pose.joints
+                                            val copy = pose.copy(
+                                                id        = UUID.randomUUID().toString(),
+                                                name      = "Copy of ${pose.name}",
+                                                isBuiltIn = false,
+                                                category  = "custom",
+                                                joints    = captured
+                                            )
+                                            vm.savePose(copy)
+                                            loadPose(copy)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("Save as Copy") }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            val captured = surfaceView?.captureCurrentPose() ?: pose.joints
+                                            val toSave = pose.copy(
+                                                name   = editingName.trim().ifBlank { "Pose" },
+                                                joints = captured
+                                            )
                                             vm.savePose(toSave)
                                             selectedPose = toSave
                                             isDirty = false
                                         },
                                         modifier = Modifier.weight(1f)
-                                    ) { Text(if (pose.isBuiltIn) "Save as Copy" else "Save") }
+                                    ) { Text("Save") }
                                 }
 
-                                // Use in script (pick mode)
                                 if (onPoseSelected != null) {
                                     OutlinedButton(
                                         onClick = { onPoseSelected(pose.id) },
@@ -240,7 +235,11 @@ fun PoseEditorScreen(
                             }
 
                             if (pose.isBuiltIn) {
-                                Text("Built-in poses cannot be edited directly. Save as a copy to customise.",
+                                Text("Built-in poses can't be edited directly — save a copy to customise it.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                            } else {
+                                Text("Drag any joint on the figure above to adjust this pose.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                             }
@@ -263,8 +262,7 @@ private fun PoseSectionHeader(title: String) {
 
 @Composable
 private fun PoseListItem(pose: PoseDef, isSelected: Boolean, onClick: () -> Unit) {
-    val bg = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-             else Color.Transparent
+    val bg = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
     Row(
         Modifier
             .fillMaxWidth()

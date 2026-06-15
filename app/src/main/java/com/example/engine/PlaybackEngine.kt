@@ -43,18 +43,32 @@ class PlaybackEngine {
 
     // ── Timeline loading ──────────────────────────────────────────────────────
 
-    fun loadTimeline(keyframes: List<BakedKeyframe>) {
+    /**
+     * Loads a new compiled timeline.
+     *
+     * Deliberately does NOT reset [currentTimeSec] — replacing the timeline (e.g.
+     * after a script edit) should not snap playback back to the start. The target
+     * pose is recomputed at the current time; if [snapToCurrentTime] is true (the
+     * default — used while paused) [currentAngles] jumps straight to the new
+     * target so edits are reflected immediately. While playing, leave it false so
+     * the spring eases toward the new target instead of popping.
+     */
+    fun loadTimeline(keyframes: List<BakedKeyframe>, snapToCurrentTime: Boolean = true) {
         timeline = keyframes
-        reset()
+        resolveBaseAngles(currentTimeSec, useAnalyticalSpring = true)
+        if (snapToCurrentTime) {
+            baseAngles.copyInto(currentAngles)
+            springVelocities.fill(0f)
+        }
     }
 
+    /** Returns playback to the start. Used by the Stop control. */
     fun reset() {
         currentTimeSec = 0f
         smoothedAmplitude = 0f
         springVelocities.fill(0f)
-        for (i in 0 until n) currentAngles[i] = bones[i].defaultAngleDegrees
         resolveBaseAngles(0f, useAnalyticalSpring = true)
-        currentAngles.copyInto(baseAngles)
+        baseAngles.copyInto(currentAngles)
     }
 
     // ── Tick (called ~60fps from background thread) ───────────────────────────

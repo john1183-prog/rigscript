@@ -11,6 +11,8 @@ import com.example.db.AppDatabase
 import com.example.db.AppRepository
 import com.example.engine.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -24,22 +26,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val db   = AppDatabase.getInstance(app)
     val repo         = AppRepository(db)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
+    private val prefs = app.getSharedPreferences("rigscript_prefs", Context.MODE_PRIVATE)
 
     // ── Project list ──────────────────────────────────────────────────────────
 
     val projects: StateFlow<List<ProjectDef>> = repo.observeProjects()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    /**
+     * Emits the ID of a project right after it's created, so the nav graph can
+     * navigate into it. Deliberately NOT inferred from `projects.size` changes —
+     * that heuristic also fires on the initial load of an existing project list
+     * (size goes from 0 -> N once Room's Flow emits), which would force-navigate
+     * into a random project on every app launch.
+     */
+    private val _navigateToProject = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val navigateToProject: SharedFlow<String> = _navigateToProject.asSharedFlow()
+
     // ── Active project ────────────────────────────────────────────────────────
 
     private val _activeProject = MutableStateFlow<ProjectDef?>(null)
     val activeProject: StateFlow<ProjectDef?> = _activeProject.asStateFlow()
 
-    /** Human-readable script JSON shown in the script editor panel. */
     private val _scriptText = MutableStateFlow("")
     val scriptText: StateFlow<String> = _scriptText.asStateFlow()
 
-    /** Null = valid JSON, else the parse error message. */
     private val _scriptError = MutableStateFlow<String?>(null)
     val scriptError: StateFlow<String?> = _scriptError.asStateFlow()
 
@@ -48,11 +59,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val poses: StateFlow<List<PoseDef>> = repo.observePoses()
         .stateIn(viewModelScope, SharingStarted.Lazily, StickFigureRig.BUILT_IN_POSES)
 
-    // ── Global amplitude settings ─────────────────────────────────────────────
-    // (stored in DataStore in a real app; kept in-memory here for simplicity)
+    // ── Global amplitude settings (persisted to SharedPreferences) ─────────────
 
-    private val _amplitudeSettings = MutableStateFlow(AmplitudeSettings())
+    private val _amplitudeSettings = MutableStateFlow(loadAmplitudeSettings())
     val amplitudeSettings: StateFlow<AmplitudeSettings> = _amplitudeSettings.asStateFlow()
+    private var amplitudeSaveJob: Job? = null
 
     // ── Audio state ───────────────────────────────────────────────────────────
 
@@ -67,13 +78,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _exportProgress = MutableStateFlow<Float?>(null)  // null = idle
     val exportProgress: StateFlow<Float?> = _exportProgress.asStateFlow()
 
-    private val _exportedFilePath = MutableStateFlow<String?>(null)
-    val exportedFilePath: StateFlow<String?> = _exportedFilePath.asStateFlow()
+    private val _exportedFile = MutableStateFlow<ExportResult?>(null)
+    val exportedFile: StateFlow<ExportResult?> = _exportedFile.asStateFlow()
 
     // ── Snackbar / toasts ─────────────────────────────────────────────────────
 
     private val _message = MutableSharedFlow<String>()
     val message: SharedFlow<String> = _message.asSharedFlow()
+
+    // ── Debounced project persistence ───────────────────────────────────────────
+    // Slider-driven settings (Appearance/Export tabs) call scheduleSave(), which
+    // debounces writes — without this, every onValueChange tick during a drag
+    // would JSON-encode and write the ENTIRE project (including a potentially
+    // large amplitudeEnvelope) to SQLite.
+
+    private var saveJob: Job? = null
+
+    /** Immediate flush. Use for discrete actions: rename, audio import, pose insert, leaving the screen. */
+    fun saveActiveProject() {
+        saveJob?.cancel()
+        saveJob = null
+        val project = _activeProject.value ?: return
+        viewModelScope.launch { repo.saveProject(project) }
+    }
+
+    /** Debounced flush (400ms). Use for continuous interactions like sliders. */
+    private fun scheduleSave() {
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            delay(400)
+            _activeProject.value?.let { repo.saveProject(it) }
+        }
+    }
 
     // ── Project CRUD ──────────────────────────────────────────────────────────
 
@@ -82,7 +118,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             script = AnimScript.DEMO)
         viewModelScope.launch {
             repo.saveProject(project)
-            loadProject(project.id)
+            _navigateToProject.emit(project.id)
         }
     }
 
@@ -93,12 +129,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _scriptText.value    = json.encodeToString(project.script)
             _scriptError.value   = null
             _audioFileName.value = project.audioFilePath?.let { File(it).name }
+            _exportedFile.value  = null
         }
-    }
-
-    fun saveActiveProject() {
-        val project = _activeProject.value ?: return
-        viewModelScope.launch { repo.saveProject(project) }
     }
 
     fun renameProject(newName: String) {
@@ -116,7 +148,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Script editing ────────────────────────────────────────────────────────
 
-    /** Called by the script text field on every keystroke (with debounce from UI). */
     fun onScriptTextChanged(raw: String) {
         _scriptText.value = raw
         runCatching {
@@ -124,6 +155,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _scriptError.value = null
             updateActive { it.copy(script = parsed) }
         }.onFailure { _scriptError.value = it.message?.take(120) }
+        scheduleSave()
     }
 
     fun insertScriptEvent(poseId: String, atSec: Float) {
@@ -138,20 +170,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         saveActiveProject()
     }
 
-    // ── Appearance ────────────────────────────────────────────────────────────
+    // ── Appearance / Export (debounced — sliders fire these continuously) ──────
 
     fun updateAppearance(appearance: AppearanceSettings) {
         updateActive { it.copy(appearance = appearance) }
-        saveActiveProject()
+        scheduleSave()
     }
 
     fun updateExportSettings(settings: ExportSettings) {
         updateActive { it.copy(exportSettings = settings) }
-        saveActiveProject()
+        scheduleSave()
     }
+
+    // ── Global amplitude settings ───────────────────────────────────────────────
 
     fun updateAmplitudeSettings(settings: AmplitudeSettings) {
         _amplitudeSettings.value = settings
+        amplitudeSaveJob?.cancel()
+        amplitudeSaveJob = viewModelScope.launch {
+            delay(400)
+            prefs.edit().putString(PREF_AMPLITUDE, json.encodeToString(settings)).apply()
+        }
+    }
+
+    private fun loadAmplitudeSettings(): AmplitudeSettings {
+        val raw = prefs.getString(PREF_AMPLITUDE, null) ?: return AmplitudeSettings()
+        return runCatching { json.decodeFromString<AmplitudeSettings>(raw) }
+            .getOrDefault(AmplitudeSettings())
     }
 
     // ── Audio import ──────────────────────────────────────────────────────────
@@ -163,7 +208,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _isAnalysingAudio.value = false; return@launch
             }
 
-            // Copy to app-private cache so the path is stable across sessions
             val destDir  = File(context.filesDir, "audio").also { it.mkdirs() }
             val fileName = queryFileName(context, uri) ?: "audio_${project.id}.mp3"
             val destFile = File(destDir, "${project.id}_$fileName")
@@ -174,20 +218,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // Analyse amplitude envelope
-            val envelope = AmplitudeAnalyzer.analyze(destFile.absolutePath,
-                project.exportSettings.fps)
+            val result = AmplitudeAnalyzer.analyze(destFile.absolutePath)
 
             updateActive {
                 it.copy(
-                    audioFilePath      = destFile.absolutePath,
-                    amplitudeEnvelope  = envelope.toList()
+                    audioFilePath     = destFile.absolutePath,
+                    audioDurationSec  = result.durationSec,
+                    amplitudeEnvelope = result.envelope.toList()
                 )
             }
             _audioFileName.value = fileName
             saveActiveProject()
             _isAnalysingAudio.value = false
-            _message.emit("Audio imported: $fileName (${envelope.size} frames analysed)")
+            _message.emit("Audio imported: $fileName (${"%.1f".format(result.durationSec)}s, ${result.envelope.size} frames)")
         }
     }
 
@@ -215,12 +258,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Timeline compilation (suspending, returns compiled keyframes) ──────────
+    // ── Timeline compilation ─────────────────────────────────────────────────
 
-    suspend fun compileTimeline(script: AnimScript): List<com.example.engine.BakedKeyframe> =
+    suspend fun compileTimeline(script: AnimScript): List<BakedKeyframe> =
         withContext(Dispatchers.Default) {
             TimelineCompiler.compile(script) { poseId ->
-                // Resolve from DB poses state (already loaded in memory)
                 poses.value.find { it.id == poseId }
                     ?: StickFigureRig.BUILT_IN_POSE_INDEX[poseId]
             }
@@ -232,22 +274,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val project = _activeProject.value ?: return
         viewModelScope.launch {
             _exportProgress.value = 0f
-            _exportedFilePath.value = null
+            _exportedFile.value   = null
             try {
                 val compiled = compileTimeline(project.script)
-                val outputPath = VideoExporter.export(
-                    context      = context,
-                    project      = project,
-                    keyframes    = compiled,
-                    onProgress   = { _exportProgress.value = it }
+                val result = VideoExporter.export(
+                    context    = context,
+                    project    = project,
+                    keyframes  = compiled,
+                    onProgress = { _exportProgress.value = it }
                 )
-                _exportedFilePath.value = outputPath
-                _message.emit("Export complete: ${File(outputPath).name}")
+                _exportedFile.value = result
+                _message.emit("Export complete: ${result.location}")
             } catch (e: Exception) {
                 _message.emit("Export failed: ${e.message}")
             } finally {
                 _exportProgress.value = null
             }
         }
+    }
+
+    companion object {
+        private const val PREF_AMPLITUDE = "amplitude_settings_json"
     }
 }

@@ -9,12 +9,19 @@ import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
 
 /**
+ * Result of offline audio analysis.
+ *
+ * [envelope]    Normalised (0..1) RMS amplitude, one value per
+ *               [AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS] of audio.
+ * [durationSec] Actual decoded duration, derived from `envelope.size`. This is
+ *               intentionally NOT read from container metadata (`KEY_DURATION`),
+ *               which is absent or zero for some files and would otherwise
+ *               silently truncate the envelope to ~1 second.
+ */
+data class AmplitudeAnalysisResult(val envelope: FloatArray, val durationSec: Float)
+
+/**
  * Analyses an audio file entirely offline using [MediaExtractor] + [MediaCodec].
- *
- * Produces a normalised RMS amplitude envelope at [targetFps] samples per second.
- * Call [analyze] once when audio is imported; store the result in [ProjectDef]
- * so it never needs to be re-computed.
- *
  * No RECORD_AUDIO permission required — this reads from a file, not the microphone.
  */
 object AmplitudeAnalyzer {
@@ -23,25 +30,26 @@ object AmplitudeAnalyzer {
     private const val TIMEOUT_US = 10_000L
 
     /**
-     * Suspending entry-point. Returns a [FloatArray] of length ≈ audioDuration × targetFps,
-     * each value normalised to [0, 1] relative to the peak RMS in the file.
-     *
-     * Returns an empty array on any error so callers can degrade gracefully.
+     * Fixed sampling rate for the amplitude envelope. Deliberately decoupled from
+     * [com.example.data.ExportSettings.fps] — if the user changes export FPS after
+     * importing audio, the envelope (analysed once at import time) would otherwise
+     * be indexed at the wrong rate and drift out of sync.
      */
-    suspend fun analyze(audioFilePath: String, targetFps: Int = 30): FloatArray =
+    const val AMPLITUDE_ANALYSIS_FPS = 30
+
+    suspend fun analyze(audioFilePath: String): AmplitudeAnalysisResult =
         withContext(Dispatchers.Default) {
-            runCatching { analyzeInternal(audioFilePath, targetFps) }
+            runCatching { analyzeInternal(audioFilePath, AMPLITUDE_ANALYSIS_FPS) }
                 .getOrElse { e ->
                     Log.e(TAG, "Amplitude analysis failed", e)
-                    FloatArray(0)
+                    AmplitudeAnalysisResult(FloatArray(0), 0f)
                 }
         }
 
-    private fun analyzeInternal(path: String, targetFps: Int): FloatArray {
+    private fun analyzeInternal(path: String, fps: Int): AmplitudeAnalysisResult {
         val extractor = MediaExtractor()
         extractor.setDataSource(path)
 
-        // ── Find first audio track ─────────────────────────────────────────────
         var audioTrack = -1
         var format: MediaFormat? = null
         for (i in 0 until extractor.trackCount) {
@@ -53,32 +61,29 @@ object AmplitudeAnalyzer {
         if (audioTrack < 0 || format == null) {
             extractor.release()
             Log.w(TAG, "No audio track found in $path")
-            return FloatArray(0)
+            return AmplitudeAnalysisResult(FloatArray(0), 0f)
         }
         extractor.selectTrack(audioTrack)
 
-        val sampleRate    = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        val channels      = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        val durationUs    = if (format.containsKey(MediaFormat.KEY_DURATION))
-            format.getLong(MediaFormat.KEY_DURATION) else 0L
-        val durationSec   = durationUs / 1_000_000f
-        val totalFrames   = ((durationSec + 1f) * targetFps).toInt().coerceAtLeast(1)
-        val samplesPerFrame = (sampleRate / targetFps).coerceAtLeast(1)
+        val sampleRate      = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+        val channels        = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+        val samplesPerFrame = (sampleRate / fps).coerceAtLeast(1)
 
         val codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
         codec.configure(format, null, null, 0)
         codec.start()
 
-        val amplitudes   = FloatArray(totalFrames)
-        val bufferInfo   = MediaCodec.BufferInfo()
-        var pcmAccum     = 0.0   // sum of squares for current frame window
-        var pcmSamples   = 0     // mono samples accumulated
-        var frameIdx     = 0
-        var inputDone    = false
-        var outputDone   = false
+        // Growable list — NOT pre-sized from container duration. Some containers
+        // report KEY_DURATION as 0/absent; pre-sizing from that would silently
+        // truncate the envelope to ~1 second of audio.
+        val amplitudes = ArrayList<Float>()
+        val bufferInfo = MediaCodec.BufferInfo()
+        var pcmAccum   = 0.0
+        var pcmSamples = 0
+        var inputDone  = false
+        var outputDone = false
 
         while (!outputDone) {
-            // ── Feed compressed data to decoder ───────────────────────────────
             if (!inputDone) {
                 val inIdx = codec.dequeueInputBuffer(TIMEOUT_US)
                 if (inIdx >= 0) {
@@ -94,7 +99,6 @@ object AmplitudeAnalyzer {
                 }
             }
 
-            // ── Drain decoded PCM ─────────────────────────────────────────────
             val outIdx = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
             when {
                 outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> { /* no-op */ }
@@ -105,8 +109,7 @@ object AmplitudeAnalyzer {
                     val buf = codec.getOutputBuffer(outIdx)
                     if (buf != null && bufferInfo.size > 0) {
                         val shorts = buf.asShortBuffer()
-                        while (shorts.hasRemaining() && frameIdx < totalFrames) {
-                            // Average all channels into a mono sample
+                        while (shorts.hasRemaining()) {
                             var mono = 0.0
                             for (c in 0 until channels) {
                                 mono += if (shorts.hasRemaining()) shorts.get() / 32768.0 else 0.0
@@ -115,28 +118,30 @@ object AmplitudeAnalyzer {
                             pcmAccum += mono * mono
                             pcmSamples++
                             if (pcmSamples >= samplesPerFrame) {
-                                amplitudes[frameIdx++] = sqrt(pcmAccum / pcmSamples).toFloat()
-                                pcmAccum  = 0.0
+                                amplitudes.add(sqrt(pcmAccum / pcmSamples).toFloat())
+                                pcmAccum   = 0.0
                                 pcmSamples = 0
                             }
                         }
                     }
                     codec.releaseOutputBuffer(outIdx, false)
                 }
+                // INFO_TRY_AGAIN_LATER -> loop again; dequeueOutputBuffer's own
+                // TIMEOUT_US prevents a busy-spin.
             }
         }
 
         codec.stop(); codec.release(); extractor.release()
 
-        // Flush any remaining partial window
-        if (pcmSamples > 0 && frameIdx < totalFrames) {
-            amplitudes[frameIdx] = sqrt(pcmAccum / pcmSamples).toFloat()
+        // Flush any partial trailing window
+        if (pcmSamples > 0) {
+            amplitudes.add(sqrt(pcmAccum / pcmSamples).toFloat())
         }
 
-        // Normalise to [0, 1]
-        val peak = amplitudes.maxOrNull() ?: 1f
-        if (peak > 0f) for (i in amplitudes.indices) amplitudes[i] /= peak
+        val arr  = amplitudes.toFloatArray()
+        val peak = arr.maxOrNull() ?: 1f
+        if (peak > 0f) for (i in arr.indices) arr[i] /= peak
 
-        return amplitudes
+        return AmplitudeAnalysisResult(arr, arr.size / fps.toFloat())
     }
 }

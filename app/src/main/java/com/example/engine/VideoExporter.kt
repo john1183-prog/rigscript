@@ -1,11 +1,22 @@
 package com.example.engine
 
+import android.content.ContentValues
 import android.content.Context
-import android.graphics.*
-import android.media.*
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
+import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.example.data.ProjectDef
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,17 +24,33 @@ import java.io.File
 import java.nio.ByteBuffer
 
 /**
+ * Result of a completed export.
+ *
+ * [uri]      A `content://` URI suitable for `ACTION_VIEW` / `ACTION_SEND` — works
+ *            for both the MediaStore path (API 29+) and the FileProvider-wrapped
+ *            legacy path (API 26-28).
+ * [location] Human-readable location, for display in the UI.
+ */
+data class ExportResult(val uri: Uri, val location: String)
+
+/**
  * Encodes the animation to an H.264/MP4 file and optionally muxes the source
  * audio track verbatim (no re-encoding, lossless, fast).
  *
  * Each frame is drawn onto an off-screen [Bitmap], converted to NV12
  * (YUV420SemiPlanar) in software, then queued to [MediaCodec] as a byte-buffer
- * input. This approach works on all API 26+ devices without EGL.
+ * input. This works on all API 26+ devices without EGL.
+ *
+ * Output location: API 29+ writes to the public `Movies/RigScript/` collection
+ * via [MediaStore] (shows up in Gallery/Files immediately, no permission needed).
+ * API 26-28 writes to the legacy public Movies directory and requires
+ * `WRITE_EXTERNAL_STORAGE` to be granted by the caller first — see
+ * `EditorScreen`'s permission-request flow.
  */
 object VideoExporter {
 
-    private const val TAG    = "VideoExporter"
-    private const val MIME   = MediaFormat.MIMETYPE_VIDEO_AVC
+    private const val TAG  = "VideoExporter"
+    private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
     private const val TIMEOUT = 10_000L
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -33,29 +60,30 @@ object VideoExporter {
         project: ProjectDef,
         keyframes: List<BakedKeyframe>,
         onProgress: (Float) -> Unit
-    ): String = withContext(Dispatchers.Default) {
+    ): ExportResult = withContext(Dispatchers.Default) {
 
-        val settings         = project.exportSettings
-        val (width, height)  = settings.dimensions()
-        val fps              = settings.fps
-        val bitrate          = settings.bitrateMbps * 1_000_000
-        val appearance       = project.appearance
-        val bgColor          = appearance.exportBgColor.toInt()
+        val settings        = project.exportSettings
+        val (width, height) = settings.dimensions()
+        val fps             = settings.fps
+        val bitrate         = settings.bitrateMbps * 1_000_000
+        val appearance      = project.appearance
+        val bgColor         = appearance.exportBgColor.toInt()
 
-        // Duration = last keyframe end + 1s breathing room
-        val lastKf      = keyframes.lastOrNull()
-        val totalSec    = if (lastKf != null) lastKf.timeSec + lastKf.duration + 1f else 10f
+        // Duration = max(script length, actual audio length) + 1s tail. If the
+        // audio runs longer than the scripted pose changes, the figure holds its
+        // final pose (with idle/talk motion still active) for the remainder
+        // instead of the export being truncated.
+        val lastKf    = keyframes.lastOrNull()
+        val scriptEnd = if (lastKf != null) lastKf.timeSec + lastKf.duration else 0f
+        val totalSec  = maxOf(scriptEnd, project.audioDurationSec) + 1f
         val totalFrames = (totalSec * fps).toInt().coerceAtLeast(1)
 
-        // Offline render engine
         val engine = PlaybackEngine().also { it.loadTimeline(keyframes) }
 
-        // Off-screen rendering
         val bitmap  = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val fCanvas = Canvas(bitmap)
-        val nv12    = ByteArray(width * height * 3 / 2)   // reused per frame
+        val nv12    = ByteArray(width * height * 3 / 2)
 
-        // Encoder
         val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
@@ -67,66 +95,50 @@ object VideoExporter {
         encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoder.start()
 
-        // Output file + muxer
-        val outputFile = resolveOutputFile(context, project.projectName)
-        outputFile.parentFile?.mkdirs()
-        val muxer      = MediaMuxer(outputFile.absolutePath,
-            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val output = OutputTarget.create(context, project.projectName)
+        val muxer  = output.openMuxer()
 
-        var videoTrackIdx  = -1
-        var audioTrackIdx  = -1
-        var muxerStarted   = false
-        val bufferInfo     = MediaCodec.BufferInfo()
+        var videoTrackIdx = -1
+        var audioTrackIdx = -1
+        var muxerStarted  = false
+        val bufferInfo    = MediaCodec.BufferInfo()
 
         // ── Render + encode loop ──────────────────────────────────────────────
         for (frameIdx in 0 until totalFrames) {
-            // 1. Render frame
             fCanvas.drawColor(bgColor)
             engine.seekTo(frameIdx.toFloat() / fps)
-            RigRenderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
-                forExport = true)
+            RigRenderer.draw(fCanvas, engine.currentAngles, appearance, width, height, forExport = true)
 
-            // 2. ARGB → NV12
             argbToNV12(bitmap, width, height, nv12)
 
-            // 3. Feed to encoder
             val inIdx = encoder.dequeueInputBuffer(TIMEOUT)
             if (inIdx >= 0) {
-                encoder.getInputBuffer(inIdx)!!.let { buf -> buf.clear(); buf.put(nv12) }
-                encoder.queueInputBuffer(inIdx, 0, nv12.size,
-                    frameIdx.toLong() * 1_000_000L / fps, 0)
+                encoder.getInputBuffer(inIdx)!!.let { it.clear(); it.put(nv12) }
+                encoder.queueInputBuffer(inIdx, 0, nv12.size, frameIdx.toLong() * 1_000_000L / fps, 0)
             }
 
-            // 4. Drain encoder output
             drain@ while (true) {
                 val outIdx = encoder.dequeueOutputBuffer(bufferInfo, 0)
                 when {
                     outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> break@drain
-
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         if (!muxerStarted) {
                             videoTrackIdx = muxer.addTrack(encoder.outputFormat)
                             if (settings.embedAudio && project.audioFilePath != null)
                                 audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
-                            muxer.start()
-                            muxerStarted = true
+                            muxer.start(); muxerStarted = true
                         }
                     }
-
                     outIdx >= 0 -> {
-                        val isConfig = bufferInfo.flags and
-                            MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                        val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
                         if (!isConfig && muxerStarted && bufferInfo.size > 0) {
-                            muxer.writeSampleData(videoTrackIdx,
-                                encoder.getOutputBuffer(outIdx)!!, bufferInfo)
+                            muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
                         }
                         encoder.releaseOutputBuffer(outIdx, false)
-                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0)
-                            break@drain
+                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break@drain
                     }
                 }
             }
-
             onProgress(frameIdx.toFloat() / totalFrames * 0.90f)
         }
 
@@ -146,12 +158,10 @@ object VideoExporter {
                 outIdx >= 0 -> {
                     val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
                     if (!isConfig && muxerStarted && bufferInfo.size > 0) {
-                        muxer.writeSampleData(videoTrackIdx,
-                            encoder.getOutputBuffer(outIdx)!!, bufferInfo)
+                        muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
                     }
                     encoder.releaseOutputBuffer(outIdx, false)
-                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0)
-                        break@eos
+                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break@eos
                 }
                 outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> break@eos
             }
@@ -159,17 +169,97 @@ object VideoExporter {
 
         // ── Mux audio (copy compressed samples, no re-encode) ─────────────────
         if (muxerStarted && audioTrackIdx >= 0 && project.audioFilePath != null) {
-            copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx,
-                (totalSec * 1_000_000L).toLong())
+            copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (totalSec * 1_000_000L).toLong())
         }
 
         onProgress(1f)
         bitmap.recycle()
         encoder.stop();  encoder.release()
         muxer.stop();    muxer.release()
+        output.finish(context)
 
-        Log.i(TAG, "Export done — $totalFrames frames → ${outputFile.absolutePath}")
-        outputFile.absolutePath
+        Log.i(TAG, "Exported $totalFrames frames -> ${output.location}")
+        ExportResult(output.uri, output.location)
+    }
+
+    // ── Output targets ───────────────────────────────────────────────────────
+
+    /**
+     * Encapsulates where/how the encoded file is written, isolating the
+     * API-29+ (MediaStore, scoped storage) vs API 26-28 (legacy public dir +
+     * runtime permission + manual media-scan) code paths.
+     */
+    private sealed class OutputTarget {
+        abstract val uri: Uri
+        abstract val location: String
+        abstract fun openMuxer(): MediaMuxer
+        abstract fun finish(context: Context)
+
+        companion object {
+            fun create(context: Context, projectName: String): OutputTarget {
+                val safe = projectName.replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
+                val name = "${safe}_${System.currentTimeMillis()}.mp4"
+                return if (Build.VERSION.SDK_INT >= 29) MediaStoreOutput(context, name)
+                       else LegacyFileOutput(context, name)
+            }
+        }
+    }
+
+    /** API 29+: writes into the public Movies/RigScript collection via MediaStore. */
+    private class MediaStoreOutput(context: Context, name: String) : OutputTarget() {
+        override val uri: Uri
+        override val location: String = "Movies/RigScript/$name"
+        private val pfd: ParcelFileDescriptor
+
+        init {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, name)
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/RigScript")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+            uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("MediaStore insert failed")
+            pfd = resolver.openFileDescriptor(uri, "w")
+                ?: throw IllegalStateException("Could not open output descriptor")
+        }
+
+        override fun openMuxer(): MediaMuxer =
+            MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+        override fun finish(context: Context) {
+            val values = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
+            context.contentResolver.update(uri, values, null, null)
+            pfd.close()
+        }
+    }
+
+    /**
+     * API 26-28: writes directly to the legacy public Movies directory.
+     * Requires `WRITE_EXTERNAL_STORAGE` (declared with maxSdkVersion=28) granted
+     * at runtime — the caller is responsible for requesting it before exporting.
+     */
+    private class LegacyFileOutput(context: Context, name: String) : OutputTarget() {
+        private val file: File
+        override val uri: Uri
+        override val location: String
+
+        init {
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "RigScript")
+            dir.mkdirs()
+            file = File(dir, name)
+            location = file.absolutePath
+            uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }
+
+        override fun openMuxer(): MediaMuxer =
+            MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+        override fun finish(context: Context) {
+            // Make the file show up in Gallery/file managers immediately.
+            MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("video/mp4"), null)
+        }
     }
 
     // ── YUV conversion ────────────────────────────────────────────────────────
@@ -180,11 +270,8 @@ object VideoExporter {
      * Uses BT.601 limited-range coefficients.
      */
     private fun argbToNV12(src: Bitmap, w: Int, h: Int, out: ByteArray) {
-        val yBase = 0
-        val uvBase = w * h
-        var yOff = yBase
-        var uvOff = uvBase
-
+        var yOff  = 0
+        var uvOff = w * h
         for (row in 0 until h) {
             for (col in 0 until w) {
                 val p = src.getPixel(col, row)
@@ -244,15 +331,4 @@ object VideoExporter {
         }
         ex.release()
     }.onFailure { Log.e(TAG, "copyAudioTrack failed", it) }
-
-    // ── Output path ───────────────────────────────────────────────────────────
-
-    private fun resolveOutputFile(context: Context, projectName: String): File {
-        val safe = projectName.replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
-        val name = "${safe}_${System.currentTimeMillis()}.mp4"
-        return if (Build.VERSION.SDK_INT >= 29)
-            File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), name)
-        else
-            File(context.cacheDir, "exports/$name").also { it.parentFile?.mkdirs() }
-    }
 }

@@ -103,6 +103,85 @@ object VideoExporter {
         var muxerStarted  = false
         val bufferInfo    = MediaCodec.BufferInfo()
 
+        fun startMuxerIfNeeded() {
+            if (!muxerStarted) {
+                videoTrackIdx = muxer.addTrack(encoder.outputFormat)
+                if (settings.embedAudio && project.audioFilePath != null)
+                    audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
+                muxer.start(); muxerStarted = true
+            }
+        }
+
+        /**
+         * Drains whatever output is immediately available (timeout = 0, i.e.
+         * non-blocking). Called once per rendered frame to keep the encoder's
+         * output queue from backing up. Returns true once the end-of-stream
+         * buffer has been observed and released.
+         */
+        fun drainAvailable(): Boolean {
+            while (true) {
+                val outIdx = encoder.dequeueOutputBuffer(bufferInfo, 0)
+                when {
+                    outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> return false
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> startMuxerIfNeeded()
+                    outIdx >= 0 -> {
+                        val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                        if (!isConfig && muxerStarted && bufferInfo.size > 0) {
+                            muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
+                        }
+                        encoder.releaseOutputBuffer(outIdx, false)
+                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return true
+                    }
+                }
+            }
+        }
+
+        /** Blocking variant used only for the final drain, where we must wait for EOS. */
+        fun drainUntilEndOfStream() {
+            while (true) {
+                val outIdx = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT)
+                when {
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> startMuxerIfNeeded()
+                    outIdx >= 0 -> {
+                        val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                        if (!isConfig && muxerStarted && bufferInfo.size > 0) {
+                            muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
+                        }
+                        encoder.releaseOutputBuffer(outIdx, false)
+                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
+                    }
+                    // INFO_TRY_AGAIN_LATER: dequeueOutputBuffer already blocked up to
+                    // TIMEOUT µs, so looping here isn't a busy-spin — just retry.
+                }
+            }
+        }
+
+        /**
+         * Queues one frame of NV12 data to the encoder, retrying (and draining
+         * available output in between) if no input buffer is free yet.
+         *
+         * This codec was configured in byte-buffer input mode (no Surface passed
+         * to `configure`/no `createInputSurface()` call), so end-of-stream MUST be
+         * signalled via [MediaCodec.BUFFER_FLAG_END_OF_STREAM] on the last queued
+         * buffer. Calling `encoder.signalEndOfInputStream()` — which is only valid
+         * for Surface-input mode — throws `IllegalStateException: ... called
+         * without an input surface set`, which is what previously crashed export.
+         */
+        fun queueFrame(data: ByteArray, presentationTimeUs: Long, isEos: Boolean) {
+            var inIdx = -1
+            var attempts = 0
+            while (inIdx < 0) {
+                inIdx = encoder.dequeueInputBuffer(TIMEOUT)
+                if (inIdx < 0) {
+                    drainAvailable()
+                    check(++attempts < 500) { "Encoder stalled: no input buffer became available" }
+                }
+            }
+            encoder.getInputBuffer(inIdx)!!.let { it.clear(); it.put(data) }
+            val flags = if (isEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
+            encoder.queueInputBuffer(inIdx, 0, data.size, presentationTimeUs, flags)
+        }
+
         // ── Render + encode loop ──────────────────────────────────────────────
         for (frameIdx in 0 until totalFrames) {
             fCanvas.drawColor(bgColor)
@@ -111,61 +190,15 @@ object VideoExporter {
 
             argbToNV12(bitmap, width, height, nv12)
 
-            val inIdx = encoder.dequeueInputBuffer(TIMEOUT)
-            if (inIdx >= 0) {
-                encoder.getInputBuffer(inIdx)!!.let { it.clear(); it.put(nv12) }
-                encoder.queueInputBuffer(inIdx, 0, nv12.size, frameIdx.toLong() * 1_000_000L / fps, 0)
-            }
+            val presentationTimeUs = frameIdx.toLong() * 1_000_000L / fps
+            queueFrame(nv12, presentationTimeUs, isEos = frameIdx == totalFrames - 1)
+            drainAvailable()
 
-            drain@ while (true) {
-                val outIdx = encoder.dequeueOutputBuffer(bufferInfo, 0)
-                when {
-                    outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> break@drain
-                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        if (!muxerStarted) {
-                            videoTrackIdx = muxer.addTrack(encoder.outputFormat)
-                            if (settings.embedAudio && project.audioFilePath != null)
-                                audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
-                            muxer.start(); muxerStarted = true
-                        }
-                    }
-                    outIdx >= 0 -> {
-                        val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                        if (!isConfig && muxerStarted && bufferInfo.size > 0) {
-                            muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
-                        }
-                        encoder.releaseOutputBuffer(outIdx, false)
-                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break@drain
-                    }
-                }
-            }
             onProgress(frameIdx.toFloat() / totalFrames * 0.90f)
         }
 
-        // ── Signal EOS and drain remaining ────────────────────────────────────
-        encoder.signalEndOfInputStream()
-        eos@ while (true) {
-            val outIdx = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT)
-            when {
-                outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    if (!muxerStarted) {
-                        videoTrackIdx = muxer.addTrack(encoder.outputFormat)
-                        if (settings.embedAudio && project.audioFilePath != null)
-                            audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
-                        muxer.start(); muxerStarted = true
-                    }
-                }
-                outIdx >= 0 -> {
-                    val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                    if (!isConfig && muxerStarted && bufferInfo.size > 0) {
-                        muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
-                    }
-                    encoder.releaseOutputBuffer(outIdx, false)
-                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break@eos
-                }
-                outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> break@eos
-            }
-        }
+        // ── Drain remaining output until the EOS buffer comes through ─────────
+        drainUntilEndOfStream()
 
         // ── Mux audio (copy compressed samples, no re-encode) ─────────────────
         if (muxerStarted && audioTrackIdx >= 0 && project.audioFilePath != null) {

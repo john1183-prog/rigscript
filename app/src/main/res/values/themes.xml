@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        RigScript is 100% Jetpack Compose — all real theming (colors, typography)
+        comes from RigScriptTheme in ui/theme/Theme.kt. This XML theme only covers
+        what Compose can't: the window background shown for an instant before the
+        first Compose frame draws, and edge-to-edge system bar behaviour (paired
+        with enableEdgeToEdge() in MainActivity).
+
+        Deliberately extends a platform `android:Theme...` rather than
+        Theme.AppCompat or Theme.Material3 — neither AppCompat nor the View-based
+        Material Components library is a dependency of this project, so styles
+        from either would fail to resolve at build time.
+    -->
+    <style name="Theme.RigScript" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/windowBackground</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

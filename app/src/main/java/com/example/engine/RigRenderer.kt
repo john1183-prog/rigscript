@@ -5,15 +5,25 @@ import com.example.data.AppearanceSettings
 import kotlin.math.min
 
 /**
- * Stateless renderer. Accepts pre-computed [angles] from [PlaybackEngine] and
- * draws the stick figure onto any [Canvas].
+ * Forward-kinematic stick-figure renderer. Accepts pre-computed [angles] from
+ * [PlaybackEngine] and draws onto any [Canvas].
  *
- * Forward-kinematic pass uses Android's [Matrix] chain so the math is handled
- * by the platform's optimised native matrix code.
+ * Uses Android's [Matrix] chain for the FK pass, with pre-allocated working
+ * objects ([matrices], [pts], the [Paint]s) to keep [draw] allocation-free.
  *
- * Pre-allocates all working objects at construction to keep [draw] allocation-free.
+ * Deliberately a [class], NOT an `object` — this renderer is called from two
+ * different background threads that can run concurrently: the live preview's
+ * [com.example.ui.canvas.AnimationSurfaceView] render thread (which keeps
+ * drawing continuously, even while paused, for as long as the editor screen is
+ * open) and [VideoExporter]'s export coroutine. If both shared one singleton's
+ * mutable [matrices]/[pts] arrays, a write from one thread mid-frame could be
+ * read by the other, producing a torn, garbage transform for whichever bone
+ * the race happened to hit — visually, a stray fragment (often the head
+ * circle, since a misplaced circle is the most visually obvious symptom)
+ * flickering in at a wrong position for a single frame, then vanishing.
+ * Each caller now constructs its own private instance instead.
  */
-object RigRenderer {
+class RigRenderer {
 
     private val rig    = StickFigureRig
     private val bones  = rig.BONES

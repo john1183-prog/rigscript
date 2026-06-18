@@ -32,6 +32,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
     // ── Engine ────────────────────────────────────────────────────────────────
 
     private val engine     = PlaybackEngine()
+    private val renderer   = RigRenderer()   // private instance — never shared with VideoExporter's render thread
     private var appearance = AppearanceSettings()
     private var isPlaying  = false
     private var lastTickMs = 0L
@@ -155,7 +156,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
         catch (e: Exception) { return }
         try {
             canvas.drawColor(appearance.previewBgColor.toInt())
-            RigRenderer.draw(canvas, engine.currentAngles, appearance, width, height)
+            renderer.draw(canvas, engine.currentAngles, appearance, width, height)
         } finally {
             holder.unlockCanvasAndPost(canvas)
         }

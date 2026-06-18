@@ -79,6 +79,9 @@ object VideoExporter {
         val totalFrames = (totalSec * fps).toInt().coerceAtLeast(1)
 
         val engine = PlaybackEngine().also { it.loadTimeline(keyframes) }
+        // Own private renderer instance — see the class doc on RigRenderer for
+        // why this must never be a shared singleton with the live preview.
+        val renderer = RigRenderer()
 
         val bitmap  = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val fCanvas = Canvas(bitmap)
@@ -186,7 +189,7 @@ object VideoExporter {
         for (frameIdx in 0 until totalFrames) {
             fCanvas.drawColor(bgColor)
             engine.seekTo(frameIdx.toFloat() / fps)
-            RigRenderer.draw(fCanvas, engine.currentAngles, appearance, width, height, forExport = true)
+            renderer.draw(fCanvas, engine.currentAngles, appearance, width, height, forExport = true)
 
             argbToNV12(bitmap, width, height, nv12)
 

@@ -374,23 +374,12 @@ private fun AppearancePanel(
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         Text("Colors", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        // Named arguments required here: ColorPickerRow's last parameter is
-        // showAlpha (Boolean, defaulted), so a trailing lambda binds to THAT
-        // instead of onColorChange and fails to typecheck.
-        ColorPickerRow(
-            label = "Figure color",
-            colorArgb = appearance.boneColor,
-            onColorChange = { newColor ->
-                onAppearance(appearance.copy(boneColor = newColor, headColor = newColor, jointColor = newColor))
-            }
-        )
-        ColorPickerRow(
-            label = "Background color",
-            colorArgb = appearance.previewBgColor,
-            onColorChange = { newColor ->
-                onAppearance(appearance.copy(previewBgColor = newColor, exportBgColor = newColor))
-            }
-        )
+        ColorPickerRow("Figure color", appearance.boneColor) { newColor ->
+            onAppearance(appearance.copy(boneColor = newColor, headColor = newColor, jointColor = newColor))
+        }
+        ColorPickerRow("Background color", appearance.previewBgColor) { newColor ->
+            onAppearance(appearance.copy(previewBgColor = newColor, exportBgColor = newColor))
+        }
 
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         Text("Character", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

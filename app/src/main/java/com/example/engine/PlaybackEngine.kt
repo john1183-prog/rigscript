@@ -99,6 +99,30 @@ class PlaybackEngine {
         baseAngles.copyInto(currentAngles)
     }
 
+    /**
+     * Export-only variant of [seekTo] that also applies the amplitude motion
+     * layer (idle breathing + talk sway) on top of the scripted pose.
+     *
+     * Unlike [tick], the pose is resolved analytically (no spring integration,
+     * no inter-frame carry-over for the bones). However, [smoothedAmplitude]
+     * IS stateful — its low-pass filter accumulates correctly only when frames
+     * are called sequentially (0, 1, 2, ...). Never call this out of order.
+     *
+     * [rawAmp] should be indexed from the pre-baked amplitude envelope at
+     * [timeSec], using [AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS] as the
+     * envelope sample rate — independent of the export FPS.
+     */
+    fun seekToWithAmplitude(timeSec: Float, rawAmp: Float) {
+        currentTimeSec = timeSec
+        springVelocities.fill(0f)
+        resolveBaseAngles(timeSec, useAnalyticalSpring = true)
+        baseAngles.copyInto(currentAngles)
+        // dt passed as a nominal 1/30s. The low-pass filter in applyAmplitudeMotion
+        // is fixed-coefficient and does not depend on dt, so the exact value
+        // doesn't affect correctness — only the sequential call order matters.
+        applyAmplitudeMotion(1f / 30f, rawAmp)
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /**

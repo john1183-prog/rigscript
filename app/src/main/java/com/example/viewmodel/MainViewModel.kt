@@ -278,10 +278,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val compiled = compileTimeline(project.script)
                 val result = VideoExporter.export(
-                    context    = context,
-                    project    = project,
-                    keyframes  = compiled,
-                    onProgress = { _exportProgress.value = it }
+                    context           = context,
+                    project           = project,
+                    keyframes         = compiled,
+                    amplitudeSettings = _amplitudeSettings.value,
+                    onProgress        = { _exportProgress.value = it }
                 )
                 _exportedFile.value = result
                 _message.emit("Export complete: ${result.location}")

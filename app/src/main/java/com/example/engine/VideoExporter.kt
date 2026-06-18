@@ -59,6 +59,7 @@ object VideoExporter {
         context: Context,
         project: ProjectDef,
         keyframes: List<BakedKeyframe>,
+        amplitudeSettings: com.example.data.AmplitudeSettings = com.example.data.AmplitudeSettings(),
         onProgress: (Float) -> Unit
     ): ExportResult = withContext(Dispatchers.Default) {
 
@@ -78,7 +79,15 @@ object VideoExporter {
         val totalSec  = maxOf(scriptEnd, project.audioDurationSec) + 1f
         val totalFrames = (totalSec * fps).toInt().coerceAtLeast(1)
 
-        val engine = PlaybackEngine().also { it.loadTimeline(keyframes) }
+        val engine = PlaybackEngine().also {
+            it.loadTimeline(keyframes)
+            it.amplitudeSettings = amplitudeSettings
+        }
+
+        // Pre-baked amplitude envelope, indexed at AMPLITUDE_ANALYSIS_FPS (always 30fps,
+        // independent of the export FPS so the envelope lookup is always correct).
+        val envelope   = project.amplitudeEnvelope
+        val envFps     = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS
         // Own private renderer instance — see the class doc on RigRenderer for
         // why this must never be a shared singleton with the live preview.
         val renderer = RigRenderer()
@@ -188,7 +197,12 @@ object VideoExporter {
         // ── Render + encode loop ──────────────────────────────────────────────
         for (frameIdx in 0 until totalFrames) {
             fCanvas.drawColor(bgColor)
-            engine.seekTo(frameIdx.toFloat() / fps)
+            val timeSec = frameIdx.toFloat() / fps
+            val rawAmp  = if (envelope.isNotEmpty()) {
+                val envIdx = (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1)
+                envelope[envIdx]
+            } else 0f
+            engine.seekToWithAmplitude(timeSec, rawAmp)
             renderer.draw(fCanvas, engine.currentAngles, appearance, width, height, forExport = true)
 
             argbToNV12(bitmap, width, height, nv12)

@@ -30,8 +30,8 @@ import androidx.compose.ui.unit.dp
 fun ColorPickerRow(
     label: String,
     colorArgb: Long,
-    onColorChange: (Long) -> Unit,
-    showAlpha: Boolean = false
+    showAlpha: Boolean = false,
+    onColorChange: (Long) -> Unit
 ) {
     val argb = colorArgb and 0xFFFFFFFFL
     val a = ((argb shr 24) and 0xFF).toInt()

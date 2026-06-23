@@ -21,6 +21,12 @@ class PlaybackEngine {
     /** Total bone angles (defaultAngle + activeOffset) — read by RigRenderer. */
     val currentAngles: FloatArray = FloatArray(n) { i -> bones[i].defaultAngleDegrees }
 
+    /** Coarse mouth shape for the current frame — see [MouthShape]. Read by RigRenderer. */
+    @Volatile var currentMouthShape: Int = MouthShape.CLOSED
+
+    /** Smoothed audio amplitude (0..1) for the current frame — used by RigRenderer for continuous mouth-openness scaling. */
+    val currentAmplitude: Float get() = smoothedAmplitude
+
     // ── Internal state ────────────────────────────────────────────────────────
 
     private val springVelocities: FloatArray = FloatArray(n)
@@ -30,6 +36,7 @@ class PlaybackEngine {
 
     @Volatile var amplitudeSettings: AmplitudeSettings = AmplitudeSettings()
     @Volatile var rawAmplitude: Float = 0f          // set from AudioPlayer each frame
+    @Volatile var rawMouthShape: Int = MouthShape.CLOSED  // set from AudioPlayer each frame
 
     // Pre-allocated working arrays — zero allocation in the hot path
     private val baseAngles: FloatArray = FloatArray(n)  // target angles from timeline
@@ -89,6 +96,9 @@ class PlaybackEngine {
 
         // 3. Layer amplitude-driven motion on top
         applyAmplitudeMotion(safeDt, rawAmp)
+
+        // 4. Propagate mouth shape from AudioPlayer → renderer
+        currentMouthShape = rawMouthShape
     }
 
     /** Seek without physics — instantly snaps to the correct pose at [timeSec]. */
@@ -112,15 +122,13 @@ class PlaybackEngine {
      * [timeSec], using [AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS] as the
      * envelope sample rate — independent of the export FPS.
      */
-    fun seekToWithAmplitude(timeSec: Float, rawAmp: Float) {
+    fun seekToWithAmplitude(timeSec: Float, rawAmp: Float, mouthShape: Int = MouthShape.CLOSED) {
         currentTimeSec = timeSec
         springVelocities.fill(0f)
         resolveBaseAngles(timeSec, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
-        // dt passed as a nominal 1/30s. The low-pass filter in applyAmplitudeMotion
-        // is fixed-coefficient and does not depend on dt, so the exact value
-        // doesn't affect correctness — only the sequential call order matters.
         applyAmplitudeMotion(1f / 30f, rawAmp)
+        currentMouthShape = mouthShape
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

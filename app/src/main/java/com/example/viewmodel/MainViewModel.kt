@@ -222,9 +222,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
             updateActive {
                 it.copy(
-                    audioFilePath     = destFile.absolutePath,
-                    audioDurationSec  = result.durationSec,
-                    amplitudeEnvelope = result.envelope.toList()
+                    audioFilePath       = destFile.absolutePath,
+                    audioDurationSec    = result.durationSec,
+                    amplitudeEnvelope   = result.envelope.toList(),
+                    mouthShapeEnvelope  = result.mouthShapes.toList()
                 )
             }
             _audioFileName.value = fileName

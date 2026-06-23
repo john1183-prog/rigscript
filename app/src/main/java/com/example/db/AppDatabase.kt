@@ -32,14 +32,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private fun buildDatabase(context: Context): AppDatabase =
-            Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "rigscript.db")
+        private fun buildDatabase(context: Context): AppDatabase {
+            lateinit var instance: AppDatabase
+            instance = Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "rigscript.db")
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
-                        // Seed built-in poses on first creation
+                        // Seed built-in poses on first creation.
+                        // Uses the locally-captured `instance` rather than the
+                        // companion's INSTANCE field: INSTANCE is only assigned
+                        // in getInstance() *after* this function returns, so
+                        // reading it from the coroutine would see null and
+                        // silently skip seeding on a cold start.
                         CoroutineScope(Dispatchers.IO).launch {
-                            INSTANCE?.poseDao()?.let { dao ->
+                            instance.poseDao().let { dao ->
                                 StickFigureRig.BUILT_IN_POSES.forEach { pose ->
                                     dao.insertIfAbsent(
                                         PoseEntity(
@@ -56,5 +62,7 @@ abstract class AppDatabase : RoomDatabase() {
                     }
                 })
                 .build()
+            return instance
+        }
     }
 }

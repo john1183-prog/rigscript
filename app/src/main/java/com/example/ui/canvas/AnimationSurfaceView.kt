@@ -61,6 +61,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
                 val player = audioPlayer
                 val amp = if (player != null) {
                     player.updateAmplitude()
+                    engine.rawMouthShape = player.currentMouthShape
                     player.currentAmplitude
                 } else 0f
                 engine.tick(dt.coerceIn(0f, 0.05f), amp)
@@ -156,7 +157,9 @@ class AnimationSurfaceView @JvmOverloads constructor(
         catch (e: Exception) { return }
         try {
             canvas.drawColor(appearance.previewBgColor.toInt())
-            renderer.draw(canvas, engine.currentAngles, appearance, width, height)
+            renderer.draw(canvas, engine.currentAngles, appearance, width, height,
+                mouthShape   = engine.currentMouthShape,
+                mouthOpenness = engine.currentAmplitude)
         } finally {
             holder.unlockCanvasAndPost(canvas)
         }

@@ -5,18 +5,23 @@ import android.util.Log
 
 /**
  * Thin wrapper around [MediaPlayer] that exposes the current audio amplitude
- * by indexing into a pre-baked [amplitudeEnvelope] from [AmplitudeAnalyzer].
+ * and coarse mouth shape by indexing into pre-baked envelopes from
+ * [AmplitudeAnalyzer].
  *
- * All calls should be made from a single thread. [currentAmplitude] is @Volatile
- * for safe cross-thread reads (e.g. from the render thread).
+ * All calls should be made from a single thread. [currentAmplitude] and
+ * [currentMouthShape] are @Volatile for safe cross-thread reads from the render thread.
  */
 class AudioPlayer private constructor() {
 
     private var player: MediaPlayer? = null
     private var envelope: FloatArray = FloatArray(0)
+    private var mouthShapes: IntArray = IntArray(0)
     private var envelopeFps: Int = 30
 
     @Volatile var currentAmplitude: Float = 0f
+        private set
+
+    @Volatile var currentMouthShape: Int = MouthShape.CLOSED
         private set
 
     val isLoaded: Boolean get() = player != null
@@ -27,9 +32,10 @@ class AudioPlayer private constructor() {
 
     // ── Load / unload ─────────────────────────────────────────────────────────
 
-    fun load(filePath: String, envelope: FloatArray, fps: Int = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS) {
+    fun load(filePath: String, envelope: FloatArray, mouthShapes: IntArray = IntArray(0), fps: Int = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS) {
         release()
         this.envelope    = envelope
+        this.mouthShapes = mouthShapes
         this.envelopeFps = fps
         runCatching {
             player = MediaPlayer().apply {
@@ -42,7 +48,8 @@ class AudioPlayer private constructor() {
     fun release() {
         runCatching { player?.release() }
         player = null
-        currentAmplitude = 0f
+        currentAmplitude  = 0f
+        currentMouthShape = MouthShape.CLOSED
     }
 
     // ── Playback controls ─────────────────────────────────────────────────────
@@ -62,14 +69,21 @@ class AudioPlayer private constructor() {
     // ── Amplitude ─────────────────────────────────────────────────────────────
 
     /**
-     * Call each render frame. Reads amplitude from the envelope at the current
-     * playback position and updates [currentAmplitude].
+     * Call each render frame. Reads amplitude and mouth shape from the
+     * envelopes at the current playback position.
      */
     fun updateAmplitude() {
-        if (envelope.isEmpty()) { currentAmplitude = 0f; return }
+        if (envelope.isEmpty()) {
+            currentAmplitude  = 0f
+            currentMouthShape = MouthShape.CLOSED
+            return
+        }
         val frameSec = positionMs / 1000f
         val idx      = (frameSec * envelopeFps).toInt().coerceIn(0, envelope.size - 1)
-        currentAmplitude = envelope[idx]
+        currentAmplitude  = envelope[idx]
+        currentMouthShape = if (mouthShapes.isNotEmpty())
+            mouthShapes[idx.coerceAtMost(mouthShapes.size - 1)]
+        else MouthShape.CLOSED
     }
 
     // ── Singleton ─────────────────────────────────────────────────────────────

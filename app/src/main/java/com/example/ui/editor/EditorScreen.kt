@@ -91,7 +91,11 @@ fun EditorScreen(
     LaunchedEffect(project?.audioFilePath) {
         project?.let { p ->
             if (p.audioFilePath != null && p.amplitudeEnvelope.isNotEmpty()) {
-                audioPlayer.load(filePath = p.audioFilePath, envelope = p.amplitudeEnvelope.toFloatArray())
+                audioPlayer.load(
+                    filePath    = p.audioFilePath,
+                    envelope    = p.amplitudeEnvelope.toFloatArray(),
+                    mouthShapes = p.mouthShapeEnvelope.toIntArray()
+                )
             }
         }
     }
@@ -408,6 +412,12 @@ private fun AppearancePanel(
         }
         LabeledSwitch("Show grid (preview only)", appearance.showGrid) {
             onAppearance(appearance.copy(showGrid = it))
+        }
+        LabeledSwitch("Show mouth", appearance.showMouth) {
+            onAppearance(appearance.copy(showMouth = it))
+        }
+        ColorPickerRow("Mouth color", appearance.mouthColor) { newColor ->
+            onAppearance(appearance.copy(mouthColor = newColor))
         }
 
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))

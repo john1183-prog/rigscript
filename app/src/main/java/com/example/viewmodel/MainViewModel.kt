@@ -299,6 +299,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _message.emit("Export complete: ${result.location}")
             } catch (e: kotlinx.coroutines.CancellationException) {
                 _message.emit("Export cancelled")
+                throw e   // must re-throw so the coroutine framework knows it was cancelled
             } catch (e: Exception) {
                 _message.emit("Export failed: ${e.message}")
             } finally {

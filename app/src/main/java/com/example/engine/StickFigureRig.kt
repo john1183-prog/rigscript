@@ -228,6 +228,38 @@ object StickFigureRig {
             "lower_leg_r"  to  92f,
             "upper_leg_l"  to  72f,
             "lower_leg_l"  to -92f
+        )),
+
+        // ── New poses ────────────────────────────────────────────────────────────
+
+        // Arms raised higher and wider than explain — "let me show you this",
+        // presenting information, more emphatic than the default explain gesture.
+        PoseDef("present", "Present", "builtin", true, mapOf(
+            "torso"        to -8f,
+            "head"         to  5f,
+            "upper_arm_r"  to -100f,
+            "lower_arm_r"  to -45f,
+            "upper_arm_l"  to  100f,
+            "lower_arm_l"  to  45f
+        )),
+
+        // Right arm bent inward pointing at own chest — "I", "me", "my point",
+        // "why am I saying this". Fills a gap that explain and point_* can't cover.
+        PoseDef("point_self", "Point Self", "builtin", true, mapOf(
+            "torso"        to  5f,
+            "upper_arm_r"  to -55f,
+            "lower_arm_r"  to -108f
+        )),
+
+        // Arms low and open, forearms angled upward (palms-up feel) — receptive,
+        // "here's the thing", "what can I say". Softer and lower than shrug.
+        PoseDef("open_hands", "Open Hands", "builtin", true, mapOf(
+            "torso"        to  5f,
+            "head"         to  3f,
+            "upper_arm_r"  to -42f,
+            "lower_arm_r"  to -70f,
+            "upper_arm_l"  to  42f,
+            "lower_arm_l"  to  70f
         ))
     )
 

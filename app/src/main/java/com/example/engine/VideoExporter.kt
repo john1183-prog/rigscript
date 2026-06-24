@@ -19,6 +19,8 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import com.example.data.ProjectDef
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
@@ -112,10 +114,13 @@ object VideoExporter {
         val output = OutputTarget.create(context, project.projectName)
         val muxer  = output.openMuxer()
 
-        var videoTrackIdx = -1
-        var audioTrackIdx = -1
-        var muxerStarted  = false
-        val bufferInfo    = MediaCodec.BufferInfo()
+        var videoTrackIdx    = -1
+        var audioTrackIdx    = -1
+        var muxerStarted     = false
+        var encoderReleased  = false
+        var muxerReleased    = false
+        var success          = false
+        val bufferInfo       = MediaCodec.BufferInfo()
 
         fun startMuxerIfNeeded() {
             if (!muxerStarted) {
@@ -164,26 +169,17 @@ object VideoExporter {
                         encoder.releaseOutputBuffer(outIdx, false)
                         if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
                     }
-                    // INFO_TRY_AGAIN_LATER: dequeueOutputBuffer already blocked up to
-                    // TIMEOUT µs, so looping here isn't a busy-spin — just retry.
                 }
             }
         }
 
         /**
-         * Queues one frame of NV12 data to the encoder, retrying (and draining
-         * available output in between) if no input buffer is free yet.
-         *
-         * This codec was configured in byte-buffer input mode (no Surface passed
-         * to `configure`/no `createInputSurface()` call), so end-of-stream MUST be
-         * signalled via [MediaCodec.BUFFER_FLAG_END_OF_STREAM] on the last queued
-         * buffer. Calling `encoder.signalEndOfInputStream()` — which is only valid
-         * for Surface-input mode — throws `IllegalStateException: ... called
-         * without an input surface set`, which is what previously crashed export.
+         * Queues one frame of NV12 data to the encoder. EOS must be signalled
+         * via [MediaCodec.BUFFER_FLAG_END_OF_STREAM] on the last buffer —
+         * signalEndOfInputStream() is only valid for Surface-input mode.
          */
         fun queueFrame(data: ByteArray, presentationTimeUs: Long, isEos: Boolean) {
-            var inIdx = -1
-            var attempts = 0
+            var inIdx = -1; var attempts = 0
             while (inIdx < 0) {
                 inIdx = encoder.dequeueInputBuffer(TIMEOUT)
                 if (inIdx < 0) {
@@ -192,53 +188,68 @@ object VideoExporter {
                 }
             }
             encoder.getInputBuffer(inIdx)!!.let { it.clear(); it.put(data) }
-            val flags = if (isEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
-            encoder.queueInputBuffer(inIdx, 0, data.size, presentationTimeUs, flags)
+            encoder.queueInputBuffer(inIdx, 0, data.size, presentationTimeUs,
+                if (isEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
         }
 
-        // ── Render + encode loop ──────────────────────────────────────────────
-        for (frameIdx in 0 until totalFrames) {
-            fCanvas.drawColor(bgColor)
-            val timeSec = frameIdx.toFloat() / fps
-            val envIdx  = if (envelope.isNotEmpty())
-                (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
-            val rawAmp  = if (envIdx >= 0) envelope[envIdx] else 0f
-            val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
-                mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
+        try {
+            // ── Render + encode loop ──────────────────────────────────────────
+            // ensureActive() every 10 frames is the key fix for real cancellation.
+            // Coroutine cancellation is cooperative — without a suspension/check
+            // point inside this tight CPU loop, cancelExport() sets the flag but
+            // the loop keeps running to completion. ensureActive() throws
+            // CancellationException as soon as the flag is seen, propagating to
+            // the finally block which releases encoder/muxer and aborts the output.
+            for (frameIdx in 0 until totalFrames) {
+                if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
 
-            engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
-            renderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
-                forExport     = true,
-                mouthShape    = engine.currentMouthShape,
-                mouthOpenness = engine.currentAmplitude)
+                fCanvas.drawColor(bgColor)
+                val timeSec = frameIdx.toFloat() / fps
+                val envIdx  = if (envelope.isNotEmpty())
+                    (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
+                val rawAmp  = if (envIdx >= 0) envelope[envIdx] else 0f
+                val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
+                    mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
 
-            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-            argbToNV12(pixels, width, height, nv12)
+                engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
+                renderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
+                    forExport     = true,
+                    mouthShape    = engine.currentMouthShape,
+                    mouthOpenness = engine.currentAmplitude)
 
-            val presentationTimeUs = frameIdx.toLong() * 1_000_000L / fps
-            queueFrame(nv12, presentationTimeUs, isEos = frameIdx == totalFrames - 1)
-            drainAvailable()
+                bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+                argbToNV12(pixels, width, height, nv12)
 
-            onProgress(frameIdx.toFloat() / totalFrames * 0.90f)
+                val presentationTimeUs = frameIdx.toLong() * 1_000_000L / fps
+                queueFrame(nv12, presentationTimeUs, isEos = frameIdx == totalFrames - 1)
+                drainAvailable()
+
+                onProgress(frameIdx.toFloat() / totalFrames * 0.90f)
+            }
+
+            // ── Drain + audio + finish ────────────────────────────────────────
+            drainUntilEndOfStream()
+            if (muxerStarted && audioTrackIdx >= 0 && project.audioFilePath != null) {
+                copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (totalSec * 1_000_000L).toLong())
+            }
+            onProgress(1f)
+
+            encoder.stop();  encoder.release();  encoderReleased = true
+            if (muxerStarted) { muxer.stop(); muxer.release(); muxerReleased = true }
+            output.finish(context)
+            success = true
+
+            Log.i(TAG, "Exported $totalFrames frames -> ${output.location}")
+            ExportResult(output.uri, output.location)
+
+        } finally {
+            bitmap.recycle()
+            // Release hardware resources if the success path didn't get there —
+            // covers both cancellation (CancellationException) and unexpected errors.
+            if (!encoderReleased) { runCatching { encoder.stop() }; runCatching { encoder.release() } }
+            if (muxerStarted && !muxerReleased) { runCatching { muxer.stop() }; runCatching { muxer.release() } }
+            if (!success) output.abort(context)
         }
-
-        // ── Drain remaining output until the EOS buffer comes through ─────────
-        drainUntilEndOfStream()
-
-        // ── Mux audio (copy compressed samples, no re-encode) ─────────────────
-        if (muxerStarted && audioTrackIdx >= 0 && project.audioFilePath != null) {
-            copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (totalSec * 1_000_000L).toLong())
-        }
-
-        onProgress(1f)
-        bitmap.recycle()
-        encoder.stop();  encoder.release()
-        muxer.stop();    muxer.release()
-        output.finish(context)
-
-        Log.i(TAG, "Exported $totalFrames frames -> ${output.location}")
-        ExportResult(output.uri, output.location)
-    }
 
     // ── Output targets ───────────────────────────────────────────────────────
 
@@ -252,6 +263,8 @@ object VideoExporter {
         abstract val location: String
         abstract fun openMuxer(): MediaMuxer
         abstract fun finish(context: Context)
+        /** Called on cancellation or error — deletes the partial output cleanly. */
+        abstract fun abort(context: Context)
 
         companion object {
             fun create(context: Context, projectName: String): OutputTarget {
@@ -291,6 +304,11 @@ object VideoExporter {
             context.contentResolver.update(uri, values, null, null)
             pfd.close()
         }
+
+        override fun abort(context: Context) {
+            runCatching { pfd.close() }
+            runCatching { context.contentResolver.delete(uri, null, null) }
+        }
     }
 
     /**
@@ -315,8 +333,11 @@ object VideoExporter {
             MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
         override fun finish(context: Context) {
-            // Make the file show up in Gallery/file managers immediately.
             MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("video/mp4"), null)
+        }
+
+        override fun abort(context: Context) {
+            runCatching { file.delete() }
         }
     }
 

@@ -251,7 +251,7 @@ object VideoExporter {
             if (!success) output.abort(context)
         }
 
-    // ── Output targets ───────────────────────────────────────────────────────
+    } // end withContext(Dispatchers.Default)
 
     /**
      * Encapsulates where/how the encoded file is written, isolating the

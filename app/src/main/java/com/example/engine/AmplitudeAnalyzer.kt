@@ -18,7 +18,12 @@ import kotlin.math.sqrt
  *               which is absent or zero for some files and would otherwise
  *               silently truncate the envelope to ~1 second.
  */
-data class AmplitudeAnalysisResult(val envelope: FloatArray, val durationSec: Float)
+data class AmplitudeAnalysisResult(
+    val envelope: FloatArray,
+    /** Coarse [MouthShape] constant per frame, parallel to [envelope]. */
+    val mouthShapes: IntArray,
+    val durationSec: Float
+)
 
 /**
  * Analyses an audio file entirely offline using [MediaExtractor] + [MediaCodec].
@@ -142,6 +147,14 @@ object AmplitudeAnalyzer {
         val peak = arr.maxOrNull() ?: 1f
         if (peak > 0f) for (i in arr.indices) arr[i] /= peak
 
-        return AmplitudeAnalysisResult(arr, arr.size / fps.toFloat())
+        val shapes = IntArray(arr.size) { i ->
+            when {
+                arr[i] < 0.10f -> MouthShape.CLOSED
+                arr[i] < 0.50f -> MouthShape.OPEN
+                else           -> MouthShape.WIDE
+            }
+        }
+
+        return AmplitudeAnalysisResult(arr, shapes, arr.size / fps.toFloat())
     }
 }

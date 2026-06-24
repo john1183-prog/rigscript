@@ -17,6 +17,8 @@ data class AppearanceSettings(
     val headColor: Long = 0xFF0000FFL,
     /** Joint dot colour. */
     val jointColor: Long = 0xFF0000FFL,
+    /** Mouth fill colour — visible on the head circle. Default: dark navy. */
+    val mouthColor: Long = 0xFF00004CL,
 
     // ── Stroke & size ─────────────────────────────────────────────────────────
     /** Bone stroke width as a fraction of min(canvasW, canvasH). */

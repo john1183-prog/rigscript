@@ -39,6 +39,7 @@ class RigRenderer {
     private val bonePaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val headPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val jointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val mouthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val gridPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
     /**
@@ -57,7 +58,9 @@ class RigRenderer {
         appearance: AppearanceSettings,
         canvasW: Int,
         canvasH: Int,
-        forExport: Boolean = false
+        forExport: Boolean = false,
+        mouthShape: Int = MouthShape.CLOSED,
+        mouthOpenness: Float = 0f
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
         val scale   = minDim * appearance.characterScale
@@ -74,6 +77,7 @@ class RigRenderer {
         bonePaint.strokeWidth = appearance.boneStrokeNormalized * minDim
         headPaint.color      = appearance.headColor.toInt()
         jointPaint.color     = appearance.jointColor.toInt()
+        mouthPaint.color     = appearance.mouthColor.toInt()
         val jointR           = appearance.jointRadiusNormalized * minDim
         val showJoints       = if (forExport) appearance.showJointsOnExport else appearance.showJoints
 
@@ -116,6 +120,26 @@ class RigRenderer {
                 // Draw head circle at the bone's START (which is the neck tip)
                 val r = bone.headNormalizedRadius * scale
                 canvas.drawCircle(startX, startY, r, headPaint)
+
+                // ── Mouth ─────────────────────────────────────────────────────
+                // Positioned in the lower third of the head circle.
+                // Half-width is fixed; half-height scales with mouthOpenness so
+                // the mouth opens smoothly from a flat line (closed) to a full
+                // oval (wide). A base opening is added for OPEN and WIDE shapes
+                // so a minimal mouth is visible even at low amplitude.
+                val baseOpen = when (mouthShape) {
+                    MouthShape.WIDE -> r * 0.12f
+                    MouthShape.OPEN -> r * 0.06f
+                    else            -> 0f
+                }
+                val halfW = r * 0.38f
+                val halfH = (baseOpen + mouthOpenness * r * 0.22f).coerceAtLeast(r * 0.018f)
+                val mCx   = startX
+                val mCy   = startY + r * 0.32f
+                canvas.drawOval(
+                    RectF(mCx - halfW, mCy - halfH, mCx + halfW, mCy + halfH),
+                    mouthPaint
+                )
             } else {
                 canvas.drawLine(startX, startY, endX, endY, bonePaint)
             }

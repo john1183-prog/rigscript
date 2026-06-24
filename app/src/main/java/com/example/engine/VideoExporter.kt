@@ -86,8 +86,9 @@ object VideoExporter {
 
         // Pre-baked amplitude envelope, indexed at AMPLITUDE_ANALYSIS_FPS (always 30fps,
         // independent of the export FPS so the envelope lookup is always correct).
-        val envelope   = project.amplitudeEnvelope
-        val envFps     = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS
+        val envelope      = project.amplitudeEnvelope
+        val mouthEnvelope = project.mouthShapeEnvelope
+        val envFps        = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS
         // Own private renderer instance — see the class doc on RigRenderer for
         // why this must never be a shared singleton with the live preview.
         val renderer = RigRenderer()
@@ -202,8 +203,14 @@ object VideoExporter {
                 val envIdx = (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1)
                 envelope[envIdx]
             } else 0f
-            engine.seekToWithAmplitude(timeSec, rawAmp)
-            renderer.draw(fCanvas, engine.currentAngles, appearance, width, height, forExport = true)
+            val rawMouth = if (mouthEnvelope.isNotEmpty()) {
+                mouthEnvelope[(timeSec * envFps).toInt().coerceIn(0, mouthEnvelope.size - 1)]
+            } else MouthShape.CLOSED
+            engine.seekToWithAmplitude(timeSec, rawAmp, rawMouth)
+            renderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
+                forExport     = true,
+                mouthShape    = engine.currentMouthShape,
+                mouthOpenness = engine.currentAmplitude)
 
             argbToNV12(bitmap, width, height, nv12)
 

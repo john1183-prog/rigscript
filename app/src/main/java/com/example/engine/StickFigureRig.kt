@@ -24,7 +24,7 @@ object StickFigureRig {
     val BONES: List<BoneDef> = listOf(
         // ── Spine ─────────────────────────────────────────────────────────────
         BoneDef("torso",         null,          0.22f,  -90f),          // up ↑
-        BoneDef("head",          "torso",       0.005f, 0f,
+        BoneDef("head",          "torso",       0.05f, 0f,
             isHeadBone = true, headNormalizedRadius = 0.048f),           // circle at torso tip
 
         // ── Right arm (actor's right = screen left for frontal view) ──────────

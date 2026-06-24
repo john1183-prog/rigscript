@@ -95,6 +95,7 @@ object VideoExporter {
 
         val bitmap  = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val fCanvas = Canvas(bitmap)
+        val pixels  = IntArray(width * height)   // reused every frame — one bulk read replaces w*h getPixel() calls
         val nv12    = ByteArray(width * height * 3 / 2)
 
         val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
@@ -199,20 +200,20 @@ object VideoExporter {
         for (frameIdx in 0 until totalFrames) {
             fCanvas.drawColor(bgColor)
             val timeSec = frameIdx.toFloat() / fps
-            val rawAmp  = if (envelope.isNotEmpty()) {
-                val envIdx = (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1)
-                envelope[envIdx]
-            } else 0f
-            val rawMouth = if (mouthEnvelope.isNotEmpty()) {
-                mouthEnvelope[(timeSec * envFps).toInt().coerceIn(0, mouthEnvelope.size - 1)]
-            } else MouthShape.CLOSED
-            engine.seekToWithAmplitude(timeSec, rawAmp, rawMouth)
+            val envIdx  = if (envelope.isNotEmpty())
+                (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
+            val rawAmp  = if (envIdx >= 0) envelope[envIdx] else 0f
+            val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
+                mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
+
+            engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
             renderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
                 forExport     = true,
                 mouthShape    = engine.currentMouthShape,
                 mouthOpenness = engine.currentAmplitude)
 
-            argbToNV12(bitmap, width, height, nv12)
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+            argbToNV12(pixels, width, height, nv12)
 
             val presentationTimeUs = frameIdx.toLong() * 1_000_000L / fps
             queueFrame(nv12, presentationTimeUs, isEos = frameIdx == totalFrames - 1)
@@ -322,16 +323,18 @@ object VideoExporter {
     // ── YUV conversion ────────────────────────────────────────────────────────
 
     /**
-     * Converts an ARGB [Bitmap] to NV12 (YUV420SemiPlanar) into [out].
-     * Layout: Y plane (w×h) then interleaved UV pairs (w×h/2).
-     * Uses BT.601 limited-range coefficients.
+     * Converts a bulk-read ARGB pixel array to NV12 (YUV420SemiPlanar).
+     * [pixels] must be filled with [Bitmap.getPixels] before calling.
+     * Using getPixels() once per frame instead of getPixel() per pixel
+     * eliminates ~400M JNI calls for a 7-minute 1080p export.
      */
-    private fun argbToNV12(src: Bitmap, w: Int, h: Int, out: ByteArray) {
+    private fun argbToNV12(pixels: IntArray, w: Int, h: Int, out: ByteArray) {
         var yOff  = 0
         var uvOff = w * h
         for (row in 0 until h) {
+            val rowBase = row * w
             for (col in 0 until w) {
-                val p = src.getPixel(col, row)
+                val p = pixels[rowBase + col]
                 val r = (p shr 16) and 0xFF
                 val g = (p shr  8) and 0xFF
                 val b =  p         and 0xFF

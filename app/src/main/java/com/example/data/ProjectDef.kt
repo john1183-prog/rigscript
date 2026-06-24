@@ -22,7 +22,7 @@ data class ProjectDef(
     /** Decoded audio duration in seconds — derived from the amplitude envelope, not container metadata. */
     val audioDurationSec: Float = 0f,
     val amplitudeEnvelope: List<Float> = emptyList(),
-    /** Per-frame [com.example.engine.MouthShape] constants, parallel to [amplitudeEnvelope]. */
+    /** Coarse [com.example.engine.MouthShape] classification per frame, same length/rate as [amplitudeEnvelope]. */
     val mouthShapeEnvelope: List<Int> = emptyList(),
     val script: AnimScript = AnimScript.EMPTY,
     val appearance: AppearanceSettings = AppearanceSettings(),

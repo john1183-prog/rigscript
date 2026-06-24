@@ -17,8 +17,6 @@ data class AppearanceSettings(
     val headColor: Long = 0xFF0000FFL,
     /** Joint dot colour. */
     val jointColor: Long = 0xFF0000FFL,
-    /** Mouth fill colour — visible on the head circle. Default: dark navy. */
-    val mouthColor: Long = 0xFF00004CL,
 
     // ── Stroke & size ─────────────────────────────────────────────────────────
     /** Bone stroke width as a fraction of min(canvasW, canvasH). */
@@ -38,6 +36,12 @@ data class AppearanceSettings(
     /** Overlay grid for spatial reference. */
     val showGrid: Boolean = false,
     val gridColor: Long = 0x22FFFFFFL,
+
+    // ── Mouth (audio-reactive) ────────────────────────────────────────────────
+    /** Whether to draw the amplitude/shape-driven mouth on the head circle. */
+    val showMouth: Boolean = true,
+    /** Mouth fill colour. Dark so it reads as an open/closed shape. */
+    val mouthColor: Long = 0xFF0D0D14L,
 
     // ── Transform ─────────────────────────────────────────────────────────────
     /** Overall character scale multiplier (1.0 = default). */

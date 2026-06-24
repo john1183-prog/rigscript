@@ -3,6 +3,7 @@ package com.example.viewmodel
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -80,6 +81,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _exportedFile = MutableStateFlow<ExportResult?>(null)
     val exportedFile: StateFlow<ExportResult?> = _exportedFile.asStateFlow()
+
+    /** Stored so [cancelExport] can cancel it mid-run. */
+    private var exportJob: Job? = null
 
     // ── Snackbar / toasts ─────────────────────────────────────────────────────
 
@@ -273,7 +277,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportVideo(context: Context) {
         val project = _activeProject.value ?: return
-        viewModelScope.launch {
+        // Acquire a partial wake lock for the duration of the export so the
+        // CPU isn't throttled and the export doesn't pause when the screen
+        // turns off. Released in the finally block regardless of outcome.
+        val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:Export")
+        exportJob = viewModelScope.launch {
+            wakeLock.acquire(3 * 60 * 60 * 1000L)   // 3-hour safety cap
             _exportProgress.value = 0f
             _exportedFile.value   = null
             try {
@@ -287,12 +297,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 _exportedFile.value = result
                 _message.emit("Export complete: ${result.location}")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _message.emit("Export cancelled")
             } catch (e: Exception) {
                 _message.emit("Export failed: ${e.message}")
             } finally {
                 _exportProgress.value = null
+                exportJob = null
+                if (wakeLock.isHeld) wakeLock.release()
             }
         }
+    }
+
+    /** Cancels an in-progress export. Safe to call at any time. */
+    fun cancelExport() {
+        exportJob?.cancel()
+        exportJob = null
+        _exportProgress.value = null
     }
 
     companion object {

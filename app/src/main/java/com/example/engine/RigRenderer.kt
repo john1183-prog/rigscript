@@ -5,23 +5,11 @@ import com.example.data.AppearanceSettings
 import kotlin.math.min
 
 /**
- * Forward-kinematic stick-figure renderer. Accepts pre-computed [angles] from
- * [PlaybackEngine] and draws onto any [Canvas].
+ * Forward-kinematic stick-figure renderer.
  *
- * Uses Android's [Matrix] chain for the FK pass, with pre-allocated working
- * objects ([matrices], [pts], the [Paint]s) to keep [draw] allocation-free.
- *
- * Deliberately a [class], NOT an `object` — this renderer is called from two
- * different background threads that can run concurrently: the live preview's
- * [com.example.ui.canvas.AnimationSurfaceView] render thread (which keeps
- * drawing continuously, even while paused, for as long as the editor screen is
- * open) and [VideoExporter]'s export coroutine. If both shared one singleton's
- * mutable [matrices]/[pts] arrays, a write from one thread mid-frame could be
- * read by the other, producing a torn, garbage transform for whichever bone
- * the race happened to hit — visually, a stray fragment (often the head
- * circle, since a misplaced circle is the most visually obvious symptom)
- * flickering in at a wrong position for a single frame, then vanishing.
- * Each caller now constructs its own private instance instead.
+ * Deliberately a [class], NOT an `object` — the live preview and VideoExporter
+ * run on different threads simultaneously. Each caller owns its own instance so
+ * the pre-allocated [matrices]/[pts]/paints are never shared across threads.
  */
 class RigRenderer {
 
@@ -29,29 +17,15 @@ class RigRenderer {
     private val bones  = rig.BONES
     private val n      = rig.BONE_COUNT
 
-    // Pre-allocated FK matrices, one per bone
     private val matrices = Array(n) { Matrix() }
+    private val pts      = FloatArray(4)   // [startX, startY, endX, endY]
 
-    // Pre-allocated point array for mapping bone endpoints
-    private val pts = FloatArray(4)   // [startX, startY, endX, endY]
-
-    // Paints — re-configured per draw call from AppearanceSettings
     private val bonePaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val headPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val jointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val mouthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val gridPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
-    /**
-     * Main draw call.
-     *
-     * @param canvas        Target canvas (SurfaceView or off-screen Bitmap for export).
-     * @param angles        [PlaybackEngine.currentAngles] — total angles per bone.
-     * @param appearance    Visual configuration.
-     * @param canvasW       Canvas pixel width.
-     * @param canvasH       Canvas pixel height.
-     * @param forExport     When true, respects [AppearanceSettings.showJointsOnExport].
-     */
     fun draw(
         canvas: Canvas,
         angles: FloatArray,
@@ -67,39 +41,29 @@ class RigRenderer {
         val rootX   = canvasW * appearance.rootAnchorX
         val rootY   = canvasH * appearance.rootAnchorY
 
-        // ── Optional grid ──────────────────────────────────────────────────────
-        if (appearance.showGrid && !forExport) {
-            drawGrid(canvas, canvasW, canvasH, appearance)
-        }
+        if (appearance.showGrid && !forExport) drawGrid(canvas, canvasW, canvasH, appearance)
 
-        // ── Configure paints ───────────────────────────────────────────────────
-        bonePaint.color      = appearance.boneColor.toInt()
+        bonePaint.color       = appearance.boneColor.toInt()
         bonePaint.strokeWidth = appearance.boneStrokeNormalized * minDim
-        headPaint.color      = appearance.headColor.toInt()
-        jointPaint.color     = appearance.jointColor.toInt()
-        mouthPaint.color     = appearance.mouthColor.toInt()
-        val jointR           = appearance.jointRadiusNormalized * minDim
-        val showJoints       = if (forExport) appearance.showJointsOnExport else appearance.showJoints
+        headPaint.color       = appearance.headColor.toInt()
+        jointPaint.color      = appearance.jointColor.toInt()
+        mouthPaint.color      = appearance.mouthColor.toInt()
+        val jointR            = appearance.jointRadiusNormalized * minDim
+        val showJoints        = if (forExport) appearance.showJointsOnExport else appearance.showJoints
 
-        // ── FK pass: build matrix chain ────────────────────────────────────────
+        // ── FK pass ───────────────────────────────────────────────────────────
         for (i in 0 until n) {
             val bone   = bones[i]
-            val angle  = angles[i]
             val matrix = matrices[i]
-
             if (bone.parentId == null) {
-                // Root bone: place at rig anchor
                 matrix.reset()
                 matrix.postTranslate(rootX, rootY)
-                matrix.preRotate(angle)
+                matrix.preRotate(angles[i])
             } else {
-                // Child bone: attach at parent's tip
                 val pIdx = rig.BONE_INDEX[bone.parentId] ?: continue
-                val parentBone   = bones[pIdx]
-                val parentLength = parentBone.normalizedLength * scale
                 matrix.set(matrices[pIdx])
-                matrix.preTranslate(parentLength, 0f)
-                matrix.preRotate(angle)
+                matrix.preTranslate(bones[pIdx].normalizedLength * scale, 0f)
+                matrix.preRotate(angles[i])
             }
         }
 
@@ -108,38 +72,24 @@ class RigRenderer {
             val bone   = bones[i]
             val length = bone.normalizedLength * scale
 
-            // Map bone origin and tip through its FK matrix
-            pts[0] = 0f; pts[1] = 0f         // bone origin in local space
-            pts[2] = length; pts[3] = 0f      // bone tip in local space
+            pts[0] = 0f;    pts[1] = 0f       // bone origin (local)
+            pts[2] = length; pts[3] = 0f       // bone tip   (local)
             matrices[i].mapPoints(pts)
 
-            val startX = pts[0]; val startY = pts[1]
-            val endX   = pts[2]; val endY   = pts[3]
+            val startX = pts[0]; val startY = pts[1]   // neck / joint end
+            val endX   = pts[2]; val endY   = pts[3]   // head position
 
             if (bone.isHeadBone) {
-                // Draw head circle at the bone's START (which is the neck tip)
+                // Draw head circle at the bone's TIP (endX, endY).
+                // The bone's own angle now visibly tilts the head in an arc
+                // around the neck — head nods and pose offsets are finally
+                // visible. Previously it was drawn at startX/startY (the
+                // origin), where rotation has no effect on position.
                 val r = bone.headNormalizedRadius * scale
-                canvas.drawCircle(startX, startY, r, headPaint)
-
-                // ── Mouth ─────────────────────────────────────────────────────
-                // Positioned in the lower third of the head circle.
-                // Half-width is fixed; half-height scales with mouthOpenness so
-                // the mouth opens smoothly from a flat line (closed) to a full
-                // oval (wide). A base opening is added for OPEN and WIDE shapes
-                // so a minimal mouth is visible even at low amplitude.
-                val baseOpen = when (mouthShape) {
-                    MouthShape.WIDE -> r * 0.12f
-                    MouthShape.OPEN -> r * 0.06f
-                    else            -> 0f
+                canvas.drawCircle(endX, endY, r, headPaint)
+                if (appearance.showMouth) {
+                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness)
                 }
-                val halfW = r * 0.38f
-                val halfH = (baseOpen + mouthOpenness * r * 0.22f).coerceAtLeast(r * 0.018f)
-                val mCx   = startX
-                val mCy   = startY + r * 0.32f
-                canvas.drawOval(
-                    RectF(mCx - halfW, mCy - halfH, mCx + halfW, mCy + halfH),
-                    mouthPaint
-                )
             } else {
                 canvas.drawLine(startX, startY, endX, endY, bonePaint)
             }
@@ -150,8 +100,34 @@ class RigRenderer {
         }
     }
 
-    private fun drawGrid(canvas: Canvas, w: Int, h: Int, appearance: AppearanceSettings) {
-        gridPaint.color       = appearance.gridColor.toInt()
+    /**
+     * Audio-reactive mouth drawn between the head centre and the neck point,
+     * so it rotates naturally with head tilt. [mouthShape] sets the base
+     * proportions; [mouthOpenness] (0..1 smoothed amplitude) scales height.
+     */
+    private fun drawMouth(
+        canvas: Canvas,
+        hx: Float, hy: Float,   // head centre (tip)
+        nx: Float, ny: Float,   // neck point (origin)
+        r: Float,
+        mouthShape: Int, mouthOpenness: Float
+    ) {
+        val cx = hx + (nx - hx) * 0.42f
+        val cy = hy + (ny - hy) * 0.42f
+
+        val (wFrac, hFrac) = when (mouthShape) {
+            MouthShape.WIDE   -> 0.44f to 0.28f
+            MouthShape.NARROW -> 0.32f to 0.10f
+            MouthShape.CLOSED -> 0.44f to 0.05f
+            else              -> 0.42f to 0.14f   // MID
+        }
+        val hw = wFrac * r
+        val hh = hFrac * r * (0.5f + 0.5f * mouthOpenness.coerceIn(0f, 1f))
+        canvas.drawOval(cx - hw, cy - hh, cx + hw, cy + hh, mouthPaint)
+    }
+
+    private fun drawGrid(canvas: Canvas, w: Int, h: Int, a: AppearanceSettings) {
+        gridPaint.color       = a.gridColor.toInt()
         gridPaint.strokeWidth = 1f
         val step = 80f
         var x = 0f; while (x <= w) { canvas.drawLine(x, 0f, x, h.toFloat(), gridPaint); x += step }

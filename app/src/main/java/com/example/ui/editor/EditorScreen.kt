@@ -204,6 +204,10 @@ fun EditorScreen(
                             CircularProgressIndicator(progress = { progress })
                             Spacer(Modifier.height(8.dp))
                             Text("Exporting ${(progress * 100).toInt()}%", color = Color.White)
+                            Spacer(Modifier.height(12.dp))
+                            TextButton(onClick = { vm.cancelExport() }) {
+                                Text("Cancel", color = Color.White)
+                            }
                         }
                     }
                 }

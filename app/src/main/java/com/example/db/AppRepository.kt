@@ -1,19 +1,27 @@
 package com.example.db
 
+import com.example.data.AppJson
 import com.example.data.PoseDef
 import com.example.data.ProjectDef
 import com.example.engine.StickFigureRig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 class AppRepository(private val db: AppDatabase) {
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    // E1: Use shared AppJson.storage instead of a private Json instance.
+    private val json get() = AppJson.storage
 
     // ── Projects ──────────────────────────────────────────────────────────────
 
+    /**
+     * E4: Lightweight summary flow for the home screen — reads only the
+     * pre-extracted name/date columns, never the full projectJson blob.
+     */
+    fun observeProjectSummaries(): Flow<List<ProjectSummary>> =
+        db.projectDao().observeAllSummaries()
+
+    /** Full project load — use only when actually opening a project. */
     fun observeProjects(): Flow<List<ProjectDef>> =
         db.projectDao().observeAll().map { list ->
             list.mapNotNull { entity ->
@@ -49,10 +57,6 @@ class AppRepository(private val db: AppDatabase) {
             }
         }
 
-    /**
-     * Looks up a pose by ID. Checks DB first, then falls back to the built-in
-     * index so lookups always succeed even before DB seeding completes.
-     */
     suspend fun getPose(id: String): PoseDef? {
         return db.poseDao().getById(id)
             ?.let { runCatching { json.decodeFromString<PoseDef>(it.poseJson) }.getOrNull() }

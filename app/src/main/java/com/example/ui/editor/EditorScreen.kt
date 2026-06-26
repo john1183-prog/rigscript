@@ -18,8 +18,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -104,6 +107,11 @@ fun EditorScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.importAudio(context, it) } }
 
+    // F1: Script import — pick any .json file and load it as the animation script
+    val scriptPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.importScript(context, it) } }
+
     // ── Export — permission gate for API < 29 ──────────────────────────────────
     val storagePermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -137,6 +145,20 @@ fun EditorScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // F3: Scrubber — current position in seconds, polled every 100ms while playing
+    var scrubberPos by remember { mutableStateOf(0f) }
+    val totalDuration = remember(project) {
+        project?.audioDurationSec?.takeIf { it > 0f }
+            ?: project?.script?.events?.maxOfOrNull { it.timeSec + it.duration }?.let { it + 1f }
+            ?: 10f
+    }
+    LaunchedEffect(isAudioPlaying) {
+        while (isAudioPlaying) {
+            kotlinx.coroutines.delay(100)
+            scrubberPos = surfaceView?.currentTimeSec() ?: scrubberPos
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackState) },
@@ -237,6 +259,34 @@ fun EditorScreen(
                 }
             )
 
+            // F4: Amplitude waveform — visual reference for where speech is, so
+            //     script events can be aligned to audio content without counting seconds.
+            //     Only shown when audio has been imported (envelope is non-empty).
+            if (project?.amplitudeEnvelope?.isNotEmpty() == true) {
+                AmplitudeWaveform(
+                    envelope      = project!!.amplitudeEnvelope,
+                    scrubberPos   = scrubberPos,
+                    totalDuration = totalDuration,
+                    modifier      = Modifier.fillMaxWidth().height(28.dp)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 4.dp)
+                )
+            }
+
+            // F3: Playback scrubber — seek to any time; updates every 100ms while playing
+            Slider(
+                value         = scrubberPos.coerceIn(0f, totalDuration),
+                onValueChange = { pos ->
+                    scrubberPos = pos
+                    surfaceView?.seekTo(pos)
+                    if (isAudioPlaying) {
+                        audioPlayer.seekTo(pos)
+                    }
+                },
+                valueRange = 0f..totalDuration.coerceAtLeast(1f),
+                modifier   = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(20.dp)
+            )
+
             Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 
             TabRow(
@@ -258,6 +308,7 @@ fun EditorScreen(
                     scriptError  = scriptError,
                     onTextChange = { vm.onScriptTextChanged(it) },
                     onInsertPose = onOpenPoseLibrary,
+                    onImport     = { scriptPicker.launch(arrayOf("application/json", "*/*")) },
                     modifier     = Modifier.fillMaxSize()
                 )
                 1 -> AppearancePanel(
@@ -327,12 +378,20 @@ private fun ScriptPanel(
     scriptError: String?,
     onTextChange: (String) -> Unit,
     onInsertPose: () -> Unit,
+    onImport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Script JSON", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
+            // F1: Import a .json script file directly — avoids copy-paste for AI-generated scripts
+            OutlinedButton(onClick = onImport, modifier = Modifier.height(32.dp)) {
+                Icon(Icons.Default.FileOpen, null, Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Import", fontSize = 12.sp)
+            }
+            Spacer(Modifier.width(6.dp))
             OutlinedButton(onClick = onInsertPose, modifier = Modifier.height(32.dp)) {
                 Icon(Icons.Default.Add, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
@@ -385,8 +444,14 @@ private fun AppearancePanel(
         ColorPickerRow("Figure color", appearance.boneColor) { newColor ->
             onAppearance(appearance.copy(boneColor = newColor, headColor = newColor, jointColor = newColor))
         }
-        ColorPickerRow("Background color", appearance.previewBgColor) { newColor ->
-            onAppearance(appearance.copy(previewBgColor = newColor, exportBgColor = newColor))
+        // F2: Preview and export backgrounds are now independently configurable.
+        // Previously one picker set both. Useful for green-screen export (set
+        // export background to 0xFF00FF00 while keeping a dark preview background).
+        ColorPickerRow("Preview background", appearance.previewBgColor) { newColor ->
+            onAppearance(appearance.copy(previewBgColor = newColor))
+        }
+        ColorPickerRow("Export background", appearance.exportBgColor) { newColor ->
+            onAppearance(appearance.copy(exportBgColor = newColor))
         }
 
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
@@ -560,6 +625,42 @@ private fun SegmentedRow(label: String, options: List<String>, selected: String,
                     else ButtonDefaults.outlinedButtonColors()
                 ) { Text(opt, fontSize = 12.sp) }
             }
+        }
+    }
+}
+
+/**
+ * F4: Draws the pre-analysed amplitude envelope as a vertical bar chart.
+ *
+ * Each bar represents one analysis frame (1/30 of a second at the default rate).
+ * The playback cursor overlays at [scrubberPos] so the user can visually
+ * correlate script events with speech content without counting seconds manually.
+ *
+ * Only rendered when [envelope] is non-empty (i.e. audio has been imported).
+ */
+@Composable
+private fun AmplitudeWaveform(
+    envelope: List<Float>,
+    scrubberPos: Float,
+    totalDuration: Float,
+    modifier: Modifier = Modifier
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        if (envelope.isEmpty()) return@Canvas
+        val n    = envelope.size
+        val step = size.width / n
+        envelope.forEachIndexed { i, amp ->
+            val barH = amp * size.height * 0.85f
+            drawRect(
+                color    = primary.copy(alpha = 0.45f),
+                topLeft  = Offset(i * step, size.height - barH),
+                size     = Size(step.coerceAtLeast(1f), barH)
+            )
+        }
+        if (totalDuration > 0f) {
+            val x = (scrubberPos / totalDuration) * size.width
+            drawLine(color = primary, start = Offset(x, 0f), end = Offset(x, size.height), strokeWidth = 2f)
         }
     }
 }

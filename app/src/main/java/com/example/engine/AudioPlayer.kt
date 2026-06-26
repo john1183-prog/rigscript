@@ -24,6 +24,8 @@ class AudioPlayer private constructor() {
     @Volatile var currentMouthShape: Int = MouthShape.CLOSED
         private set
 
+    @Volatile private var isReady: Boolean = false
+
     val isLoaded: Boolean get() = player != null
     val isPlaying: Boolean get() = player?.isPlaying == true
     val durationMs: Int get() = player?.duration ?: 0
@@ -37,12 +39,19 @@ class AudioPlayer private constructor() {
         this.envelope    = envelope
         this.mouthShapes = mouthShapes
         this.envelopeFps = fps
-        runCatching {
-            player = MediaPlayer().apply {
-                setDataSource(filePath)
-                prepare()
-            }
-        }.onFailure { Log.e(TAG, "Failed to load audio: $filePath", it) }
+        // Note: load() is called from a LaunchedEffect (Dispatchers.Main by default).
+        // We launch a coroutine for the blocking prepare() so the main thread is never
+        // stalled. The player is simply not ready until prepare() completes — callers
+        // that immediately call play() will find isReady=false and should check first.
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                player = MediaPlayer().apply {
+                    setDataSource(filePath)
+                    prepare()   // blocking — must not run on Main
+                    isReady = true
+                }
+            }.onFailure { Log.e(TAG, "Failed to load audio: $filePath", it) }
+        }
     }
 
     fun release() {
@@ -50,11 +59,12 @@ class AudioPlayer private constructor() {
         player = null
         currentAmplitude  = 0f
         currentMouthShape = MouthShape.CLOSED
+        isReady           = false
     }
 
     // ── Playback controls ─────────────────────────────────────────────────────
 
-    fun play()  { runCatching { player?.start() } }
+    fun play()  { if (isReady) runCatching { player?.start() } }
     fun pause() { runCatching { player?.pause() } }
 
     fun seekTo(ms: Int) {

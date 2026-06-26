@@ -170,21 +170,25 @@ class PlaybackEngine {
         }
     }
 
+    /** Pre-allocated output buffer for springEulerStep — avoids Pair allocation in the hot path. */
+    private val springStep = FloatArray(2)   // [0]=newPos, [1]=newVel
+
     /** 4-step Euler spring integration toward [baseAngles]. */
     private fun applySpringIntegration(dt: Float) {
         val subDt = dt / 4f
         repeat(4) {
             for (i in 0 until n) {
-                val (newPos, newVel) = EasingMath.springEulerStep(
+                EasingMath.springEulerStep(
                     pos       = currentAngles[i],
                     vel       = springVelocities[i],
                     target    = baseAngles[i],
-                    stiffness = 320f,   // tight tracking spring — not user-facing
+                    stiffness = 320f,
                     damping   = 32f,
-                    dt        = subDt
+                    dt        = subDt,
+                    out       = springStep
                 )
-                currentAngles[i]    = newPos
-                springVelocities[i] = newVel
+                currentAngles[i]    = springStep[0]
+                springVelocities[i] = springStep[1]
             }
         }
     }

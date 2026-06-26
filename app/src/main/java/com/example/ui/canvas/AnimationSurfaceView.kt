@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -11,41 +12,23 @@ import android.view.SurfaceView
 import com.example.data.AmplitudeSettings
 import com.example.data.AppearanceSettings
 import com.example.engine.*
+import kotlin.math.*
 
-/**
- * A [SurfaceView] that drives [PlaybackEngine] on a dedicated background thread,
- * targeting ~60 fps independently of Compose recomposition.
- *
- * Two distinct usage modes:
- *  - **Playback** (editor): [loadTimeline] + [play]/[pause]/[stop]. When an
- *    [AudioPlayer] is attached via [setAudioPlayer], its amplitude is sampled
- *    every frame on the render thread and fed into the engine so talk-motion
- *    actually tracks the audio in real time.
- *  - **Pose editing** (pose library): [poseEditorMode] = true enables dragging
- *    joints; [applyPose]/[captureCurrentPose] read/write a pose directly without
- *    touching the timeline at all.
- */
 class AnimationSurfaceView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : SurfaceView(context, attrs), SurfaceHolder.Callback {
 
-    // ── Engine ────────────────────────────────────────────────────────────────
-
     private val engine     = PlaybackEngine()
-    private val renderer   = RigRenderer()   // private instance — never shared with VideoExporter's render thread
+    private val renderer   = RigRenderer()
     private var appearance = AppearanceSettings()
     private var isPlaying  = false
+
+    // B1: Use SystemClock.elapsedRealtime() — monotonic, never jumps backward
+    // on clock sync or forward on DST. System.currentTimeMillis() could produce
+    // a negative dt before coerceIn() caught it, freezing animation for that frame.
     private var lastTickMs = 0L
 
-    /**
-     * Optional audio source for amplitude-reactive motion. Sampled once per
-     * render-thread frame via [AudioPlayer.updateAmplitude] — this is what makes
-     * the talk-motion respond to the actual audio in real time, as opposed to
-     * Compose recomposition (which doesn't fire every 16ms).
-     */
     @Volatile private var audioPlayer: AudioPlayer? = null
-
-    // ── Background render thread ────────────────────────────────────────────
 
     private val renderThread  = HandlerThread("RigRenderThread").also { it.start() }
     private val renderHandler = Handler(renderThread.looper)
@@ -53,7 +36,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     private val frameRunnable = object : Runnable {
         override fun run() {
-            val now = System.currentTimeMillis()
+            val now = SystemClock.elapsedRealtime()   // B1: monotonic clock
             val dt  = if (lastTickMs == 0L) 0.016f else ((now - lastTickMs) / 1000f)
             lastTickMs = now
 
@@ -68,7 +51,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
             }
 
             drawFrame()
-            renderHandler.postDelayed(this, 16)   // ~60fps
+            renderHandler.postDelayed(this, 16)
         }
     }
 
@@ -76,20 +59,19 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     var poseEditorMode: Boolean = false
     var onBoneAngleChanged: ((boneIndex: Int, totalAngle: Float) -> Unit)? = null
-    private var dragBoneIdx: Int = -1
+    private var dragBoneIdx:   Int = -1
+    // B3: Cache FK endpoints from ACTION_DOWN so ACTION_MOVE uses the same geometry.
+    private var dragEndpoints: Array<FloatArray>? = null
 
     // ── SurfaceHolder.Callback ────────────────────────────────────────────────
 
     init { holder.addCallback(this) }
 
     override fun surfaceCreated(h: SurfaceHolder) {
-        surfaceReady = true
-        lastTickMs = 0L
+        surfaceReady = true; lastTickMs = 0L
         renderHandler.post(frameRunnable)
     }
-
     override fun surfaceChanged(h: SurfaceHolder, fmt: Int, w: Int, h2: Int) {}
-
     override fun surfaceDestroyed(h: SurfaceHolder) {
         surfaceReady = false
         renderHandler.removeCallbacks(frameRunnable)
@@ -97,25 +79,13 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     // ── Playback API ──────────────────────────────────────────────────────────
 
-    /**
-     * Loads a compiled timeline. Does NOT reset playback position — see
-     * [PlaybackEngine.loadTimeline]. While paused, the new target pose is shown
-     * immediately; while playing, the spring eases toward it.
-     */
     fun loadTimeline(keyframes: List<BakedKeyframe>) {
         val snap = !isPlaying
         renderHandler.post { engine.loadTimeline(keyframes, snapToCurrentTime = snap) }
     }
-
     fun setAppearance(a: AppearanceSettings) { appearance = a }
-
-    fun setAmplitudeSettings(s: AmplitudeSettings) {
-        renderHandler.post { engine.amplitudeSettings = s }
-    }
-
-    /** Attach (or detach with null) the audio source for real-time amplitude motion. */
+    fun setAmplitudeSettings(s: AmplitudeSettings) { renderHandler.post { engine.amplitudeSettings = s } }
     fun setAudioPlayer(player: AudioPlayer?) { audioPlayer = player }
-
     fun play()  { isPlaying = true;  lastTickMs = 0L }
     fun pause() { isPlaying = false }
     fun stop()  { isPlaying = false; renderHandler.post { engine.reset() } }
@@ -124,6 +94,9 @@ class AnimationSurfaceView @JvmOverloads constructor(
         renderHandler.post { engine.seekTo(timeSec); isPlaying = false }
     }
 
+    /** Current playback position in seconds. Read from the UI thread for the scrubber. */
+    fun currentTimeSec(): Float = engine.currentTimeSec
+
     fun release() {
         renderHandler.removeCallbacks(frameRunnable)
         renderThread.quitSafely()
@@ -131,41 +104,39 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     // ── Pose-editor API ───────────────────────────────────────────────────────
 
-    /**
-     * Directly applies [joints] (relative bone-id -> degree offsets) to the rig.
-     * Used by the pose library to preview the currently-selected pose.
-     *
-     * Safe to call from the UI thread: this view is never [play]ed in pose-editor
-     * mode, so the render thread never concurrently writes engine angles.
-     */
     fun applyPose(joints: Map<String, Float>) {
         val bones = StickFigureRig.BONES
         bones.forEachIndexed { i, bone ->
-            val total = bone.defaultAngleDegrees + (joints[bone.id] ?: 0f)
-            engine.setBoneAngle(i, total)
+            engine.setBoneAngle(i, bone.defaultAngleDegrees + (joints[bone.id] ?: 0f))
         }
     }
-
-    /** Returns the current pose as relative bone-id -> degree offsets, for saving. */
     fun captureCurrentPose(): Map<String, Float> = engine.captureRelativeAngles()
 
     // ── Rendering ─────────────────────────────────────────────────────────────
 
     private fun drawFrame() {
         if (!surfaceReady) return
-        val canvas: Canvas = try { holder.lockCanvas() ?: return }
-        catch (e: Exception) { return }
+        val canvas: Canvas = try { holder.lockCanvas() ?: return } catch (e: Exception) { return }
         try {
             canvas.drawColor(appearance.previewBgColor.toInt())
             renderer.draw(canvas, engine.currentAngles, appearance, width, height,
-                mouthShape   = engine.currentMouthShape,
+                mouthShape    = engine.currentMouthShape,
                 mouthOpenness = engine.currentAmplitude)
-        } finally {
-            holder.unlockCanvasAndPost(canvas)
-        }
+        } finally { holder.unlockCanvasAndPost(canvas) }
     }
 
-    // ── Touch (pose editor mode) ──────────────────────────────────────────────
+    // ── Touch (pose editor mode) — B3 fix ─────────────────────────────────────
+    //
+    // Previously, pivot and nearest-bone positions were derived with a one-hop
+    // formula: rootX + parentBone.length * cos(angles[parentIdx]). This ignored
+    // all ancestors above the immediate parent, so lower_arm and lower_leg bones
+    // had wrong pivots and the drag didn't track the finger.
+    //
+    // Fix: call renderer.worldEndpoints() on ACTION_DOWN to get FK-accurate
+    // world positions for every bone, then use those in ACTION_MOVE for the pivot
+    // and parent world rotation. The parent's world rotation is extracted from
+    // its own endpoints via atan2(endY-startY, endX-startX) — no need to walk
+    // the ancestor chain manually.
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!poseEditorMode) return false
@@ -177,59 +148,55 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                dragBoneIdx = findNearestBone(tx, ty, engine.currentAngles, scale, rootX, rootY)
+                val eps = renderer.worldEndpoints(engine.currentAngles, scale, rootX, rootY)
+                dragEndpoints = eps
+                dragBoneIdx   = findNearestBone(tx, ty, eps)
             }
             MotionEvent.ACTION_MOVE -> {
+                val eps = dragEndpoints ?: return true
                 if (dragBoneIdx >= 0) {
-                    val bone   = StickFigureRig.BONES[dragBoneIdx]
-                    val pIdx   = bone.parentId?.let { StickFigureRig.BONE_INDEX[it] } ?: -1
-                    val pivotX = if (pIdx < 0) rootX else {
-                        val pb = StickFigureRig.BONES[pIdx]
-                        rootX + pb.normalizedLength * scale *
-                            kotlin.math.cos(Math.toRadians(engine.currentAngles[pIdx].toDouble())).toFloat()
-                    }
-                    val pivotY = if (pIdx < 0) rootY else {
-                        val pb = StickFigureRig.BONES[pIdx]
-                        rootY + pb.normalizedLength * scale *
-                            kotlin.math.sin(Math.toRadians(engine.currentAngles[pIdx].toDouble())).toFloat()
-                    }
-                    val angle = Math.toDegrees(
-                        kotlin.math.atan2((ty - pivotY).toDouble(), (tx - pivotX).toDouble())
+                    val bone = StickFigureRig.BONES[dragBoneIdx]
+                    val pIdx = bone.parentId?.let { StickFigureRig.BONE_INDEX[it] } ?: -1
+
+                    // Pivot = where this bone starts = parent's world tip
+                    val pivotX = if (pIdx < 0) rootX else eps[pIdx][2]
+                    val pivotY = if (pIdx < 0) rootY else eps[pIdx][3]
+
+                    // Direction from pivot to finger in world space
+                    val worldAngle = Math.toDegrees(
+                        atan2((ty - pivotY).toDouble(), (tx - pivotX).toDouble())
                     ).toFloat()
-                    engine.setBoneAngle(dragBoneIdx, angle)
-                    onBoneAngleChanged?.invoke(dragBoneIdx, angle)
+
+                    // Parent's world rotation — extracted from its FK endpoints so the
+                    // full ancestor chain is already baked in, no manual summation needed
+                    val parentWorldRot = if (pIdx < 0) 0f else Math.toDegrees(
+                        atan2(
+                            (eps[pIdx][3] - eps[pIdx][1]).toDouble(),
+                            (eps[pIdx][2] - eps[pIdx][0]).toDouble()
+                        )
+                    ).toFloat()
+
+                    // currentAngles[i] stores the angle RELATIVE to the parent —
+                    // subtracting the parent's world rotation gives us exactly that.
+                    val relativeAngle = worldAngle - parentWorldRot
+                    engine.setBoneAngle(dragBoneIdx, relativeAngle)
+                    onBoneAngleChanged?.invoke(dragBoneIdx, relativeAngle)
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragBoneIdx = -1
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                dragBoneIdx   = -1
+                dragEndpoints = null
+            }
         }
         return true
     }
 
-    private fun findNearestBone(
-        tx: Float, ty: Float, angles: FloatArray,
-        scale: Float, rootX: Float, rootY: Float
-    ): Int {
+    private fun findNearestBone(tx: Float, ty: Float, endpoints: Array<FloatArray>): Int {
         var bestIdx  = -1
         var bestDist = Float.MAX_VALUE
-        val bones    = StickFigureRig.BONES
-
-        for (i in bones.indices) {
-            val bone = bones[i]
-            val pIdx = bone.parentId?.let { StickFigureRig.BONE_INDEX[it] } ?: -1
-            val boneStartX = if (pIdx < 0) rootX else {
-                val pb = bones[pIdx]
-                rootX + pb.normalizedLength * scale *
-                    kotlin.math.cos(Math.toRadians(angles[pIdx].toDouble())).toFloat()
-            }
-            val boneStartY = if (pIdx < 0) rootY else {
-                val pb = bones[pIdx]
-                rootY + pb.normalizedLength * scale *
-                    kotlin.math.sin(Math.toRadians(angles[pIdx].toDouble())).toFloat()
-            }
-            val dist = kotlin.math.sqrt(
-                ((tx - boneStartX) * (tx - boneStartX) +
-                 (ty - boneStartY) * (ty - boneStartY)).toDouble()
-            ).toFloat()
+        for (i in endpoints.indices) {
+            val sx = endpoints[i][0]; val sy = endpoints[i][1]
+            val dist = sqrt((tx - sx) * (tx - sx) + (ty - sy) * (ty - sy))
             if (dist < bestDist && dist < 80f) { bestDist = dist; bestIdx = i }
         }
         return bestIdx

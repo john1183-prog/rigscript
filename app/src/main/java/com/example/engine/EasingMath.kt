@@ -82,15 +82,26 @@ object EasingMath {
      * Mutates [pos] and [vel] in-place (passed as index into caller's arrays).
      * Returns updated (position, velocity) as a Pair to keep callers allocation-free.
      */
+    /**
+     * Single Euler step for a spring-mass-damper system.
+     *
+     * Writes [newPos] to [out][0] and [newVel] to [out][1] instead of
+     * returning a Pair — eliminates ~2,400 boxed Pair allocations/second
+     * that previously occurred in the 60fps animation loop (4 sub-steps ×
+     * 10 bones × 60fps).
+     *
+     * Callers must pre-allocate the [out] array (FloatArray(2)) and reuse it.
+     */
     fun springEulerStep(
         pos: Float, vel: Float,
         target: Float,
         stiffness: Float, damping: Float,
-        dt: Float
-    ): Pair<Float, Float> {
-        val force = stiffness * (target - pos) - damping * vel
+        dt: Float,
+        out: FloatArray   // out[0] = newPos, out[1] = newVel
+    ) {
+        val force  = stiffness * (target - pos) - damping * vel
         val newVel = vel + force * dt
-        val newPos = pos + newVel * dt
-        return Pair(newPos, newVel)
+        out[0] = pos + newVel * dt
+        out[1] = newVel
     }
 }

@@ -126,6 +126,44 @@ class RigRenderer {
         canvas.drawOval(cx - hw, cy - hh, cx + hw, cy + hh, mouthPaint)
     }
 
+    /**
+     * Computes world-space [startX, startY, endX, endY] for every bone using
+     * the same FK matrix chain as [draw]. Called from touch-event handling in
+     * [AnimationSurfaceView] so drag pivots and nearest-bone detection use the
+     * exact same geometry as what's visually rendered — previously the touch
+     * handler re-derived positions with a single-hop formula that was wrong for
+     * any bone that isn't a direct child of a root bone (lower arms, lower legs).
+     *
+     * Allocates one Array per call — fine for touch events, not for the render loop.
+     */
+    fun worldEndpoints(
+        angles: FloatArray, scale: Float, rootX: Float, rootY: Float
+    ): Array<FloatArray> {
+        val mats   = Array(n) { Matrix() }
+        val pts    = FloatArray(4)
+        val result = Array(n) { FloatArray(4) }
+        for (i in 0 until n) {
+            val bone = bones[i]
+            val mat  = mats[i]
+            if (bone.parentId == null) {
+                mat.reset()
+                mat.postTranslate(rootX, rootY)
+                mat.preRotate(angles[i])
+            } else {
+                val pIdx = rig.BONE_INDEX[bone.parentId] ?: continue
+                mat.set(mats[pIdx])
+                mat.preTranslate(bones[pIdx].normalizedLength * scale, 0f)
+                mat.preRotate(angles[i])
+            }
+            pts[0] = 0f; pts[1] = 0f
+            pts[2] = bone.normalizedLength * scale; pts[3] = 0f
+            mat.mapPoints(pts)
+            result[i][0] = pts[0]; result[i][1] = pts[1]
+            result[i][2] = pts[2]; result[i][3] = pts[3]
+        }
+        return result
+    }
+
     private fun drawGrid(canvas: Canvas, w: Int, h: Int, a: AppearanceSettings) {
         gridPaint.color       = a.gridColor.toInt()
         gridPaint.strokeWidth = 1f

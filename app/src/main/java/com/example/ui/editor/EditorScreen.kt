@@ -280,7 +280,7 @@ fun EditorScreen(
                     scrubberPos = pos
                     surfaceView?.seekTo(pos)
                     if (isAudioPlaying) {
-                        audioPlayer.seekTo(pos)
+                        audioPlayer.seekTo((pos * 1000).toInt())
                     }
                 },
                 valueRange = 0f..totalDuration.coerceAtLeast(1f),

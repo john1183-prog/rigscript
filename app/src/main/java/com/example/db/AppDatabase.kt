@@ -5,12 +5,12 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.AppJson
 import com.example.engine.StickFigureRig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 @Database(
     entities = [ProjectEntity::class, PoseEntity::class],
@@ -24,7 +24,6 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
-        private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -53,7 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
                                             name      = pose.name,
                                             category  = pose.category,
                                             isBuiltIn = true,
-                                            poseJson  = json.encodeToString(pose)
+                                            poseJson  = AppJson.storage.encodeToString(pose)
                                         )
                                     )
                                 }

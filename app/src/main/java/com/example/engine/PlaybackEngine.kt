@@ -31,7 +31,9 @@ class PlaybackEngine {
 
     private val springVelocities: FloatArray = FloatArray(n)
     private var timeline: List<BakedKeyframe> = emptyList()
-    private var currentTimeSec: Float = 0f
+    /** Current playback position in seconds. Public so [com.example.ui.canvas.AnimationSurfaceView] can expose it for the scrubber. */
+    var currentTimeSec: Float = 0f
+        private set
     private var smoothedAmplitude: Float = 0f
 
     @Volatile var amplitudeSettings: AmplitudeSettings = AmplitudeSettings()

@@ -76,13 +76,6 @@ object EasingMath {
     }
 
     /**
-     * One Euler sub-step for real-time spring integration.
-     * Call 4× per tick with [dt] = frameDt / 4 for numerical stability.
-     *
-     * Mutates [pos] and [vel] in-place (passed as index into caller's arrays).
-     * Returns updated (position, velocity) as a Pair to keep callers allocation-free.
-     */
-    /**
      * Single Euler step for a spring-mass-damper system.
      *
      * Writes [newPos] to [out][0] and [newVel] to [out][1] instead of

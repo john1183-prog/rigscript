@@ -2,6 +2,10 @@ package com.example.engine
 
 import android.media.MediaPlayer
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 
 /**
  * Thin wrapper around [MediaPlayer] that exposes the current audio amplitude
@@ -34,6 +38,7 @@ class AudioPlayer private constructor() {
 
     // ── Load / unload ─────────────────────────────────────────────────────────
 
+    @OptIn(DelicateCoroutinesApi::class)
     fun load(filePath: String, envelope: FloatArray, mouthShapes: IntArray = IntArray(0), fps: Int = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS) {
         release()
         this.envelope    = envelope
@@ -43,7 +48,12 @@ class AudioPlayer private constructor() {
         // We launch a coroutine for the blocking prepare() so the main thread is never
         // stalled. The player is simply not ready until prepare() completes — callers
         // that immediately call play() will find isReady=false and should check first.
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        //
+        // GlobalScope is used because AudioPlayer is a manually-managed singleton with
+        // no lifecycle owner of its own to scope a coroutine to. This is a known
+        // tradeoff, not an oversight — see the V2 handoff doc for the cleaner
+        // alternative (inject a CoroutineScope tied to AudioPlayer's own lifecycle).
+        GlobalScope.launch(Dispatchers.IO) {
             runCatching {
                 player = MediaPlayer().apply {
                     setDataSource(filePath)

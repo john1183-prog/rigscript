@@ -8,10 +8,23 @@ import com.example.data.PoseDef
  *
  * [timeSec]        When this pose change begins (absolute, seconds from audio start).
  * [duration]       Transition duration in seconds.
- * [ease]           Easing type string forwarded to [EasingMath.ease].
+ * [ease]           Easing type string forwarded to [EasingMath.ease]. `"rigid"` means
+ *                  [PlaybackEngine] snaps directly to [toAngles]/camera targets with
+ *                  no interpolation and no spring chase, regardless of
+ *                  [com.example.data.AmplitudeSettings.easeAllWithSpring].
  * [fromAngles]     Total bone angles (defaultAngle + poseOffset) at the START of transition.
  * [toAngles]       Total bone angles at the END of transition (the target pose).
- * [springStiffness]/[springDamping] Forwarded to the spring integrator when ease=="spring".
+ * [springStiffness]/[springDamping] Forwarded to the spring integrator when ease=="spring"
+ *                  or when [com.example.data.AmplitudeSettings.easeAllWithSpring] applies
+ *                  the default spring chase to a non-"rigid" transition.
+ * [expression]     Resolved [Expression] constant active as of this keyframe — carries
+ *                  forward from the previous keyframe when the source event's
+ *                  `expression` field was null (same carry-forward rule as pose).
+ * [fromCameraZoom]/[toCameraZoom]           Camera zoom, interpolated like pose angles.
+ * [fromCameraPanX]/[toCameraPanX]           Horizontal pan, fraction of canvas width.
+ * [fromCameraPanY]/[toCameraPanY]           Vertical pan, fraction of canvas height.
+ * [cameraShake]    One-shot shake intensity triggered AT [timeSec]. Does NOT carry
+ *                  forward — 0f unless the source event explicitly set it.
  */
 data class BakedKeyframe(
     val timeSec: Float,
@@ -20,7 +33,15 @@ data class BakedKeyframe(
     val fromAngles: FloatArray,
     val toAngles: FloatArray,
     val springStiffness: Float,
-    val springDamping: Float
+    val springDamping: Float,
+    val expression: Int,
+    val fromCameraZoom: Float,
+    val toCameraZoom: Float,
+    val fromCameraPanX: Float,
+    val toCameraPanX: Float,
+    val fromCameraPanY: Float,
+    val toCameraPanY: Float,
+    val cameraShake: Float
 )
 
 /**
@@ -49,6 +70,14 @@ object TimelineCompiler {
         val result = mutableListOf<BakedKeyframe>()
         var prevAngles = defaultAngles.copyOf()   // angles at the END of previous keyframe
 
+        // V2 — carried state across events. Expression and camera both use
+        // carry-forward semantics identical to pose: a null field on the event
+        // means "keep whatever was active", not "reset to default/NORMAL".
+        var currentExpression = Expression.NORMAL
+        var prevZoom = 1f
+        var prevPanX = 0f
+        var prevPanY = 0f
+
         for (event in sorted) {
             val pose = poseResolver(event.pose)
             if (pose == null) {
@@ -62,6 +91,13 @@ object TimelineCompiler {
                 bones[i].defaultAngleDegrees + (pose.joints[boneId] ?: 0f)
             }
 
+            if (event.expression != null) {
+                currentExpression = Expression.fromString(event.expression)
+            }
+            val toZoom = event.cameraZoom ?: prevZoom
+            val toPanX = event.cameraPanX ?: prevPanX
+            val toPanY = event.cameraPanY ?: prevPanY
+
             result += BakedKeyframe(
                 timeSec         = event.timeSec,
                 duration        = event.duration.coerceAtLeast(0.016f),
@@ -69,10 +105,21 @@ object TimelineCompiler {
                 fromAngles      = prevAngles.copyOf(),
                 toAngles        = toAngles.copyOf(),
                 springStiffness = event.springStiffness,
-                springDamping   = event.springDamping
+                springDamping   = event.springDamping,
+                expression      = currentExpression,
+                fromCameraZoom  = prevZoom,
+                toCameraZoom    = toZoom,
+                fromCameraPanX  = prevPanX,
+                toCameraPanX    = toPanX,
+                fromCameraPanY  = prevPanY,
+                toCameraPanY    = toPanY,
+                cameraShake     = event.cameraShake ?: 0f
             )
 
             prevAngles = toAngles.copyOf()
+            prevZoom = toZoom
+            prevPanX = toPanX
+            prevPanY = toPanY
         }
 
         return result

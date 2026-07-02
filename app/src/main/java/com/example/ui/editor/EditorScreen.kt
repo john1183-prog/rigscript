@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +24,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -33,8 +35,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.AppearanceSettings
 import com.example.data.ExportSettings
+import com.example.data.ScriptEvent
 import com.example.engine.AudioPlayer
 import com.example.engine.BakedKeyframe
+import com.example.engine.EnvelopeStore
 import com.example.engine.ExportResult
 import com.example.ui.canvas.AnimationSurfaceView
 import com.example.ui.components.ColorPickerRow
@@ -58,6 +62,7 @@ fun EditorScreen(
     val isAnalysing  by vm.isAnalysingAudio.collectAsStateWithLifecycle()
     val audioName    by vm.audioFileName.collectAsStateWithLifecycle()
     val exportProg   by vm.exportProgress.collectAsStateWithLifecycle()
+    val exportEta    by vm.exportEtaSec.collectAsStateWithLifecycle()
     val exportedFile by vm.exportedFile.collectAsStateWithLifecycle()
     val messages     = vm.message
 
@@ -83,6 +88,18 @@ fun EditorScreen(
         project?.script?.let { script -> keyframes = vm.compileTimeline(script) }
     }
 
+    // Single source of truth for the amplitude envelope — read from
+    // EnvelopeStore (falling back to the deprecated inline field for a
+    // project saved before the V2 migration). Shared by audio-preview
+    // loading, the waveform display, and idle-fidget scheduling below,
+    // instead of each recomputing it separately.
+    val envelopeArray = remember(project?.amplitudeEnvelopePath, project?.audioFilePath) {
+        project?.let { p ->
+            @Suppress("DEPRECATION")
+            EnvelopeStore.readAmplitudeWithFallback(p.amplitudeEnvelopePath, p.amplitudeEnvelope)
+        } ?: FloatArray(0)
+    }
+
     // ── Audio player (shared singleton; render thread samples it directly) ─────
     val audioPlayer = remember { AudioPlayer.getInstance() }
     var isAudioPlaying by remember { mutableStateOf(false) }
@@ -93,12 +110,16 @@ fun EditorScreen(
 
     LaunchedEffect(project?.audioFilePath) {
         project?.let { p ->
-            if (p.audioFilePath != null && p.amplitudeEnvelope.isNotEmpty()) {
-                audioPlayer.load(
-                    filePath    = p.audioFilePath,
-                    envelope    = p.amplitudeEnvelope.toFloatArray(),
-                    mouthShapes = p.mouthShapeEnvelope.toIntArray()
-                )
+            if (p.audioFilePath != null) {
+                @Suppress("DEPRECATION")
+                val mouthShapes = EnvelopeStore.readMouthShapesWithFallback(p.mouthShapeEnvelopePath, p.mouthShapeEnvelope)
+                if (envelopeArray.isNotEmpty()) {
+                    audioPlayer.load(
+                        filePath    = p.audioFilePath,
+                        envelope    = envelopeArray,
+                        mouthShapes = mouthShapes
+                    )
+                }
             }
         }
     }
@@ -207,7 +228,12 @@ fun EditorScreen(
                     },
                     update = { sv ->
                         if (keyframes !== lastLoadedKeyframes) {
-                            sv.loadTimeline(keyframes)
+                            sv.loadTimeline(
+                                keyframes,
+                                blinkTimes     = project?.script?.blinkEvents ?: emptyList(),
+                                durationSec    = project?.audioDurationSec ?: 0f,
+                                fidgetEnvelope = envelopeArray
+                            )
                             lastLoadedKeyframes = keyframes
                         }
                         project?.appearance?.let { sv.setAppearance(it) }
@@ -225,7 +251,15 @@ fun EditorScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator(progress = { progress })
                             Spacer(Modifier.height(8.dp))
-                            Text("Exporting ${(progress * 100).toInt()}%", color = Color.White)
+                            Text(
+                                exportEta?.let { "About ${formatEtaSeconds(it)} left" } ?: "Exporting…",
+                                color = Color.White
+                            )
+                            Text(
+                                "${(progress * 100).toInt()}%",
+                                color = Color.White.copy(alpha = 0.65f),
+                                style = MaterialTheme.typography.bodySmall
+                            )
                             Spacer(Modifier.height(12.dp))
                             TextButton(onClick = { vm.cancelExport() }) {
                                 Text("Cancel", color = Color.White)
@@ -262,9 +296,9 @@ fun EditorScreen(
             // F4: Amplitude waveform — visual reference for where speech is, so
             //     script events can be aligned to audio content without counting seconds.
             //     Only shown when audio has been imported (envelope is non-empty).
-            if (project?.amplitudeEnvelope?.isNotEmpty() == true) {
+            if (envelopeArray.isNotEmpty()) {
                 AmplitudeWaveform(
-                    envelope      = project!!.amplitudeEnvelope,
+                    envelope      = envelopeArray.toList(),
                     scrubberPos   = scrubberPos,
                     totalDuration = totalDuration,
                     modifier      = Modifier.fillMaxWidth().height(28.dp)
@@ -273,16 +307,35 @@ fun EditorScreen(
                 )
             }
 
+            // Shared by the timeline strip below and the scrubber Slider —
+            // was duplicated inline when the strip was added; one definition
+            // means the two controls can't quietly drift apart later.
+            val seekPlayback: (Float) -> Unit = { pos ->
+                scrubberPos = pos
+                surfaceView?.seekTo(pos)
+                if (isAudioPlaying) audioPlayer.seekTo((pos * 1000).toInt())
+            }
+
+            // V2 — visual overview of event pacing over the waveform. Tap a
+            // marker to seek there; see EventTimelineStrip's own doc comment
+            // for why this is tap-only rather than the full drag/long-press
+            // editor originally scoped.
+            val scriptEvents = project?.script?.events ?: emptyList()
+            if (scriptEvents.isNotEmpty() && totalDuration > 0f) {
+                EventTimelineStrip(
+                    events        = scriptEvents,
+                    totalDuration = totalDuration,
+                    onSeek        = seekPlayback,
+                    modifier      = Modifier.fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
+
             // F3: Playback scrubber — seek to any time; updates every 100ms while playing
             Slider(
                 value         = scrubberPos.coerceIn(0f, totalDuration),
-                onValueChange = { pos ->
-                    scrubberPos = pos
-                    surfaceView?.seekTo(pos)
-                    if (isAudioPlaying) {
-                        audioPlayer.seekTo((pos * 1000).toInt())
-                    }
-                },
+                onValueChange = seekPlayback,
                 valueRange = 0f..totalDuration.coerceAtLeast(1f),
                 modifier   = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(20.dp)
             )
@@ -638,6 +691,80 @@ private fun SegmentedRow(label: String, options: List<String>, selected: String,
  *
  * Only rendered when [envelope] is non-empty (i.e. audio has been imported).
  */
+/**
+ * Visual overview of script event timing — tap a marker to seek there.
+ *
+ * Deliberately NOT the full drag-to-reposition / long-press-to-delete /
+ * tap-to-add editor originally scoped for this feature. Without a way to
+ * compile-check or visually test Compose gesture code in this environment,
+ * writing untested drag/long-press handling risks shipping something that
+ * looks correct in source but has a real on-device bug (gesture conflicts
+ * with the parent scroll, wrong hit-test math, a drag threshold that never
+ * fires) that only surfaces on an actual build. Tap is the simplest gesture
+ * surface to get right blind. The JSON text field remains the actual edit
+ * mechanism either way — this is a navigation/overview aid on top of it, not
+ * a replacement for it.
+ */
+@Composable
+private fun EventTimelineStrip(
+    events: List<ScriptEvent>,
+    totalDuration: Float,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    var nearestLabel by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier) {
+        androidx.compose.foundation.Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp)
+                .pointerInput(events, totalDuration) {
+                    detectTapGestures { offset ->
+                        if (events.isEmpty() || totalDuration <= 0f) return@detectTapGestures
+                        val tapSec = (offset.x / size.width).coerceIn(0f, 1f) * totalDuration
+                        val nearest = events.minByOrNull { kotlin.math.abs(it.timeSec - tapSec) }
+                        if (nearest != null) {
+                            onSeek(nearest.timeSec)
+                            nearestLabel = "${nearest.pose} @ %.1fs".format(nearest.timeSec)
+                        }
+                    }
+                }
+        ) {
+            if (totalDuration <= 0f) return@Canvas
+            events.forEach { ev ->
+                val x = (ev.timeSec / totalDuration).coerceIn(0f, 1f) * size.width
+                drawLine(
+                    color       = primary.copy(alpha = 0.8f),
+                    start       = Offset(x, size.height * 0.15f),
+                    end         = Offset(x, size.height),
+                    strokeWidth = 3f
+                )
+            }
+        }
+        nearestLabel?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = labelColor) }
+    }
+}
+
+/**
+ * Formats an ETA in seconds as a short countdown string ("45s", "2m 15s",
+ * "1h 05m"). Rounds up to the next second so it never reads "0s" while a
+ * frame is still in flight.
+ */
+private fun formatEtaSeconds(seconds: Float): String {
+    val totalSec = kotlin.math.ceil(seconds.coerceAtLeast(0f)).toInt()
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return when {
+        h > 0 -> "%dh %02dm".format(h, m)
+        m > 0 -> "%dm %02ds".format(m, s)
+        else  -> "${s}s"
+    }
+}
+
 @Composable
 private fun AmplitudeWaveform(
     envelope: List<Float>,

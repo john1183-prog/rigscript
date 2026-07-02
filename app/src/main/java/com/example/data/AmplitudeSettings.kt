@@ -38,5 +38,47 @@ data class AmplitudeSettings(
     /** Whether arm bones receive a subtle micro-swing when speaking. */
     val armSwayEnabled: Boolean = true,
     /** Arm micro-sway amplitude in degrees. */
-    val armSwayAmplitude: Float = 2.0f
+    val armSwayAmplitude: Float = 2.0f,
+
+    // ── Transition physics (V2) ───────────────────────────────────────────────
+    /**
+     * When true (default), every pose transition gets a physics spring-chase
+     * layered on top of its [com.example.data.ScriptEvent.ease] curve — not just
+     * events explicitly tagged `"spring"`. This is the single biggest naturalism
+     * change available without new animation features: everything gets a subtle,
+     * consistent life-like overshoot instead of only the events an AI/human
+     * remembered to mark. `"rigid"`-tagged events always bypass this regardless
+     * of this flag — rigid is the explicit escape hatch for mechanical or abrupt
+     * cuts where overshoot would look wrong.
+     */
+    val easeAllWithSpring: Boolean = true,
+
+    // ── Eyes / blinking (V2) ──────────────────────────────────────────────────
+    /** Automatic idle blinking, independent of [com.example.data.AnimScript.blinkEvents]. */
+    val naturalBlinkEnabled: Boolean = true,
+    /** Min/max gap between automatic blinks, in seconds — next interval is randomised in this range. */
+    val blinkMinIntervalSec: Float = 2.5f,
+    val blinkMaxIntervalSec: Float = 6.5f,
+    /** How long a single blink (open → closed → open) takes, in seconds. Applies to both natural and scripted blinks. */
+    val blinkDurationSec: Float = 0.15f,
+
+    // ── Idle fidget (V2) ──────────────────────────────────────────────────────
+    /**
+     * Small randomized micro-gestures during silence gaps in the script —
+     * makes the figure look "inhabited" during pauses rather than frozen.
+     * Off by default per the original handoff's own guidance: some projects
+     * (a deliberately still, formal delivery) may want silence to read as
+     * stillness, not fidgeting — this is a stylistic choice, not a bug fix,
+     * so it stays opt-in rather than becoming a new default behaviour.
+     */
+    val idleFidgetEnabled: Boolean = false,
+    /** Minimum silent stretch (seconds) a candidate fidget must sit inside — avoids fidgeting during brief natural pauses between words/phrases. */
+    val fidgetMinSilenceSec: Float = 1.5f,
+    /** Min/max gap between fidget candidates, in seconds — next interval is randomised in this range, same technique as [blinkMinIntervalSec]/[blinkMaxIntervalSec]. */
+    val fidgetMinIntervalSec: Float = 3.0f,
+    val fidgetMaxIntervalSec: Float = 7.0f,
+    /** Peak torso rotation during a fidget, in degrees — head/arm movement scale off this. */
+    val fidgetAmplitude: Float = 3.5f,
+    /** Duration of one fidget's ease-in/hold/ease-out cycle, in seconds. */
+    val fidgetDurationSec: Float = 0.6f
 )

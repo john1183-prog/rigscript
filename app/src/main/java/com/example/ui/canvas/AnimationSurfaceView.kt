@@ -79,9 +79,18 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     // ── Playback API ──────────────────────────────────────────────────────────
 
-    fun loadTimeline(keyframes: List<BakedKeyframe>) {
+    fun loadTimeline(
+        keyframes: List<BakedKeyframe>,
+        blinkTimes: List<Float> = emptyList(),
+        durationSec: Float = 0f,
+        fidgetEnvelope: FloatArray = FloatArray(0)
+    ) {
         val snap = !isPlaying
-        renderHandler.post { engine.loadTimeline(keyframes, snapToCurrentTime = snap) }
+        renderHandler.post {
+            engine.loadTimeline(keyframes, snapToCurrentTime = snap)
+            engine.loadBlinkSchedule(blinkTimes, durationSec)
+            engine.loadFidgetSchedule(fidgetEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
+        }
     }
     fun setAppearance(a: AppearanceSettings) { appearance = a }
     fun setAmplitudeSettings(s: AmplitudeSettings) { renderHandler.post { engine.amplitudeSettings = s } }
@@ -118,10 +127,17 @@ class AnimationSurfaceView @JvmOverloads constructor(
         if (!surfaceReady) return
         val canvas: Canvas = try { holder.lockCanvas() ?: return } catch (e: Exception) { return }
         try {
-            canvas.drawColor(appearance.previewBgColor.toInt())
+            // Background is now painted by RigRenderer itself (V2 — solid or
+            // gradient, oversized for camera safety), so no pre-fill here.
             renderer.draw(canvas, engine.currentAngles, appearance, width, height,
-                mouthShape    = engine.currentMouthShape,
-                mouthOpenness = engine.currentAmplitude)
+                mouthShape           = engine.currentMouthShape,
+                mouthOpenness        = engine.currentAmplitude,
+                expression           = engine.currentExpression,
+                eyeOpenness          = engine.currentEyeOpenness,
+                cameraZoom           = engine.currentCameraZoom,
+                cameraPanX           = engine.currentCameraPanX,
+                cameraPanY           = engine.currentCameraPanY,
+                cameraShakeIntensity = engine.currentShakeIntensity)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 

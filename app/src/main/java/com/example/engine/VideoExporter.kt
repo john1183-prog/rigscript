@@ -54,6 +54,11 @@ object VideoExporter {
     private const val TAG  = "VideoExporter"
     private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
     private const val TIMEOUT = 10_000L
+    /** Frames measured before reporting an ETA — throughput from the first
+     *  couple of frames (JIT warm-up, first-allocation overhead) tends to
+     *  undershoot steady-state, so a too-early estimate would read as overly
+     *  pessimistic and then visibly jump. */
+    private const val MIN_FRAMES_FOR_ETA = 10
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -62,7 +67,7 @@ object VideoExporter {
         project: ProjectDef,
         keyframes: List<BakedKeyframe>,
         amplitudeSettings: com.example.data.AmplitudeSettings = com.example.data.AmplitudeSettings(),
-        onProgress: (Float) -> Unit
+        onProgress: (progress: Float, etaSec: Float?) -> Unit
     ): ExportResult = withContext(Dispatchers.Default) {
 
         val settings        = project.exportSettings
@@ -70,7 +75,6 @@ object VideoExporter {
         val fps             = settings.fps
         val bitrate         = settings.bitrateMbps * 1_000_000
         val appearance      = project.appearance
-        val bgColor         = appearance.exportBgColor.toInt()
 
         // Duration = max(script length, actual audio length) + 1s tail. If the
         // audio runs longer than the scripted pose changes, the figure holds its
@@ -81,16 +85,25 @@ object VideoExporter {
         val totalSec  = maxOf(scriptEnd, project.audioDurationSec) + 1f
         val totalFrames = (totalSec * fps).toInt().coerceAtLeast(1)
 
+        // Pre-baked amplitude envelope, indexed at AMPLITUDE_ANALYSIS_FPS (always 30fps,
+        // independent of the export FPS so the envelope lookup is always correct).
+        // V2: read from the binary EnvelopeStore files first; fall back to the
+        // deprecated inline JSON lists for a project saved before the migration
+        // to disk-backed envelopes (see ProjectDef's doc comment on this pair).
+        @Suppress("DEPRECATION")
+        val envelope: FloatArray = EnvelopeStore.readAmplitudeWithFallback(
+            project.amplitudeEnvelopePath, project.amplitudeEnvelope)
+        @Suppress("DEPRECATION")
+        val mouthEnvelope: IntArray = EnvelopeStore.readMouthShapesWithFallback(
+            project.mouthShapeEnvelopePath, project.mouthShapeEnvelope)
+        val envFps        = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS
+
         val engine = PlaybackEngine().also {
             it.loadTimeline(keyframes)
             it.amplitudeSettings = amplitudeSettings
+            it.loadBlinkSchedule(project.script.blinkEvents, totalSec)
+            it.loadFidgetSchedule(envelope, envFps)
         }
-
-        // Pre-baked amplitude envelope, indexed at AMPLITUDE_ANALYSIS_FPS (always 30fps,
-        // independent of the export FPS so the envelope lookup is always correct).
-        val envelope      = project.amplitudeEnvelope
-        val mouthEnvelope = project.mouthShapeEnvelope
-        val envFps        = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS
         // Own private renderer instance — see the class doc on RigRenderer for
         // why this must never be a shared singleton with the live preview.
         val renderer = RigRenderer()
@@ -200,10 +213,10 @@ object VideoExporter {
             // the loop keeps running to completion. ensureActive() throws
             // CancellationException as soon as the flag is seen, propagating to
             // the finally block which releases encoder/muxer and aborts the output.
+            val exportStartMs = System.currentTimeMillis()
             for (frameIdx in 0 until totalFrames) {
                 if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
 
-                fCanvas.drawColor(bgColor)
                 val timeSec = frameIdx.toFloat() / fps
                 val envIdx  = if (envelope.isNotEmpty())
                     (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
@@ -213,9 +226,15 @@ object VideoExporter {
 
                 engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
                 renderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
-                    forExport     = true,
-                    mouthShape    = engine.currentMouthShape,
-                    mouthOpenness = engine.currentAmplitude)
+                    forExport            = true,
+                    mouthShape           = engine.currentMouthShape,
+                    mouthOpenness        = engine.currentAmplitude,
+                    expression           = engine.currentExpression,
+                    eyeOpenness          = engine.currentEyeOpenness,
+                    cameraZoom           = engine.currentCameraZoom,
+                    cameraPanX           = engine.currentCameraPanX,
+                    cameraPanY           = engine.currentCameraPanY,
+                    cameraShakeIntensity = engine.currentShakeIntensity)
 
                 bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
                 argbToNV12(pixels, width, height, nv12)
@@ -224,7 +243,7 @@ object VideoExporter {
                 queueFrame(nv12, presentationTimeUs, isEos = frameIdx == totalFrames - 1)
                 drainAvailable()
 
-                onProgress(frameIdx.toFloat() / totalFrames * 0.90f)
+                onProgress(frameIdx.toFloat() / totalFrames * 0.90f, computeEtaSec(frameIdx + 1, totalFrames, exportStartMs))
             }
 
             // ── Drain + audio + finish ────────────────────────────────────────
@@ -232,7 +251,7 @@ object VideoExporter {
             if (muxerStarted && audioTrackIdx >= 0 && project.audioFilePath != null) {
                 copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (totalSec * 1_000_000L).toLong())
             }
-            onProgress(1f)
+            onProgress(1f, 0f)
 
             encoder.stop();  encoder.release();  encoderReleased = true
             if (muxerStarted) { muxer.stop(); muxer.release(); muxerReleased = true }
@@ -349,6 +368,23 @@ object VideoExporter {
      * Using getPixels() once per frame instead of getPixel() per pixel
      * eliminates ~400M JNI calls for a 7-minute 1080p export.
      */
+    /**
+     * Estimated seconds remaining, from ACTUAL measured throughput so far
+     * (frames done / wall-clock elapsed) rather than a separate benchmark
+     * pass — a dedicated pre-flight benchmark would either add its own time
+     * to every export by re-rendering warm-up frames, or use a different code
+     * path than the real render+encode loop and risk not matching its speed.
+     * Returns null before [MIN_FRAMES_FOR_ETA] frames — see that constant's
+     * doc comment for why.
+     */
+    private fun computeEtaSec(framesDone: Int, totalFrames: Int, startMs: Long): Float? {
+        if (framesDone < MIN_FRAMES_FOR_ETA) return null
+        val elapsedMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1L)
+        val msPerFrame = elapsedMs.toFloat() / framesDone
+        val framesLeft = (totalFrames - framesDone).coerceAtLeast(0)
+        return (framesLeft * msPerFrame) / 1000f
+    }
+
     private fun argbToNV12(pixels: IntArray, w: Int, h: Int, out: ByteArray) {
         var yOff  = 0
         var uvOff = w * h

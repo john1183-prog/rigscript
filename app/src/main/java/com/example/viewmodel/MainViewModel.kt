@@ -86,6 +86,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _exportProgress = MutableStateFlow<Float?>(null)
     val exportProgress: StateFlow<Float?> = _exportProgress.asStateFlow()
 
+    /** Estimated seconds remaining — null while progress is null (not exporting) or before enough frames have been measured. See VideoExporter.computeEtaSec. */
+    private val _exportEtaSec = MutableStateFlow<Float?>(null)
+    val exportEtaSec: StateFlow<Float?> = _exportEtaSec.asStateFlow()
+
     private val _exportedFile = MutableStateFlow<ExportResult?>(null)
     val exportedFile: StateFlow<ExportResult?> = _exportedFile.asStateFlow()
 
@@ -141,7 +145,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadProject(id: String) {
         viewModelScope.launch {
-            val project = repo.getProject(id) ?: return@launch
+            var project = repo.getProject(id) ?: return@launch
+
+            // V2: migrate a pre-envelope-file project to disk-backed storage
+            // the first time it's opened after upgrading — see EnvelopeStore's
+            // doc comment for why this migration exists. Done here rather
+            // than in AppRepository to match the existing convention: file
+            // I/O lives in the ViewModel layer (see importAudio below),
+            // AppRepository stays DB-only with no filesystem/Context dependency.
+            @Suppress("DEPRECATION")
+            if (project.amplitudeEnvelopePath == null && project.amplitudeEnvelope.isNotEmpty()) {
+                val appCtx = getApplication<Application>()
+                @Suppress("DEPRECATION")
+                val ampPath = withContext(Dispatchers.IO) {
+                    EnvelopeStore.writeAmplitude(appCtx, project.id, project.amplitudeEnvelope.toFloatArray())
+                }
+                @Suppress("DEPRECATION")
+                val mouthPath = withContext(Dispatchers.IO) {
+                    EnvelopeStore.writeMouthShapes(appCtx, project.id, project.mouthShapeEnvelope.toIntArray())
+                }
+                project = project.copy(
+                    amplitudeEnvelopePath  = ampPath,
+                    mouthShapeEnvelopePath = mouthPath,
+                    amplitudeEnvelope      = emptyList(),
+                    mouthShapeEnvelope     = emptyList()
+                )
+                repo.saveProject(project)
+            }
+
             _activeProject.value = project
             _scriptText.value    = json.encodeToString(project.script)
             _scriptError.value   = null
@@ -159,8 +190,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             // B4: Delete the on-device audio copy so storage doesn't grow indefinitely.
             // Previous behaviour silently accumulated files on every re-import.
-            repo.getProject(id)?.audioFilePath?.let { path ->
-                withContext(Dispatchers.IO) { runCatching { File(path).delete() } }
+            // V2: also delete the envelope .bin files for the same reason — these
+            // now live outside the JSON blob (see EnvelopeStore), so deleting the
+            // DB row alone would leak them silently.
+            repo.getProject(id)?.let { proj ->
+                withContext(Dispatchers.IO) {
+                    proj.audioFilePath?.let { runCatching { File(it).delete() } }
+                    EnvelopeStore.deletePaths(proj.amplitudeEnvelopePath, proj.mouthShapeEnvelopePath)
+                }
             }
             repo.deleteProject(id)
         }
@@ -279,12 +316,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             val result = AmplitudeAnalyzer.analyze(destFile.absolutePath)
+
+            // V2: envelopes go to disk via EnvelopeStore instead of inlining
+            // into the ProjectDef JSON blob — this was the #1 architectural
+            // debt item from the V1->V2 handoff (a 7.5-min project was
+            // previously ~150-200KB of JSON floats/ints inside one SQLite
+            // column, decoded in full on every load). Delete any previous
+            // envelope files first for the same reason the audio file above
+            // is deleted before re-import — otherwise every re-import leaks
+            // the old .bin files.
+            withContext(Dispatchers.IO) {
+                EnvelopeStore.deletePaths(project.amplitudeEnvelopePath, project.mouthShapeEnvelopePath)
+            }
+            val ampPath = withContext(Dispatchers.IO) {
+                EnvelopeStore.writeAmplitude(context, project.id, result.envelope)
+            }
+            val mouthPath = withContext(Dispatchers.IO) {
+                EnvelopeStore.writeMouthShapes(context, project.id, result.mouthShapes)
+            }
+
             updateActive {
                 it.copy(
-                    audioFilePath      = destFile.absolutePath,
-                    audioDurationSec   = result.durationSec,
-                    amplitudeEnvelope  = result.envelope.toList(),
-                    mouthShapeEnvelope = result.mouthShapes.toList()
+                    audioFilePath          = destFile.absolutePath,
+                    audioDurationSec       = result.durationSec,
+                    amplitudeEnvelopePath  = ampPath,
+                    mouthShapeEnvelopePath = mouthPath
                 )
             }
             _audioFileName.value = fileName
@@ -330,6 +386,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         exportJob = viewModelScope.launch {
             wakeLock.acquire(3 * 60 * 60 * 1000L)
             _exportProgress.value = 0f
+            _exportEtaSec.value   = null
             _exportedFile.value   = null
             try {
                 val compiled = compileTimeline(project.script)
@@ -338,7 +395,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     project           = project,
                     keyframes         = compiled,
                     amplitudeSettings = _amplitudeSettings.value,
-                    onProgress        = { _exportProgress.value = it }
+                    onProgress        = { progress, eta -> _exportProgress.value = progress; _exportEtaSec.value = eta }
                 )
                 _exportedFile.value = result
                 _message.emit("Export complete: ${result.location}")
@@ -349,6 +406,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _message.emit("Export failed: ${e.message}")
             } finally {
                 _exportProgress.value = null
+                _exportEtaSec.value   = null
                 exportJob = null
                 if (wakeLock.isHeld) wakeLock.release()
             }
@@ -359,6 +417,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         exportJob?.cancel()
         exportJob = null
         _exportProgress.value = null
+        _exportEtaSec.value   = null
     }
 
     companion object { private const val PREF_AMPLITUDE = "amplitude_settings_json" }

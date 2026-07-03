@@ -65,7 +65,16 @@ class RigRenderer {
 
         canvas.save()
         canvas.scale(zoom, zoom, canvasW / 2f, canvasH / 2f)
-        canvas.translate(cameraPanX * canvasW + shakeX, cameraPanY * canvasH + shakeY)
+        // translate() composes in the coordinate space canvas.scale() just
+        // established, so an unscaled pan distance here would visually travel
+        // `zoom` times further than cameraPanX's documented "fraction of
+        // canvas width" implies — a real bug caught on review, worked through
+        // via Canvas's transform composition rules rather than seen rendered.
+        // Dividing by zoom here cancels that back out.
+        canvas.translate(
+            (cameraPanX * canvasW + shakeX) / zoom,
+            (cameraPanY * canvasH + shakeY) / zoom
+        )
 
         // ── Background / scene ───────────────────────────────────────────────
         val bgColor = if (forExport) appearance.exportBgColor else appearance.previewBgColor
@@ -76,8 +85,15 @@ class RigRenderer {
         // under SRC_OVER by default, so alpha=0 here is a no-op and preserves
         // whatever transparency the caller already established on the Bitmap.
         if (appearance.backgroundStyle == "gradient") {
+            // Bounded to the VISIBLE frame (0..canvasH), not the oversized
+            // safety rect below — CLAMP already extends the start/end colours
+            // flat across the oversized margin on its own. Spanning the
+            // gradient across the oversized rect instead would mean the
+            // visible viewport only ever shows the middle third of the
+            // configured colour transition, which was a real bug caught on
+            // review (reasoned through the maths, not seen rendered).
             backgroundPaint.shader = LinearGradient(
-                0f, -canvasH.toFloat(), 0f, canvasH * 2f,
+                0f, 0f, 0f, canvasH.toFloat(),
                 bgColor.toInt(), appearance.backgroundGradientColor.toInt(),
                 Shader.TileMode.CLAMP
             )
@@ -144,7 +160,7 @@ class RigRenderer {
                 val r = bone.headNormalizedRadius * scale
                 canvas.drawCircle(endX, endY, r, headPaint)
                 if (appearance.showMouth) {
-                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness)
+                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression)
                 }
                 if (appearance.showEyes) {
                     drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression)
@@ -166,15 +182,26 @@ class RigRenderer {
      * so it rotates naturally with head tilt. [mouthShape] sets the base
      * proportions; [mouthOpenness] (0..1 smoothed amplitude) scales height.
      */
+    /**
+     * [expression] biases the RESTING mouth shape/position underneath
+     * whatever the audio-driven [mouthShape]/[mouthOpenness] is already
+     * doing — it does not replace the lip-sync logic. Implemented as simple
+     * width/position offsets on the existing oval rather than a curved
+     * smile/frown path: the oval is already proven correct for lip-sync, and
+     * a Bezier "smile arc" combined correctly with an open, talking mouth is
+     * a meaningfully bigger geometry change than this — not something worth
+     * risking without being able to see it rendered.
+     */
     private fun drawMouth(
         canvas: Canvas,
         hx: Float, hy: Float,   // head centre (tip)
         nx: Float, ny: Float,   // neck point (origin)
         r: Float,
-        mouthShape: Int, mouthOpenness: Float
+        mouthShape: Int, mouthOpenness: Float,
+        expression: Int
     ) {
         val cx = hx + (nx - hx) * 0.42f
-        val cy = hy + (ny - hy) * 0.42f
+        var cy = hy + (ny - hy) * 0.42f
 
         val (wFrac, hFrac) = when (mouthShape) {
             MouthShape.WIDE   -> 0.44f to 0.28f
@@ -182,7 +209,17 @@ class RigRenderer {
             MouthShape.CLOSED -> 0.44f to 0.05f
             else              -> 0.42f to 0.14f   // MID
         }
-        val hw = wFrac * r
+
+        val widthMul: Float
+        val cyBiasFrac: Float
+        when (expression) {
+            Expression.HAPPY -> { widthMul = 1.12f; cyBiasFrac = -0.06f }
+            Expression.WORRIED, Expression.ANGRY -> { widthMul = 0.90f; cyBiasFrac = 0.05f }
+            else -> { widthMul = 1f; cyBiasFrac = 0f }
+        }
+        cy += cyBiasFrac * r
+
+        val hw = wFrac * r * widthMul
         val hh = hFrac * r * (0.5f + 0.5f * mouthOpenness.coerceIn(0f, 1f))
         canvas.drawOval(cx - hw, cy - hh, cx + hw, cy + hh, mouthPaint)
     }

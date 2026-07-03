@@ -100,6 +100,19 @@ fun EditorScreen(
         } ?: FloatArray(0)
     }
 
+    // Keeps blink/fidget schedules in sync when AmplitudeSettings changes
+    // (naturalBlinkEnabled, idleFidgetEnabled, interval ranges, ...) without
+    // requiring an unrelated script edit to happen to reload them — see
+    // refreshBlinkAndFidgetSchedules's own doc comment for why this is a
+    // separate effect rather than folded into loadTimeline's gating.
+    LaunchedEffect(project?.script?.blinkEvents, project?.audioDurationSec, envelopeArray, ampSettings, surfaceView) {
+        surfaceView?.refreshBlinkAndFidgetSchedules(
+            project?.script?.blinkEvents ?: emptyList(),
+            project?.audioDurationSec ?: 0f,
+            envelopeArray
+        )
+    }
+
     // ── Audio player (shared singleton; render thread samples it directly) ─────
     val audioPlayer = remember { AudioPlayer.getInstance() }
     var isAudioPlaying by remember { mutableStateOf(false) }
@@ -571,6 +584,24 @@ private fun AppearancePanel(
         }
         LabeledSlider("Idle breath amplitude (°)", ampSettings.idleBreathAmplitude, 0f..8f) {
             onAmplitude(ampSettings.copy(idleBreathAmplitude = it))
+        }
+
+        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        Text("Motion & Face", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+
+        LabeledSwitch("Spring feel on every transition", ampSettings.easeAllWithSpring) {
+            onAmplitude(ampSettings.copy(easeAllWithSpring = it))
+        }
+        LabeledSwitch("Natural idle blinking", ampSettings.naturalBlinkEnabled) {
+            onAmplitude(ampSettings.copy(naturalBlinkEnabled = it))
+        }
+        LabeledSwitch("Idle fidget during pauses", ampSettings.idleFidgetEnabled) {
+            onAmplitude(ampSettings.copy(idleFidgetEnabled = it))
+        }
+        if (ampSettings.idleFidgetEnabled) {
+            LabeledSlider("Fidget amplitude (°)", ampSettings.fidgetAmplitude, 0.5f..8f) {
+                onAmplitude(ampSettings.copy(fidgetAmplitude = it))
+            }
         }
     }
 }

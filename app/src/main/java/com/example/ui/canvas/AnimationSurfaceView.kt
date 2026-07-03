@@ -92,6 +92,24 @@ class AnimationSurfaceView @JvmOverloads constructor(
             engine.loadFidgetSchedule(fidgetEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
         }
     }
+
+    /**
+     * Re-derives the blink/fidget schedules from their current inputs
+     * without touching the pose timeline. Needed because
+     * [com.example.data.AmplitudeSettings] can change (e.g. via the inline
+     * settings panel) while the SAME script/audio stays loaded — loadTimeline
+     * alone wouldn't re-run in that case, since it's correctly gated on the
+     * KEYFRAMES actually changing. Without this, toggling
+     * idleFidgetEnabled/naturalBlinkEnabled mid-session would silently keep
+     * using whatever schedule was computed under the OLD settings until some
+     * unrelated script edit happened to reload the timeline too.
+     */
+    fun refreshBlinkAndFidgetSchedules(blinkTimes: List<Float>, durationSec: Float, fidgetEnvelope: FloatArray) {
+        renderHandler.post {
+            engine.loadBlinkSchedule(blinkTimes, durationSec)
+            engine.loadFidgetSchedule(fidgetEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
+        }
+    }
     fun setAppearance(a: AppearanceSettings) { appearance = a }
     fun setAmplitudeSettings(s: AmplitudeSettings) { renderHandler.post { engine.amplitudeSettings = s } }
     fun setAudioPlayer(player: AudioPlayer?) { audioPlayer = player }

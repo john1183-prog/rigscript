@@ -27,6 +27,36 @@ class PlaybackEngine {
     /** Smoothed audio amplitude (0..1) for the current frame — used by RigRenderer for continuous mouth-openness scaling. */
     val currentAmplitude: Float get() = smoothedAmplitude
 
+    /** Current facial expression — see [Expression]. Snap semantics (no interpolation). Read by RigRenderer. */
+    @Volatile var currentExpression: Int = Expression.NORMAL
+        private set
+
+    /**
+     * Current camera zoom (1 = no zoom) and pan (fraction of canvas width/height).
+     * Purely AI-JSON-driven via [com.example.data.ScriptEvent] — no automatic
+     * behaviour derives these from amplitude. Read by RigRenderer/VideoExporter.
+     */
+    @Volatile var currentCameraZoom: Float = 1f
+        private set
+    @Volatile var currentCameraPanX: Float = 0f
+        private set
+    @Volatile var currentCameraPanY: Float = 0f
+        private set
+    /** One-shot camera shake intensity (0..1), decaying over [SHAKE_DECAY_SEC] from the moment it triggers. */
+    @Volatile var currentShakeIntensity: Float = 0f
+        private set
+
+    /**
+     * Eye openness for the current frame (1 = fully open, 0 = fully closed).
+     * Resolved analytically from [currentTimeSec] against [blinkSchedule] rather
+     * than a live frame-to-frame timer — the same reason [seekTo] uses
+     * [EasingMath.springAnalytical] instead of physics integration: a stateful
+     * random timer would make preview and export blink at different moments for
+     * the same timestamp. Call [loadBlinkSchedule] whenever the project loads or
+     * its script/audio duration changes.
+     */
+    val currentEyeOpenness: Float get() = resolveEyeOpenness(currentTimeSec)
+
     // ── Internal state ────────────────────────────────────────────────────────
 
     private val springVelocities: FloatArray = FloatArray(n)
@@ -35,6 +65,13 @@ class PlaybackEngine {
     var currentTimeSec: Float = 0f
         private set
     private var smoothedAmplitude: Float = 0f
+
+    /** True when the active keyframe's ease is `"rigid"` — [tick] bypasses spring integration entirely when this is set. */
+    private var activeKeyframeIsRigid: Boolean = false
+    /** Merged, sorted, deterministic blink trigger times (script + natural). Set via [loadBlinkSchedule]. */
+    @Volatile private var blinkSchedule: FloatArray = FloatArray(0)
+    /** Deterministic idle-fidget trigger times, scheduled only inside sufficiently silent stretches. Set via [loadFidgetSchedule]. */
+    @Volatile private var fidgetSchedule: FloatArray = FloatArray(0)
 
     @Volatile var amplitudeSettings: AmplitudeSettings = AmplitudeSettings()
     @Volatile var rawAmplitude: Float = 0f          // set from AudioPlayer each frame
@@ -71,6 +108,81 @@ class PlaybackEngine {
         }
     }
 
+    /**
+     * Builds the deterministic blink trigger schedule for this project:
+     * [scriptedTimes] (from [com.example.data.AnimScript.blinkEvents], always
+     * included) merged with an auto-generated natural-blink sequence spanning
+     * `[0, durationSec]` when [AmplitudeSettings.naturalBlinkEnabled] is true.
+     * The natural sequence uses a FIXED seed ([BLINK_SEED]) rather than a live
+     * random timer, so seeking to the same [currentTimeSec] during preview or
+     * export always produces the same eye state — see [currentEyeOpenness].
+     *
+     * Call whenever the active project's script or audio duration changes.
+     */
+    fun loadBlinkSchedule(scriptedTimes: List<Float>, durationSec: Float) {
+        val settings = amplitudeSettings
+        val merged = sortedSetOf<Float>()
+        merged.addAll(scriptedTimes)
+        if (settings.naturalBlinkEnabled && durationSec > 0f) {
+            val rng = kotlin.random.Random(BLINK_SEED)
+            val lo = settings.blinkMinIntervalSec.coerceAtLeast(0.5f)
+            val hi = settings.blinkMaxIntervalSec.coerceAtLeast(lo + 0.1f)
+            var t = lo + rng.nextFloat() * (hi - lo)
+            while (t < durationSec) {
+                merged.add(t)
+                t += lo + rng.nextFloat() * (hi - lo)
+            }
+        }
+        blinkSchedule = merged.toFloatArray()
+    }
+
+    /**
+     * Builds the deterministic idle-fidget trigger schedule by scanning
+     * [envelope] (sampled at [envFps] — e.g. the project's amplitude
+     * envelope) for candidate moments that fall inside a stretch of at least
+     * [AmplitudeSettings.fidgetMinSilenceSec] below
+     * [AmplitudeSettings.silenceThreshold], spaced using
+     * [AmplitudeSettings.fidgetMinIntervalSec]/[AmplitudeSettings.fidgetMaxIntervalSec].
+     * Uses a FIXED seed ([FIDGET_SEED]) for the same preview/export-determinism
+     * reason as [loadBlinkSchedule] — an idempotent export matters for a
+     * production workflow (re-exporting the same project shouldn't change
+     * the animation).
+     *
+     * Trades a small amount of precision for simplicity versus a full
+     * contiguous-silence pre-scan: each candidate is accepted if a window of
+     * [AmplitudeSettings.fidgetMinSilenceSec] centred on it is entirely below
+     * threshold, rather than pre-computing exact silent-range boundaries. In
+     * practice this lands in the same places for normal speech audio at a
+     * fraction of the bookkeeping — flagging this as a simplification rather
+     * than claiming it's the more rigorous approach.
+     *
+     * Call whenever the active project's audio/amplitude envelope changes.
+     * Safe to call with an empty envelope — no fidgets get scheduled, and
+     * nothing fires anyway when [AmplitudeSettings.idleFidgetEnabled] is off.
+     */
+    fun loadFidgetSchedule(envelope: FloatArray, envFps: Int) {
+        val settings = amplitudeSettings
+        val schedule = mutableListOf<Float>()
+        if (settings.idleFidgetEnabled && envelope.isNotEmpty() && envFps > 0) {
+            val rng = kotlin.random.Random(FIDGET_SEED)
+            val durationSec = envelope.size.toFloat() / envFps
+            val lo = settings.fidgetMinIntervalSec.coerceAtLeast(0.5f)
+            val hi = settings.fidgetMaxIntervalSec.coerceAtLeast(lo + 0.1f)
+            val checkFrames = (settings.fidgetMinSilenceSec * envFps).toInt().coerceAtLeast(1)
+            var t = lo + rng.nextFloat() * (hi - lo)
+            while (t < durationSec) {
+                val centerFrame = (t * envFps).toInt()
+                val fromFrame = (centerFrame - checkFrames / 2).coerceAtLeast(0)
+                val toFrame = (centerFrame + checkFrames / 2).coerceAtMost(envelope.size - 1)
+                val isSilentWindow = fromFrame <= toFrame &&
+                    (fromFrame..toFrame).all { envelope[it] <= settings.silenceThreshold }
+                if (isSilentWindow) schedule.add(t)
+                t += lo + rng.nextFloat() * (hi - lo)
+            }
+        }
+        fidgetSchedule = schedule.toFloatArray()
+    }
+
     /** Returns playback to the start. Used by the Stop control. */
     fun reset() {
         currentTimeSec = 0f
@@ -90,11 +202,20 @@ class PlaybackEngine {
         val safeDt = dtSec.coerceIn(0f, 0.05f)   // cap to prevent spring explosion on lag
         currentTimeSec += safeDt
 
-        // 1. Resolve target angles from timeline using analytical spring
+        // 1. Resolve target angles (and V2 expression/camera/shake) from timeline
         resolveBaseAngles(currentTimeSec, useAnalyticalSpring = false)
 
-        // 2. Spring-integrate currentAngles toward baseAngles
-        applySpringIntegration(safeDt)
+        // 2. Spring-integrate currentAngles toward baseAngles — EXCEPT for
+        //    "rigid" keyframes, which must snap with zero physics character.
+        //    Letting the spring chase a suddenly-updated target still LOOKS
+        //    springy for a few frames; rigid means mechanical, not "springy
+        //    toward a new goalpost".
+        if (activeKeyframeIsRigid) {
+            baseAngles.copyInto(currentAngles)
+            springVelocities.fill(0f)
+        } else {
+            applySpringIntegration(safeDt)
+        }
 
         // 3. Layer amplitude-driven motion on top
         applyAmplitudeMotion(safeDt, rawAmp)
@@ -145,6 +266,12 @@ class PlaybackEngine {
     private fun resolveBaseAngles(timeSec: Float, useAnalyticalSpring: Boolean) {
         if (timeline.isEmpty()) {
             bones.forEachIndexed { i, b -> baseAngles[i] = b.defaultAngleDegrees }
+            activeKeyframeIsRigid = false
+            currentExpression = Expression.NORMAL
+            currentCameraZoom = 1f
+            currentCameraPanX = 0f
+            currentCameraPanY = 0f
+            currentShakeIntensity = 0f
             return
         }
 
@@ -159,17 +286,84 @@ class PlaybackEngine {
         val elapsed  = (timeSec - kf.timeSec).coerceAtLeast(0f)
         val t        = (elapsed / kf.duration).coerceIn(0f, 1f)
 
-        val easedT = if (kf.ease == "spring" && useAnalyticalSpring) {
-            EasingMath.springAnalytical(t, kf.springStiffness, kf.springDamping)
-        } else if (kf.ease == "spring") {
-            t   // real-time spring uses the Euler path in applySpringIntegration
-        } else {
-            EasingMath.ease(kf.ease, t)
+        activeKeyframeIsRigid = kf.ease == "rigid"
+
+        // "rigid" snaps straight to the target — no curve, no spring, in either
+        // path. Otherwise, non-"spring"-tagged transitions get the analytical
+        // spring treatment on the SEEK/EXPORT path too when
+        // [AmplitudeSettings.easeAllWithSpring] is on, so exported video matches
+        // what the live tick()-path spring chase already produces in preview —
+        // the same "must be unified" reasoning documented on [applySpringIntegration].
+        val easedT = when {
+            activeKeyframeIsRigid -> 1f
+            kf.ease == "spring" && useAnalyticalSpring ->
+                EasingMath.springAnalytical(t, kf.springStiffness, kf.springDamping)
+            kf.ease == "spring" -> t   // real-time spring uses the Euler path in applySpringIntegration
+            useAnalyticalSpring && amplitudeSettings.easeAllWithSpring ->
+                EasingMath.springAnalytical(t, kf.springStiffness, kf.springDamping)
+            else -> EasingMath.ease(kf.ease, t)
         }
 
         for (i in 0 until n) {
             baseAngles[i] = kf.fromAngles[i] + (kf.toAngles[i] - kf.fromAngles[i]) * easedT
         }
+
+        // ── V2 — face + camera, resolved from the same active keyframe/progress ──
+        currentExpression = kf.expression
+        currentCameraZoom = kf.fromCameraZoom + (kf.toCameraZoom - kf.fromCameraZoom) * easedT
+        currentCameraPanX = kf.fromCameraPanX + (kf.toCameraPanX - kf.fromCameraPanX) * easedT
+        currentCameraPanY = kf.fromCameraPanY + (kf.toCameraPanY - kf.fromCameraPanY) * easedT
+
+        // Shake is a one-shot burst tied to this keyframe's OWN start time, not
+        // to transition progress — it decays over a fixed short window
+        // regardless of how long the pose transition itself takes.
+        val shakeElapsed = timeSec - kf.timeSec
+        currentShakeIntensity = if (kf.cameraShake > 0f && shakeElapsed < SHAKE_DECAY_SEC) {
+            kf.cameraShake * (1f - shakeElapsed / SHAKE_DECAY_SEC)
+        } else 0f
+    }
+
+    private fun resolveEyeOpenness(timeSec: Float): Float {
+        val schedule = blinkSchedule
+        if (schedule.isEmpty()) return 1f
+        // Same "last matching wins" scan as the keyframe search above — blink
+        // counts are small (at most a few dozen per project) so a linear scan
+        // costs nothing meaningful at 60fps.
+        var lastBlinkTime = -1f
+        for (bt in schedule) {
+            if (bt <= timeSec) lastBlinkTime = bt else break
+        }
+        if (lastBlinkTime < 0f) return 1f
+        val dur = amplitudeSettings.blinkDurationSec.coerceAtLeast(0.02f)
+        val elapsed = timeSec - lastBlinkTime
+        if (elapsed >= dur) return 1f
+        // Triangular curve: open → fully closed at the midpoint → open.
+        val half = dur / 2f
+        return if (elapsed < half) 1f - (elapsed / half) else (elapsed - half) / half
+    }
+
+    /**
+     * Returns a signed -1..1 "bump" for the fidget active at [timeSec] (0 if
+     * none) — magnitude follows a smooth ease-in/hold/ease-out curve, sign
+     * gives a cheap left/right variation derived from the trigger's own
+     * timestamp so consecutive fidgets don't look identical. Not a real
+     * random source — just enough variety for a barely-visible cosmetic
+     * effect; not worth a second parallel schedule array for this.
+     */
+    private fun resolveFidgetBump(timeSec: Float): Float {
+        val schedule = fidgetSchedule
+        if (schedule.isEmpty()) return 0f
+        var lastFidgetTime = -1f
+        for (ft in schedule) {
+            if (ft <= timeSec) lastFidgetTime = ft else break
+        }
+        if (lastFidgetTime < 0f) return 0f
+        val dur = amplitudeSettings.fidgetDurationSec.coerceAtLeast(0.1f)
+        val elapsed = timeSec - lastFidgetTime
+        if (elapsed >= dur) return 0f
+        val shape = sin(PI.toFloat() * (elapsed / dur).coerceIn(0f, 1f))
+        val sign = if (((lastFidgetTime * 137f).toInt()) % 2 == 0) 1f else -1f
+        return shape * sign
     }
 
     /** Pre-allocated output buffer for springEulerStep — avoids Pair allocation in the hot path. */
@@ -236,6 +430,20 @@ class PlaybackEngine {
             }
         }
 
+        // ── Idle fidget ──────────────────────────────────────────────────────
+        // loadFidgetSchedule() only ever places triggers inside confirmed-quiet
+        // stretches, so no extra runtime amplitude check is needed here — the
+        // schedule itself already encodes "only during silence".
+        if (s.idleFidgetEnabled) {
+            val fidget = resolveFidgetBump(currentTimeSec)
+            if (fidget != 0f) {
+                if (idxTorso >= 0) currentAngles[idxTorso] += fidget * s.fidgetAmplitude
+                if (idxHead  >= 0) currentAngles[idxHead]  -= fidget * s.fidgetAmplitude * 0.4f
+                val armIdx = if (fidget > 0f) idxArmR else idxArmL
+                if (armIdx >= 0) currentAngles[armIdx] += fidget * s.fidgetAmplitude * 0.6f
+            }
+        }
+
         // Apply angle constraints
         for (i in 0 until n) {
             val bone = bones[i]
@@ -270,5 +478,19 @@ class PlaybackEngine {
             val offset = currentAngles[i] - bone.defaultAngleDegrees
             if (abs(offset) > 0.5f) bone.id to offset else null
         }.toMap()
+    }
+
+    companion object {
+        /** Fixed window over which a one-shot [com.example.data.ScriptEvent.cameraShake] burst decays to zero. */
+        private const val SHAKE_DECAY_SEC = 0.3f
+        /**
+         * Fixed seed for the natural-blink sequence in [loadBlinkSchedule]. Must
+         * never change to a time-based or otherwise non-deterministic value —
+         * doing so would make preview and export blink at different times for
+         * the same project.
+         */
+        private const val BLINK_SEED = 20260701L
+        /** Fixed seed for [loadFidgetSchedule] — same determinism reasoning as [BLINK_SEED]. */
+        private const val FIDGET_SEED = 20260702L
     }
 }

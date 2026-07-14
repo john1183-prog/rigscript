@@ -26,6 +26,12 @@ class RigRenderer {
     private val mouthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val gridPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
+    // V2
+    private val eyePaint        = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val eyebrowPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private val groundPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val backgroundPaint = Paint().apply { style = Paint.Style.FILL }
+
     fun draw(
         canvas: Canvas,
         angles: FloatArray,
@@ -34,22 +40,88 @@ class RigRenderer {
         canvasH: Int,
         forExport: Boolean = false,
         mouthShape: Int = MouthShape.CLOSED,
-        mouthOpenness: Float = 0f
+        mouthOpenness: Float = 0f,
+        expression: Int = Expression.NORMAL,
+        eyeOpenness: Float = 1f,
+        cameraZoom: Float = 1f,
+        cameraPanX: Float = 0f,
+        cameraPanY: Float = 0f,
+        cameraShakeIntensity: Float = 0f
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
         val scale   = minDim * appearance.characterScale
         val rootX   = canvasW * appearance.rootAnchorX
         val rootY   = canvasH * appearance.rootAnchorY
 
+        // ── Camera transform (V2, purely AI-JSON-driven — no automatic
+        // behaviour derives this from amplitude). Wraps EVERYTHING below —
+        // background, ground line, grid, and the figure — so a zoom/pan/shake
+        // reads as an actual camera move over the whole scene, not just the
+        // character scaling in place against a fixed backdrop.
+        val zoom = cameraZoom.coerceAtLeast(0.1f)
+        val shakeMag = cameraShakeIntensity.coerceIn(0f, 1f) * minDim * 0.03f
+        val shakeX = if (shakeMag > 0f) (kotlin.random.Random.nextFloat() * 2f - 1f) * shakeMag else 0f
+        val shakeY = if (shakeMag > 0f) (kotlin.random.Random.nextFloat() * 2f - 1f) * shakeMag else 0f
+
+        canvas.save()
+        canvas.scale(zoom, zoom, canvasW / 2f, canvasH / 2f)
+        // translate() composes in the coordinate space canvas.scale() just
+        // established, so an unscaled pan distance here would visually travel
+        // `zoom` times further than cameraPanX's documented "fraction of
+        // canvas width" implies — a real bug caught on review, worked through
+        // via Canvas's transform composition rules rather than seen rendered.
+        // Dividing by zoom here cancels that back out.
+        canvas.translate(
+            (cameraPanX * canvasW + shakeX) / zoom,
+            (cameraPanY * canvasH + shakeY) / zoom
+        )
+
+        // ── Background / scene ───────────────────────────────────────────────
+        val bgColor = if (forExport) appearance.exportBgColor else appearance.previewBgColor
+        // Oversized (3x canvas, centred) so a zoomed-in or panned camera never
+        // exposes an edge — filling only the literal (0,0,w,h) rect would leave
+        // gaps once the transform above is applied. A fully-transparent
+        // bgColor (WebM alpha export) still behaves correctly: Canvas draws
+        // under SRC_OVER by default, so alpha=0 here is a no-op and preserves
+        // whatever transparency the caller already established on the Bitmap.
+        if (appearance.backgroundStyle == "gradient") {
+            // Bounded to the VISIBLE frame (0..canvasH), not the oversized
+            // safety rect below — CLAMP already extends the start/end colours
+            // flat across the oversized margin on its own. Spanning the
+            // gradient across the oversized rect instead would mean the
+            // visible viewport only ever shows the middle third of the
+            // configured colour transition, which was a real bug caught on
+            // review (reasoned through the maths, not seen rendered).
+            backgroundPaint.shader = LinearGradient(
+                0f, 0f, 0f, canvasH.toFloat(),
+                bgColor.toInt(), appearance.backgroundGradientColor.toInt(),
+                Shader.TileMode.CLAMP
+            )
+        } else {
+            backgroundPaint.shader = null
+            backgroundPaint.color = bgColor.toInt()
+        }
+        canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, canvasH * 2f, backgroundPaint)
+
+        if (appearance.showGroundLine) {
+            groundPaint.color = appearance.groundLineColor.toInt()
+            groundPaint.strokeWidth = 2f
+            val groundY = canvasH * appearance.groundLineYFraction
+            canvas.drawLine(-canvasW.toFloat(), groundY, canvasW * 2f, groundY, groundPaint)
+        }
+
         if (appearance.showGrid && !forExport) drawGrid(canvas, canvasW, canvasH, appearance)
 
-        bonePaint.color       = appearance.boneColor.toInt()
-        bonePaint.strokeWidth = appearance.boneStrokeNormalized * minDim
-        headPaint.color       = appearance.headColor.toInt()
-        jointPaint.color      = appearance.jointColor.toInt()
-        mouthPaint.color      = appearance.mouthColor.toInt()
-        val jointR            = appearance.jointRadiusNormalized * minDim
-        val showJoints        = if (forExport) appearance.showJointsOnExport else appearance.showJoints
+        bonePaint.color          = appearance.boneColor.toInt()
+        bonePaint.strokeWidth    = appearance.boneStrokeNormalized * minDim
+        headPaint.color          = appearance.headColor.toInt()
+        jointPaint.color         = appearance.jointColor.toInt()
+        mouthPaint.color         = appearance.mouthColor.toInt()
+        eyePaint.color           = appearance.eyeColor.toInt()
+        eyebrowPaint.color       = appearance.eyebrowColor.toInt()
+        eyebrowPaint.strokeWidth = appearance.boneStrokeNormalized * minDim * 0.7f
+        val jointR               = appearance.jointRadiusNormalized * minDim
+        val showJoints           = if (forExport) appearance.showJointsOnExport else appearance.showJoints
 
         // ── FK pass ───────────────────────────────────────────────────────────
         for (i in 0 until n) {
@@ -88,7 +160,10 @@ class RigRenderer {
                 val r = bone.headNormalizedRadius * scale
                 canvas.drawCircle(endX, endY, r, headPaint)
                 if (appearance.showMouth) {
-                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness)
+                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression)
+                }
+                if (appearance.showEyes) {
+                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression)
                 }
             } else {
                 canvas.drawLine(startX, startY, endX, endY, bonePaint)
@@ -98,6 +173,8 @@ class RigRenderer {
                 canvas.drawCircle(startX, startY, jointR, jointPaint)
             }
         }
+
+        canvas.restore()
     }
 
     /**
@@ -105,15 +182,26 @@ class RigRenderer {
      * so it rotates naturally with head tilt. [mouthShape] sets the base
      * proportions; [mouthOpenness] (0..1 smoothed amplitude) scales height.
      */
+    /**
+     * [expression] biases the RESTING mouth shape/position underneath
+     * whatever the audio-driven [mouthShape]/[mouthOpenness] is already
+     * doing — it does not replace the lip-sync logic. Implemented as simple
+     * width/position offsets on the existing oval rather than a curved
+     * smile/frown path: the oval is already proven correct for lip-sync, and
+     * a Bezier "smile arc" combined correctly with an open, talking mouth is
+     * a meaningfully bigger geometry change than this — not something worth
+     * risking without being able to see it rendered.
+     */
     private fun drawMouth(
         canvas: Canvas,
         hx: Float, hy: Float,   // head centre (tip)
         nx: Float, ny: Float,   // neck point (origin)
         r: Float,
-        mouthShape: Int, mouthOpenness: Float
+        mouthShape: Int, mouthOpenness: Float,
+        expression: Int
     ) {
         val cx = hx + (nx - hx) * 0.42f
-        val cy = hy + (ny - hy) * 0.42f
+        var cy = hy + (ny - hy) * 0.42f
 
         val (wFrac, hFrac) = when (mouthShape) {
             MouthShape.WIDE   -> 0.44f to 0.28f
@@ -121,9 +209,113 @@ class RigRenderer {
             MouthShape.CLOSED -> 0.44f to 0.05f
             else              -> 0.42f to 0.14f   // MID
         }
-        val hw = wFrac * r
+
+        val widthMul: Float
+        val cyBiasFrac: Float
+        when (expression) {
+            Expression.HAPPY -> { widthMul = 1.12f; cyBiasFrac = -0.06f }
+            Expression.WORRIED, Expression.ANGRY -> { widthMul = 0.90f; cyBiasFrac = 0.05f }
+            else -> { widthMul = 1f; cyBiasFrac = 0f }
+        }
+        cy += cyBiasFrac * r
+
+        val hw = wFrac * r * widthMul
         val hh = hFrac * r * (0.5f + 0.5f * mouthOpenness.coerceIn(0f, 1f))
         canvas.drawOval(cx - hw, cy - hh, cx + hw, cy + hh, mouthPaint)
+    }
+
+    /**
+     * Eyes, positioned/rotated using the same head-tip/neck-axis technique as
+     * [drawMouth] — they follow head tilt for free with no extra bookkeeping.
+     *
+     * [openness] is resolved analytically upstream in [PlaybackEngine] from
+     * BOTH natural idle blinking and any AI-scripted
+     * [com.example.data.AnimScript.blinkEvents]; this function doesn't know or
+     * care which triggered it, it just draws the current openness value.
+     *
+     * Eyebrows are NOT rig bones (the rig has none) — they're synthetic lines
+     * drawn only for [Expression.WORRIED]/[Expression.ANGRY], per
+     * [Expression]'s own doc comment. Their tilt direction was derived
+     * analytically from the perpendicular/"up" basis below, the same way the
+     * three newest poses (present/point_self/open_hands) were computed —
+     * this has NOT been visually confirmed on-device and may need a sign flip.
+     */
+    private fun drawEyes(
+        canvas: Canvas,
+        hx: Float, hy: Float,
+        nx: Float, ny: Float,
+        r: Float,
+        openness: Float,
+        expression: Int
+    ) {
+        // Toward-neck interpolation, same technique as drawMouth but a smaller
+        // fraction — eyes sit higher on the face than the mouth's 0.42f.
+        val cx = hx + (nx - hx) * 0.12f
+        val cy = hy + (ny - hy) * 0.12f
+
+        // Perpendicular to the head-neck axis, normalised — gives left/right
+        // eye separation that automatically follows head TILT, not just
+        // position, exactly like the mouth already does.
+        val rawPx = -(ny - hy)
+        val rawPy = (nx - hx)
+        val plen = kotlin.math.sqrt(rawPx * rawPx + rawPy * rawPy).let { if (it < 0.0001f) 1f else it }
+        val perpX = rawPx / plen
+        val perpY = rawPy / plen
+        val upX = -perpY
+        val upY = perpX
+
+        val eyeSpacing = 0.34f * r
+        val baseEyeRadius = when (expression) {
+            Expression.WIDE, Expression.HAPPY -> 0.20f * r
+            Expression.SQUINT                  -> 0.11f * r
+            else                                -> 0.15f * r
+        }
+        // Blink flattens toward a thin closed line rather than vanishing to
+        // zero height — same reasoning as MouthShape.CLOSED using a thin oval.
+        val openFactor = openness.coerceIn(0f, 1f)
+        val eyeRadiusY = baseEyeRadius * (0.12f + 0.88f * openFactor)
+
+        val leftX  = cx - perpX * eyeSpacing
+        val leftY  = cy - perpY * eyeSpacing
+        val rightX = cx + perpX * eyeSpacing
+        val rightY = cy + perpY * eyeSpacing
+
+        canvas.drawOval(leftX - baseEyeRadius, leftY - eyeRadiusY, leftX + baseEyeRadius, leftY + eyeRadiusY, eyePaint)
+        canvas.drawOval(rightX - baseEyeRadius, rightY - eyeRadiusY, rightX + baseEyeRadius, rightY + eyeRadiusY, eyePaint)
+
+        if (expression == Expression.WORRIED || expression == Expression.ANGRY) {
+            drawEyebrows(canvas, leftX, leftY, rightX, rightY, perpX, perpY, upX, upY, baseEyeRadius, expression)
+        }
+    }
+
+    private fun drawEyebrows(
+        canvas: Canvas,
+        leftX: Float, leftY: Float, rightX: Float, rightY: Float,
+        perpX: Float, perpY: Float,
+        upX: Float, upY: Float,
+        eyeRadius: Float,
+        expression: Int
+    ) {
+        val browHeight = eyeRadius * 1.8f
+        val browHalfLen = eyeRadius * 1.0f
+        // WORRIED: inner end (toward the other eye) lifts — concerned slant.
+        // ANGRY: inner end drops — furrowed/stern slant.
+        val innerLift = eyeRadius * (if (expression == Expression.WORRIED) 0.55f else -0.55f)
+
+        canvas.drawLine(
+            leftX - perpX * browHalfLen + upX * browHeight,
+            leftY - perpY * browHalfLen + upY * browHeight,
+            leftX + perpX * browHalfLen + upX * (browHeight + innerLift),
+            leftY + perpY * browHalfLen + upY * (browHeight + innerLift),
+            eyebrowPaint
+        )
+        canvas.drawLine(
+            rightX + perpX * browHalfLen + upX * browHeight,
+            rightY + perpY * browHalfLen + upY * browHeight,
+            rightX - perpX * browHalfLen + upX * (browHeight + innerLift),
+            rightY - perpY * browHalfLen + upY * (browHeight + innerLift),
+            eyebrowPaint
+        )
     }
 
     /**

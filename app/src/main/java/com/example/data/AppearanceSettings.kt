@@ -28,20 +28,36 @@ data class AppearanceSettings(
     /** Whether to draw joint dots in exported video. */
     val showJointsOnExport: Boolean = false,
 
-    // ── Canvas ────────────────────────────────────────────────────────────────
-    /** Background colour for preview canvas. */
+    // ── Canvas / scene ────────────────────────────────────────────────────────
+    /** Background colour for preview canvas. Also the gradient's top stop when backgroundStyle == "gradient". */
     val previewBgColor: Long = 0xFF1A1A2EL,
     /** Background colour in exported video. 0x00000000 = transparent (WebM only). */
     val exportBgColor: Long = 0xFF1A1A2EL,
     /** Overlay grid for spatial reference. */
     val showGrid: Boolean = false,
     val gridColor: Long = 0x22FFFFFFL,
+    /** "solid" | "gradient" — gradient blends from the bg color (top) to backgroundGradientColor (bottom). */
+    val backgroundStyle: String = "solid",
+    /** Gradient bottom stop. Only used when backgroundStyle == "gradient". */
+    val backgroundGradientColor: Long = 0xFF0A0A14L,
+    /** Optional horizontal ground line for scene composition — gives exports a sense of "place" instead of a floating figure. */
+    val showGroundLine: Boolean = false,
+    val groundLineColor: Long = 0x33FFFFFFL,
+    /** Ground line Y position as a fraction of canvas height. */
+    val groundLineYFraction: Float = 0.82f,
 
     // ── Mouth (audio-reactive) ────────────────────────────────────────────────
     /** Whether to draw the amplitude/shape-driven mouth on the head circle. */
     val showMouth: Boolean = true,
     /** Mouth fill colour. Dark so it reads as an open/closed shape. */
     val mouthColor: Long = 0xFF0D0D14L,
+
+    // ── Eyes / eyebrows (V2) ──────────────────────────────────────────────────
+    /** Whether to draw eyes on the head circle. Eyes blink automatically and react to ScriptEvent.expression. */
+    val showEyes: Boolean = true,
+    val eyeColor: Long = 0xFF0D0D14L,
+    /** Eyebrows are synthetic lines, only drawn for WORRIED/ANGRY expressions — see Expression.kt. */
+    val eyebrowColor: Long = 0xFF0D0D14L,
 
     // ── Transform ─────────────────────────────────────────────────────────────
     /** Overall character scale multiplier (1.0 = default). */

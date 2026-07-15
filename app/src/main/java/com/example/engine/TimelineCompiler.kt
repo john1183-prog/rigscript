@@ -25,6 +25,19 @@ import com.example.data.PoseDef
  * [fromCameraPanY]/[toCameraPanY]           Vertical pan, fraction of canvas height.
  * [cameraShake]    One-shot shake intensity triggered AT [timeSec]. Does NOT carry
  *                  forward — 0f unless the source event explicitly set it.
+ * [fromSkyColor]/[toSkyColor]         Sky/background color, interpolated like
+ *                  camera zoom. Null means "no scripted override was ever set
+ *                  as of this keyframe" — [PlaybackEngine]/[RigRenderer] fall
+ *                  back to [com.example.data.AppearanceSettings]'s bg color in
+ *                  that case, so a project with no scene events renders
+ *                  exactly as before this feature existed.
+ * [fromGroundColor]/[toGroundColor]   Same null-means-no-override rule, for the ground band.
+ * [fromHorizonY]/[toHorizonY]         Same null-means-no-override rule, for the horizon line's Y fraction.
+ * [sceneShape]     Current background silhouette — one of [SceneShape]'s
+ *                  constants. Snap semantics (carry-forward, no interpolation),
+ *                  same as [expression].
+ * [sceneAtmosphere] Current foreground weather/atmosphere overlay — one of
+ *                  [SceneAtmosphere]'s constants. Snap semantics, same as [expression].
  */
 data class BakedKeyframe(
     val timeSec: Float,
@@ -41,7 +54,31 @@ data class BakedKeyframe(
     val toCameraPanX: Float,
     val fromCameraPanY: Float,
     val toCameraPanY: Float,
-    val cameraShake: Float
+    val cameraShake: Float,
+    val fromSkyColor: Long?,
+    val toSkyColor: Long?,
+    val fromGroundColor: Long?,
+    val toGroundColor: Long?,
+    val fromHorizonY: Float?,
+    val toHorizonY: Float?,
+    val sceneShape: String,
+    val sceneAtmosphere: String
+)
+
+/**
+ * A caption cue extracted from [com.example.data.ScriptEvent.caption]. Kept as
+ * a separate flat list rather than folded into [BakedKeyframe] because
+ * captions use BOUNDED-WINDOW visibility (show for [durationSec] then vanish)
+ * instead of the carry-forward semantics every other keyframe field uses — see
+ * [com.example.data.ScriptEvent.caption]'s doc comment. Folding it into
+ * BakedKeyframe would require every consumer to re-derive "is this still
+ * within its window" from data that doesn't carry-forward, which is exactly
+ * the bug class bounded-window semantics exist to avoid.
+ */
+data class CaptionCue(
+    val startSec: Float,
+    val endSec: Float,
+    val text: String
 )
 
 /**
@@ -78,6 +115,15 @@ object TimelineCompiler {
         var prevPanX = 0f
         var prevPanY = 0f
 
+        // V2 scene state — null means "no override yet", carried forward exactly
+        // like prevZoom/prevPanX/prevPanY above. sceneShape/sceneAtmosphere use
+        // "none" as their own not-null default since NONE is itself a valid state.
+        var prevSkyColor: Long?    = null
+        var prevGroundColor: Long? = null
+        var prevHorizonY: Float?   = null
+        var currentSceneShape      = SceneShape.NONE
+        var currentSceneAtmosphere = SceneAtmosphere.NONE
+
         for (event in sorted) {
             val pose = poseResolver(event.pose)
             if (pose == null) {
@@ -98,6 +144,12 @@ object TimelineCompiler {
             val toPanX = event.cameraPanX ?: prevPanX
             val toPanY = event.cameraPanY ?: prevPanY
 
+            val toSkyColor    = event.skyColor ?: prevSkyColor
+            val toGroundColor = event.groundColor ?: prevGroundColor
+            val toHorizonY    = event.horizonY ?: prevHorizonY
+            if (event.sceneShape != null) currentSceneShape = SceneShape.fromString(event.sceneShape)
+            if (event.sceneAtmosphere != null) currentSceneAtmosphere = SceneAtmosphere.fromString(event.sceneAtmosphere)
+
             result += BakedKeyframe(
                 timeSec         = event.timeSec,
                 duration        = event.duration.coerceAtLeast(0.016f),
@@ -113,15 +165,39 @@ object TimelineCompiler {
                 toCameraPanX    = toPanX,
                 fromCameraPanY  = prevPanY,
                 toCameraPanY    = toPanY,
-                cameraShake     = event.cameraShake ?: 0f
+                cameraShake     = event.cameraShake ?: 0f,
+                fromSkyColor    = prevSkyColor,
+                toSkyColor      = toSkyColor,
+                fromGroundColor = prevGroundColor,
+                toGroundColor   = toGroundColor,
+                fromHorizonY    = prevHorizonY,
+                toHorizonY      = toHorizonY,
+                sceneShape      = currentSceneShape,
+                sceneAtmosphere = currentSceneAtmosphere
             )
 
             prevAngles = toAngles.copyOf()
             prevZoom = toZoom
             prevPanX = toPanX
             prevPanY = toPanY
+            prevSkyColor = toSkyColor
+            prevGroundColor = toGroundColor
+            prevHorizonY = toHorizonY
         }
 
         return result
     }
+
+    /**
+     * Extracts caption cues from [script]'s events. Kept as a separate pass
+     * (rather than something computed alongside [compile]'s keyframe loop)
+     * because captions don't need pose resolution or any of the carry-forward
+     * state above — see [CaptionCue]'s doc comment for why they're not folded
+     * into [BakedKeyframe] at all.
+     */
+    fun extractCaptions(script: AnimScript): List<CaptionCue> =
+        script.events
+            .filter { !it.caption.isNullOrBlank() }
+            .sortedBy { it.timeSec }
+            .map { CaptionCue(it.timeSec, it.timeSec + it.captionDurationSec.coerceAtLeast(0.1f), it.caption!!) }
 }

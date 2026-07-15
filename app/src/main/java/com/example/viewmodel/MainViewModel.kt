@@ -197,6 +197,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.IO) {
                     proj.audioFilePath?.let { runCatching { File(it).delete() } }
                     EnvelopeStore.deletePaths(proj.amplitudeEnvelopePath, proj.mouthShapeEnvelopePath)
+                    proj.referenceOverlay.imagePath?.let { runCatching { File(it).delete() } }
                 }
             }
             repo.deleteProject(id)
@@ -348,6 +349,55 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _isAnalysingAudio.value = false
             _message.emit("Audio imported: $fileName (${"%.1f".format(result.durationSec)}s)")
         }
+    }
+
+    // ── Reference overlay (V2) ────────────────────────────────────────────────
+    // File I/O lives here, not in AppRepository — same convention as audio
+    // import above (see ProjectDef's doc comment on that boundary).
+
+    fun importReferenceImage(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            val project = _activeProject.value ?: return@launch
+            val destDir  = File(context.filesDir, "overlay_images").also { it.mkdirs() }
+            val fileName = queryFileName(context, uri) ?: "overlay_${project.id}.jpg"
+
+            // Delete the previous overlay image before writing the new one —
+            // same leak-prevention reasoning as importAudio's B4 fix.
+            withContext(Dispatchers.IO) {
+                project.referenceOverlay.imagePath?.let { runCatching { File(it).delete() } }
+            }
+
+            val destFile = File(destDir, "${project.id}_$fileName")
+            withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+
+            updateReferenceOverlay {
+                it.copy(type = ReferenceOverlay.OverlayType.IMAGE, imagePath = destFile.absolutePath)
+            }
+            saveActiveProject()
+            _message.emit("Reference image imported: $fileName")
+        }
+    }
+
+    fun removeReferenceImage(context: Context) {
+        val project = _activeProject.value ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                project.referenceOverlay.imagePath?.let { runCatching { File(it).delete() } }
+            }
+            updateReferenceOverlay {
+                it.copy(type = ReferenceOverlay.OverlayType.NONE, imagePath = null)
+            }
+            saveActiveProject()
+        }
+    }
+
+    fun updateReferenceOverlay(transform: (ReferenceOverlay) -> ReferenceOverlay) {
+        updateActive { it.copy(referenceOverlay = transform(it.referenceOverlay)) }
+        scheduleSave()
     }
 
     private fun queryFileName(context: Context, uri: Uri): String? {

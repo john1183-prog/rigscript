@@ -3,6 +3,7 @@ package com.example.engine
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -103,10 +104,19 @@ object VideoExporter {
             it.amplitudeSettings = amplitudeSettings
             it.loadBlinkSchedule(project.script.blinkEvents, totalSec)
             it.loadFidgetSchedule(envelope, envFps)
+            it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
         }
         // Own private renderer instance — see the class doc on RigRenderer for
         // why this must never be a shared singleton with the live preview.
         val renderer = RigRenderer()
+
+        // V2 — reference overlay image decoded ONCE up front (I/O + allocation
+        // must never happen inside the per-frame render loop below).
+        val overlay = project.referenceOverlay
+        val overlayBitmap: Bitmap? =
+            if (overlay.type == com.example.data.ReferenceOverlay.OverlayType.IMAGE && overlay.imagePath != null)
+                runCatching { BitmapFactory.decodeFile(overlay.imagePath) }.getOrNull()
+            else null
 
         val bitmap  = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val fCanvas = Canvas(bitmap)
@@ -226,15 +236,24 @@ object VideoExporter {
 
                 engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
                 renderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
-                    forExport            = true,
-                    mouthShape           = engine.currentMouthShape,
-                    mouthOpenness        = engine.currentAmplitude,
-                    expression           = engine.currentExpression,
-                    eyeOpenness          = engine.currentEyeOpenness,
-                    cameraZoom           = engine.currentCameraZoom,
-                    cameraPanX           = engine.currentCameraPanX,
-                    cameraPanY           = engine.currentCameraPanY,
-                    cameraShakeIntensity = engine.currentShakeIntensity)
+                    forExport              = true,
+                    mouthShape             = engine.currentMouthShape,
+                    mouthOpenness          = engine.currentAmplitude,
+                    expression             = engine.currentExpression,
+                    eyeOpenness            = engine.currentEyeOpenness,
+                    cameraZoom             = engine.currentCameraZoom,
+                    cameraPanX             = engine.currentCameraPanX,
+                    cameraPanY             = engine.currentCameraPanY,
+                    cameraShakeIntensity   = engine.currentShakeIntensity,
+                    skyColor               = engine.currentSkyColor,
+                    groundColor            = engine.currentGroundColor,
+                    horizonY               = engine.currentHorizonY,
+                    sceneShape             = engine.currentSceneShape,
+                    sceneAtmosphere        = engine.currentSceneAtmosphere,
+                    currentTimeSec         = timeSec,
+                    captionText            = engine.currentCaption,
+                    referenceOverlay       = overlay,
+                    referenceOverlayBitmap = overlayBitmap)
 
                 bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
                 argbToNV12(pixels, width, height, nv12)

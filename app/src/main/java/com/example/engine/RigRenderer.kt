@@ -1,7 +1,11 @@
 package com.example.engine
 
 import android.graphics.*
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import com.example.data.AppearanceSettings
+import com.example.data.ReferenceOverlay
 import kotlin.math.min
 
 /**
@@ -32,6 +36,16 @@ class RigRenderer {
     private val groundPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val backgroundPaint = Paint().apply { style = Paint.Style.FILL }
 
+    // V2 — scene shapes / atmosphere / caption / reference overlay
+    private val sceneShapePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val atmospherePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val captionBgPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x99000000L.toInt() }
+    private val captionTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.LEFT }
+    private val overlayTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private val overlayBgPaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x88000000L.toInt() }
+    private val overlayImageSrcRect = Rect()
+    private val overlayImageDstRect = RectF()
+
     fun draw(
         canvas: Canvas,
         angles: FloatArray,
@@ -46,7 +60,19 @@ class RigRenderer {
         cameraZoom: Float = 1f,
         cameraPanX: Float = 0f,
         cameraPanY: Float = 0f,
-        cameraShakeIntensity: Float = 0f
+        cameraShakeIntensity: Float = 0f,
+        // V2 — scene, resolved by PlaybackEngine, null = no scripted override
+        skyColor: Long? = null,
+        groundColor: Long? = null,
+        horizonY: Float? = null,
+        sceneShape: String = SceneShape.NONE,
+        sceneAtmosphere: String = SceneAtmosphere.NONE,
+        currentTimeSec: Float = 0f,
+        // V2 — caption (bounded-window text resolved by PlaybackEngine)
+        captionText: String? = null,
+        // V2 — manual reference overlay + its pre-decoded bitmap (image variant only)
+        referenceOverlay: ReferenceOverlay? = null,
+        referenceOverlayBitmap: Bitmap? = null
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
         val scale   = minDim * appearance.characterScale
@@ -84,7 +110,20 @@ class RigRenderer {
         // bgColor (WebM alpha export) still behaves correctly: Canvas draws
         // under SRC_OVER by default, so alpha=0 here is a no-op and preserves
         // whatever transparency the caller already established on the Bitmap.
-        if (appearance.backgroundStyle == "gradient") {
+        // V2 — scripted sky/ground scene bands take priority over the plain
+        // solid/gradient background WHEN either is actually set. Null-for-both
+        // (no scene events in the script) falls straight through to the
+        // original behaviour below, unchanged.
+        if (skyColor != null || groundColor != null) {
+            val sky    = (skyColor ?: bgColor).toInt()
+            val ground = (groundColor ?: bgColor).toInt()
+            val hz     = canvasH * (horizonY ?: appearance.groundLineYFraction)
+            backgroundPaint.shader = null
+            backgroundPaint.color = sky
+            canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, hz, backgroundPaint)
+            backgroundPaint.color = ground
+            canvas.drawRect(-canvasW.toFloat(), hz, canvasW * 2f, canvasH * 2f, backgroundPaint)
+        } else if (appearance.backgroundStyle == "gradient") {
             // Bounded to the VISIBLE frame (0..canvasH), not the oversized
             // safety rect below — CLAMP already extends the start/end colours
             // flat across the oversized margin on its own. Spanning the
@@ -97,11 +136,16 @@ class RigRenderer {
                 bgColor.toInt(), appearance.backgroundGradientColor.toInt(),
                 Shader.TileMode.CLAMP
             )
+            canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, canvasH * 2f, backgroundPaint)
         } else {
             backgroundPaint.shader = null
             backgroundPaint.color = bgColor.toInt()
+            canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, canvasH * 2f, backgroundPaint)
         }
-        canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, canvasH * 2f, backgroundPaint)
+
+        if (sceneShape != SceneShape.NONE) {
+            drawSceneShape(canvas, canvasW, canvasH, horizonY ?: appearance.groundLineYFraction, sceneShape, appearance)
+        }
 
         if (appearance.showGroundLine) {
             groundPaint.color = appearance.groundLineColor.toInt()
@@ -111,6 +155,11 @@ class RigRenderer {
         }
 
         if (appearance.showGrid && !forExport) drawGrid(canvas, canvasW, canvasH, appearance)
+
+        val overlayVisible = referenceOverlay != null && referenceOverlay.isVisibleAt(currentTimeSec)
+        if (overlayVisible && referenceOverlay != null && !referenceOverlay.inFrontOfFigure) {
+            drawReferenceOverlay(canvas, canvasW, canvasH, referenceOverlay, referenceOverlayBitmap)
+        }
 
         bonePaint.color          = appearance.boneColor.toInt()
         bonePaint.strokeWidth    = appearance.boneStrokeNormalized * minDim
@@ -157,7 +206,7 @@ class RigRenderer {
                 // around the neck — head nods and pose offsets are finally
                 // visible. Previously it was drawn at startX/startY (the
                 // origin), where rotation has no effect on position.
-                val r = bone.headNormalizedRadius * scale
+                val r = bone.headNormalizedRadius * scale * appearance.headScaleMultiplier
                 canvas.drawCircle(endX, endY, r, headPaint)
                 if (appearance.showMouth) {
                     drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression)
@@ -174,7 +223,239 @@ class RigRenderer {
             }
         }
 
+        if (overlayVisible && referenceOverlay != null && referenceOverlay.inFrontOfFigure) {
+            drawReferenceOverlay(canvas, canvasW, canvasH, referenceOverlay, referenceOverlayBitmap)
+        }
+
         canvas.restore()
+
+        // ── Screen-space layers (unaffected by camera zoom/pan/shake) ─────────
+        // Atmosphere is a whole-viewport weather/mood filter — panning or
+        // zooming the camera shouldn't make rain streaks slide relative to the
+        // frame, so it's drawn after restore(), same reasoning as the caption
+        // being a fixed subtitle rather than something that scrolls with the
+        // scene.
+        if (sceneAtmosphere != SceneAtmosphere.NONE) {
+            drawAtmosphere(canvas, canvasW, canvasH, sceneAtmosphere, currentTimeSec)
+        }
+        if (!captionText.isNullOrBlank()) {
+            drawCaption(canvas, canvasW, canvasH, captionText)
+        }
+    }
+
+    /**
+     * Cheap procedural background silhouette drawn behind the figure, in the
+     * band just above [horizonYFraction]. Deliberately simple shapes (no
+     * imported art) so they scale to any canvas size for free. Colour is
+     * derived from the figure's own bone colour via [constrainSceneColor] so
+     * the AI never has to reason about a colour clash — see
+     * [com.example.data.AppearanceSettings] doc + V2_DECISIONS.md.
+     */
+    private fun drawSceneShape(canvas: Canvas, w: Int, h: Int, horizonYFraction: Float, shape: String, appearance: AppearanceSettings) {
+        val horizonPx = h * horizonYFraction
+        sceneShapePaint.color = constrainSceneColor(appearance.boneColor, appearance.boneColor, alpha = 0x66)
+        when (shape) {
+            SceneShape.MOUNTAINS -> {
+                val peakCount = 4
+                val peakW = w.toFloat() / (peakCount - 1)
+                val path = Path()
+                path.moveTo(-w * 0.2f, horizonPx)
+                for (i in 0 until peakCount) {
+                    val x = -w * 0.2f + i * peakW * 1.4f
+                    val peakHeight = horizonPx * (0.35f + 0.15f * ((i * 37) % 3))
+                    path.lineTo(x + peakW * 0.7f, horizonPx - peakHeight)
+                    path.lineTo(x + peakW * 1.4f, horizonPx)
+                }
+                path.lineTo(w * 1.2f, horizonPx)
+                path.lineTo(w * 1.2f, horizonPx + h * 0.01f)
+                path.lineTo(-w * 0.2f, horizonPx + h * 0.01f)
+                path.close()
+                canvas.drawPath(path, sceneShapePaint)
+            }
+            SceneShape.CITY -> {
+                val buildingCount = 8
+                val bw = w.toFloat() / buildingCount
+                for (i in 0 until buildingCount) {
+                    val bh = horizonPx * (0.25f + 0.35f * ((i * 53) % 5) / 5f)
+                    val x = i * bw
+                    canvas.drawRect(x, horizonPx - bh, x + bw * 0.8f, horizonPx, sceneShapePaint)
+                }
+            }
+            SceneShape.TREES -> {
+                val treeCount = 6
+                val spacing = w.toFloat() / treeCount
+                for (i in 0 until treeCount) {
+                    val cx = spacing * i + spacing * 0.5f
+                    val r = horizonPx * (0.10f + 0.04f * ((i * 29) % 3))
+                    canvas.drawCircle(cx, horizonPx - r, r, sceneShapePaint)
+                    canvas.drawRect(cx - r * 0.08f, horizonPx - r, cx + r * 0.08f, horizonPx, sceneShapePaint)
+                }
+            }
+            SceneShape.CLOUDS -> {
+                val cloudCount = 4
+                val spacing = w.toFloat() / cloudCount
+                for (i in 0 until cloudCount) {
+                    val cx = spacing * i + spacing * 0.5f
+                    val cy = horizonPx * (0.15f + 0.10f * ((i * 41) % 3))
+                    val r = w * 0.05f
+                    canvas.drawCircle(cx - r, cy, r, sceneShapePaint)
+                    canvas.drawCircle(cx + r * 0.6f, cy - r * 0.3f, r * 0.8f, sceneShapePaint)
+                    canvas.drawCircle(cx + r * 1.4f, cy, r * 0.7f, sceneShapePaint)
+                }
+            }
+        }
+    }
+
+    /**
+     * Enforces a minimum 50° hue separation from [figureColor] and caps
+     * saturation at 0.45 — a scripted scene colour should never visually
+     * compete with or blend into the figure. Not reliant on AI prompt
+     * guidance; enforced here unconditionally. See V2_DECISIONS.md.
+     */
+    private fun constrainSceneColor(base: Long, figureColor: Long, alpha: Int = 0xFF): Int {
+        val baseHsv = FloatArray(3)
+        Color.colorToHSV((base or 0xFF000000L).toInt(), baseHsv)
+        val figHsv = FloatArray(3)
+        Color.colorToHSV((figureColor or 0xFF000000L).toInt(), figHsv)
+        var hueDiff = kotlin.math.abs(baseHsv[0] - figHsv[0])
+        if (hueDiff > 180f) hueDiff = 360f - hueDiff
+        if (hueDiff < 50f) baseHsv[0] = (figHsv[0] + 50f) % 360f
+        baseHsv[1] = baseHsv[1].coerceAtMost(0.45f)
+        return Color.HSVToColor(alpha, baseHsv)
+    }
+
+    /**
+     * Cheap procedural weather/atmosphere overlay, drawn in screen space
+     * (after the camera transform is restored) so it reads as a filter over
+     * the whole frame rather than an object in the scene. Positions are a
+     * deterministic function of [timeSec] (not a live random source) so
+     * preview and export produce identical frames for the same timestamp —
+     * same determinism reasoning as [PlaybackEngine]'s blink/fidget schedules.
+     */
+    private fun drawAtmosphere(canvas: Canvas, w: Int, h: Int, atmosphere: String, timeSec: Float) {
+        when (atmosphere) {
+            SceneAtmosphere.FOG -> {
+                atmospherePaint.color = 0x33FFFFFFL.toInt()
+                canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), atmospherePaint)
+            }
+            SceneAtmosphere.RAIN -> {
+                atmospherePaint.color = 0x66AACCFFL.toInt()
+                atmospherePaint.strokeWidth = 2f
+                val cols = 24
+                val speed = 900f // px/sec, purely deterministic from timeSec
+                for (i in 0 until cols) {
+                    val baseX = (i.toFloat() / cols) * w
+                    val x = (baseX + (i * 17) % 40) 
+                    val y = ((timeSec * speed) + i * 53f).let { it % (h + 40f) } - 20f
+                    canvas.drawLine(x, y, x - 8f, y + 20f, atmospherePaint)
+                }
+            }
+            SceneAtmosphere.SNOW -> {
+                atmospherePaint.color = 0xCCFFFFFFL.toInt()
+                val flakes = 30
+                val speed = 120f
+                for (i in 0 until flakes) {
+                    val baseX = (i.toFloat() / flakes) * w
+                    val drift = kotlin.math.sin(timeSec * 0.6f + i) * 15f
+                    val x = baseX + drift
+                    val y = ((timeSec * speed) + i * 71f).let { it % (h + 20f) } - 10f
+                    canvas.drawCircle(x, y, 3f, atmospherePaint)
+                }
+            }
+            SceneAtmosphere.STARS -> {
+                atmospherePaint.color = 0xDDFFFFFFL.toInt()
+                val stars = 40
+                for (i in 0 until stars) {
+                    // Fixed pseudo-random grid — stars don't move, just a light static-time twinkle.
+                    val x = ((i * 6151) % w.coerceAtLeast(1)).toFloat()
+                    val y = ((i * 3079) % (h / 2).coerceAtLeast(1)).toFloat()
+                    val twinkle = 0.5f + 0.5f * kotlin.math.sin(timeSec * 2f + i)
+                    atmospherePaint.alpha = (140 + 100 * twinkle).toInt().coerceIn(0, 255)
+                    canvas.drawCircle(x, y, 2f, atmospherePaint)
+                }
+                atmospherePaint.alpha = 255
+            }
+        }
+    }
+
+    /**
+     * Bottom-anchored subtitle-style caption with a semi-opaque backdrop for
+     * legibility over any scene. Screen-space (drawn after camera restore) —
+     * captions should read like burned-in subtitles, not an object the camera
+     * can pan away from.
+     */
+    private fun drawCaption(canvas: Canvas, w: Int, h: Int, text: String) {
+        captionTextPaint.textSize = h * 0.045f
+        val maxWidth = (w * 0.88f).toInt().coerceAtLeast(1)
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, captionTextPaint, maxWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setLineSpacing(0f, 1.1f)
+            .build()
+
+        val padding = h * 0.02f
+        val bottomMargin = h * 0.06f
+        val boxLeft = (w - maxWidth) / 2f - padding
+        val boxRight = boxLeft + maxWidth + padding * 2f
+        val boxBottom = h - bottomMargin
+        val boxTop = boxBottom - layout.height - padding * 2f
+
+        canvas.drawRoundRect(boxLeft, boxTop, boxRight, boxBottom, padding, padding, captionBgPaint)
+        canvas.save()
+        canvas.translate((w - maxWidth) / 2f, boxTop + padding)
+        layout.draw(canvas)
+        canvas.restore()
+    }
+
+    /**
+     * Manual reference overlay (image or text), positioned by fraction of
+     * canvas per [ReferenceOverlay.posX]/[posY]/[sizeFraction]. Drawn either
+     * before or after the figure's FK pass depending on [ReferenceOverlay.inFrontOfFigure]
+     * — see the two call sites in [draw].
+     */
+    private fun drawReferenceOverlay(canvas: Canvas, w: Int, h: Int, overlay: ReferenceOverlay, bitmap: Bitmap?) {
+        val minDim = min(w, h).toFloat()
+        val sizePx = minDim * overlay.sizeFraction
+        val cx = w * overlay.posX
+        val cy = h * overlay.posY
+
+        when (overlay.type) {
+            ReferenceOverlay.OverlayType.IMAGE -> {
+                if (bitmap == null) return
+                val cropL = (overlay.cropLeft.coerceIn(0f, 1f) * bitmap.width).toInt()
+                val cropT = (overlay.cropTop.coerceIn(0f, 1f) * bitmap.height).toInt()
+                val cropR = (overlay.cropRight.coerceIn(0f, 1f) * bitmap.width).toInt().coerceAtLeast(cropL + 1)
+                val cropB = (overlay.cropBottom.coerceIn(0f, 1f) * bitmap.height).toInt().coerceAtLeast(cropT + 1)
+                overlayImageSrcRect.set(cropL, cropT, cropR, cropB)
+                val aspect = (cropR - cropL).toFloat() / (cropB - cropT).toFloat()
+                val dw = if (aspect >= 1f) sizePx else sizePx * aspect
+                val dh = if (aspect >= 1f) sizePx / aspect else sizePx
+                overlayImageDstRect.set(cx - dw / 2f, cy - dh / 2f, cx + dw / 2f, cy + dh / 2f)
+                canvas.drawBitmap(bitmap, overlayImageSrcRect, overlayImageDstRect, null)
+            }
+            ReferenceOverlay.OverlayType.TEXT -> {
+                val text = overlay.text ?: return
+                overlayTextPaint.color = overlay.textColor.toInt()
+                overlayTextPaint.textSize = sizePx * 0.3f
+                val maxWidth = (minDim * 0.6f).toInt().coerceAtLeast(1)
+                val layout = StaticLayout.Builder
+                    .obtain(text, 0, text.length, overlayTextPaint, maxWidth)
+                    .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                    .build()
+                if (overlay.showBackdrop) {
+                    val pad = sizePx * 0.08f
+                    canvas.drawRoundRect(
+                        cx - maxWidth / 2f - pad, cy - layout.height / 2f - pad,
+                        cx + maxWidth / 2f + pad, cy + layout.height / 2f + pad,
+                        pad, pad, overlayBgPaint
+                    )
+                }
+                canvas.save()
+                canvas.translate(cx - maxWidth / 2f, cy - layout.height / 2f)
+                layout.draw(canvas)
+                canvas.restore()
+            }
+        }
     }
 
     /**

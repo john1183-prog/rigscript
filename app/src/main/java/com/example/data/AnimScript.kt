@@ -38,6 +38,33 @@ import kotlinx.serialization.Serializable
  *                    triggered the instant this event becomes active. Decays
  *                    over ~0.3s. null/0 = no shake. Does NOT carry forward —
  *                    it's a momentary trigger, not a held state.
+ * [caption]          Optional on-screen caption text starting at this event's
+ *                    [timeSec]. BOUNDED-WINDOW semantics, not carry-forward:
+ *                    unlike pose/expression/camera, a caption does NOT stay
+ *                    visible until the next event sets a new one — it's only
+ *                    shown for [captionDurationSec], then disappears. This
+ *                    matches how captions are actually authored (one line per
+ *                    spoken beat) and avoids stale/orphaned text sitting on
+ *                    screen through unrelated later events. Extracted
+ *                    separately as [com.example.engine.CaptionCue] rather than
+ *                    baked into [com.example.engine.BakedKeyframe] — see
+ *                    [com.example.engine.TimelineCompiler.extractCaptions].
+ * [captionDurationSec] How long [caption] stays on screen, in seconds. Ignored
+ *                    if [caption] is null.
+ * [skyColor]         Optional scene sky/background color for this event
+ *                    onward — ARGB Long, same convention as
+ *                    [AppearanceSettings]'s color fields. null = hold the
+ *                    previous value (or the appearance default if never set).
+ *                    Carry-forward, same rule as pose/expression.
+ * [groundColor]      Optional ground-band color, same carry-forward rule as [skyColor].
+ * [horizonY]         Optional horizon line position, fraction of canvas height
+ *                    (0..1). null = hold previous value.
+ * [sceneShape]       Optional background silhouette — one of
+ *                    [com.example.engine.SceneShape]'s constants as a string
+ *                    (none|mountains|city|trees|clouds). null = hold previous.
+ * [sceneAtmosphere]  Optional foreground weather/atmosphere overlay — one of
+ *                    [com.example.engine.SceneAtmosphere]'s constants as a
+ *                    string (none|rain|snow|fog|stars). null = hold previous.
  */
 @Serializable
 data class ScriptEvent(
@@ -51,7 +78,14 @@ data class ScriptEvent(
     val cameraZoom: Float? = null,
     val cameraPanX: Float? = null,
     val cameraPanY: Float? = null,
-    val cameraShake: Float? = null
+    val cameraShake: Float? = null,
+    val caption: String? = null,
+    val captionDurationSec: Float = 2.5f,
+    val skyColor: Long? = null,
+    val groundColor: Long? = null,
+    val horizonY: Float? = null,
+    val sceneShape: String? = null,
+    val sceneAtmosphere: String? = null
 )
 
 /**

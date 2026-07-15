@@ -1,6 +1,8 @@
 package com.example.ui.canvas
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.os.Handler
 import android.os.HandlerThread
@@ -11,6 +13,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.example.data.AmplitudeSettings
 import com.example.data.AppearanceSettings
+import com.example.data.ReferenceOverlay
 import com.example.engine.*
 import kotlin.math.*
 
@@ -22,6 +25,13 @@ class AnimationSurfaceView @JvmOverloads constructor(
     private val renderer   = RigRenderer()
     private var appearance = AppearanceSettings()
     private var isPlaying  = false
+
+    // V2 — manual reference overlay. Bitmap is decoded once here (not per
+    // frame, not inside RigRenderer, which must stay allocation-free in its
+    // hot draw loop) and re-decoded only when the overlay's imagePath changes.
+    private var referenceOverlay: ReferenceOverlay = ReferenceOverlay()
+    @Volatile private var referenceOverlayBitmap: Bitmap? = null
+    private var loadedOverlayImagePath: String? = null
 
     // B1: Use SystemClock.elapsedRealtime() — monotonic, never jumps backward
     // on clock sync or forward on DST. System.currentTimeMillis() could produce
@@ -83,13 +93,36 @@ class AnimationSurfaceView @JvmOverloads constructor(
         keyframes: List<BakedKeyframe>,
         blinkTimes: List<Float> = emptyList(),
         durationSec: Float = 0f,
-        fidgetEnvelope: FloatArray = FloatArray(0)
+        fidgetEnvelope: FloatArray = FloatArray(0),
+        captionCues: List<CaptionCue> = emptyList()
     ) {
         val snap = !isPlaying
         renderHandler.post {
             engine.loadTimeline(keyframes, snapToCurrentTime = snap)
             engine.loadBlinkSchedule(blinkTimes, durationSec)
             engine.loadFidgetSchedule(fidgetEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
+            engine.loadCaptions(captionCues)
+        }
+    }
+
+    /**
+     * Sets the manual reference overlay (see [ReferenceOverlay]'s doc
+     * comment). Re-decodes the bitmap only when [ReferenceOverlay.imagePath]
+     * actually changes, on the render thread — decoding is I/O + allocation
+     * and must never happen inside [drawFrame]'s hot path.
+     */
+    fun setReferenceOverlay(overlay: ReferenceOverlay) {
+        referenceOverlay = overlay
+        renderHandler.post {
+            if (overlay.type == ReferenceOverlay.OverlayType.IMAGE && overlay.imagePath != null) {
+                if (overlay.imagePath != loadedOverlayImagePath) {
+                    referenceOverlayBitmap = runCatching { BitmapFactory.decodeFile(overlay.imagePath) }.getOrNull()
+                    loadedOverlayImagePath = overlay.imagePath
+                }
+            } else {
+                referenceOverlayBitmap = null
+                loadedOverlayImagePath = null
+            }
         }
     }
 
@@ -148,14 +181,23 @@ class AnimationSurfaceView @JvmOverloads constructor(
             // Background is now painted by RigRenderer itself (V2 — solid or
             // gradient, oversized for camera safety), so no pre-fill here.
             renderer.draw(canvas, engine.currentAngles, appearance, width, height,
-                mouthShape           = engine.currentMouthShape,
-                mouthOpenness        = engine.currentAmplitude,
-                expression           = engine.currentExpression,
-                eyeOpenness          = engine.currentEyeOpenness,
-                cameraZoom           = engine.currentCameraZoom,
-                cameraPanX           = engine.currentCameraPanX,
-                cameraPanY           = engine.currentCameraPanY,
-                cameraShakeIntensity = engine.currentShakeIntensity)
+                mouthShape             = engine.currentMouthShape,
+                mouthOpenness          = engine.currentAmplitude,
+                expression             = engine.currentExpression,
+                eyeOpenness            = engine.currentEyeOpenness,
+                cameraZoom             = engine.currentCameraZoom,
+                cameraPanX             = engine.currentCameraPanX,
+                cameraPanY             = engine.currentCameraPanY,
+                cameraShakeIntensity   = engine.currentShakeIntensity,
+                skyColor               = engine.currentSkyColor,
+                groundColor            = engine.currentGroundColor,
+                horizonY               = engine.currentHorizonY,
+                sceneShape             = engine.currentSceneShape,
+                sceneAtmosphere        = engine.currentSceneAtmosphere,
+                currentTimeSec         = engine.currentTimeSec,
+                captionText            = engine.currentCaption,
+                referenceOverlay       = referenceOverlay,
+                referenceOverlayBitmap = referenceOverlayBitmap)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 

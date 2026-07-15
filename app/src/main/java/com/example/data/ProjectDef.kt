@@ -44,5 +44,7 @@ data class ProjectDef(
     val script: AnimScript = AnimScript.EMPTY,
     val appearance: AppearanceSettings = AppearanceSettings(),
     val exportSettings: ExportSettings = ExportSettings(),
+    /** Manual, one-time-configured reference image/text overlay. Never touched by the AI script pipeline — see [ReferenceOverlay]'s doc comment. */
+    val referenceOverlay: ReferenceOverlay = ReferenceOverlay(),
     val lastModifiedMs: Long = System.currentTimeMillis()
 )

@@ -62,6 +62,8 @@ data class AppearanceSettings(
     // ── Transform ─────────────────────────────────────────────────────────────
     /** Overall character scale multiplier (1.0 = default). */
     val characterScale: Float = 1.0f,
+    /** Head circle radius multiplier, independent of [characterScale] — lets a stylised bigger/smaller head ratio without rescaling the whole body. 1.0 = default (headNormalizedRadius as authored on the bone). */
+    val headScaleMultiplier: Float = 1.0f,
     /** Root anchor as fraction of canvas width (0..1). */
     val rootAnchorX: Float = 0.50f,
     /** Root anchor as fraction of canvas height (0..1). */

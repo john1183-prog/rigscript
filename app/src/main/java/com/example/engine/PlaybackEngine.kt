@@ -46,6 +46,41 @@ class PlaybackEngine {
     @Volatile var currentShakeIntensity: Float = 0f
         private set
 
+    // ── V2 scene state ────────────────────────────────────────────────────────
+    // Null sky/ground/horizon means no scripted override is active as of the
+    // current keyframe — RigRenderer falls back to AppearanceSettings' own
+    // bg color / groundLineYFraction in that case, so a project with no scene
+    // events renders exactly as it did before this feature existed.
+    @Volatile var currentSkyColor: Long? = null
+        private set
+    @Volatile var currentGroundColor: Long? = null
+        private set
+    @Volatile var currentHorizonY: Float? = null
+        private set
+    @Volatile var currentSceneShape: String = SceneShape.NONE
+        private set
+    @Volatile var currentSceneAtmosphere: String = SceneAtmosphere.NONE
+        private set
+
+    /**
+     * Caption text active at [currentTimeSec], or null if no caption cue's
+     * bounded window currently covers it. See [com.example.data.ScriptEvent.caption]
+     * for why this is bounded-window rather than carry-forward.
+     */
+    val currentCaption: String? get() = resolveCaption(currentTimeSec)
+    @Volatile private var captionCues: List<CaptionCue> = emptyList()
+
+    /** Loads the project's caption cues — call whenever the active script changes. */
+    fun loadCaptions(cues: List<CaptionCue>) {
+        captionCues = cues
+    }
+
+    private fun resolveCaption(timeSec: Float): String? {
+        // Cue lists are small (a handful per project) — linear scan is fine,
+        // same reasoning as the blink/fidget schedule scans below.
+        return captionCues.firstOrNull { timeSec >= it.startSec && timeSec <= it.endSec }?.text
+    }
+
     /**
      * Eye openness for the current frame (1 = fully open, 0 = fully closed).
      * Resolved analytically from [currentTimeSec] against [blinkSchedule] rather
@@ -272,6 +307,11 @@ class PlaybackEngine {
             currentCameraPanX = 0f
             currentCameraPanY = 0f
             currentShakeIntensity = 0f
+            currentSkyColor = null
+            currentGroundColor = null
+            currentHorizonY = null
+            currentSceneShape = SceneShape.NONE
+            currentSceneAtmosphere = SceneAtmosphere.NONE
             return
         }
 
@@ -321,6 +361,44 @@ class PlaybackEngine {
         currentShakeIntensity = if (kf.cameraShake > 0f && shakeElapsed < SHAKE_DECAY_SEC) {
             kf.cameraShake * (1f - shakeElapsed / SHAKE_DECAY_SEC)
         } else 0f
+
+        // ── V2 — scene, same active-keyframe/progress basis as camera above ──
+        currentSkyColor    = lerpNullableColor(kf.fromSkyColor, kf.toSkyColor, easedT)
+        currentGroundColor = lerpNullableColor(kf.fromGroundColor, kf.toGroundColor, easedT)
+        currentHorizonY    = lerpNullableFloat(kf.fromHorizonY, kf.toHorizonY, easedT)
+        currentSceneShape      = kf.sceneShape
+        currentSceneAtmosphere = kf.sceneAtmosphere
+    }
+
+    /**
+     * Interpolates two nullable ARGB colors. Null means "no scripted override
+     * yet" (see [BakedKeyframe]'s doc comment) — if [to] is null there's
+     * nothing to transition toward, so the result is just [from] (itself
+     * possibly null). If only [from] is null (the very first override just
+     * appeared this keyframe), interpolating from garbage would flash — so we
+     * snap-hold [to] for this keyframe rather than lerp from nothing.
+     */
+    private fun lerpNullableColor(from: Long?, to: Long?, t: Float): Long? {
+        if (to == null) return from
+        val start = from ?: return to
+        return lerpColor(start, to, t)
+    }
+
+    private fun lerpNullableFloat(from: Float?, to: Float?, t: Float): Float? {
+        if (to == null) return from
+        val start = from ?: return to
+        return start + (to - start) * t
+    }
+
+    /** Component-wise ARGB lerp between two 0xAARRGGBB Longs. */
+    private fun lerpColor(from: Long, to: Long, t: Float): Long {
+        val ct = t.coerceIn(0f, 1f)
+        fun ch(shift: Int): Long {
+            val a = (from shr shift) and 0xFFL
+            val b = (to shr shift) and 0xFFL
+            return (a + (b - a) * ct).toLong().coerceIn(0L, 255L) shl shift
+        }
+        return ch(24) or ch(16) or ch(8) or ch(0)
     }
 
     private fun resolveEyeOpenness(timeSec: Float): Float {

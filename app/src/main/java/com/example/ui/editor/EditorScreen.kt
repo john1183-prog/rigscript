@@ -141,6 +141,11 @@ fun EditorScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.importAudio(context, it) } }
 
+    // V2 — manual reference overlay image picker, same pattern as audioPicker.
+    val referenceImagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.importReferenceImage(context, it) } }
+
     // F1: Script import — pick any .json file and load it as the animation script
     val scriptPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -237,6 +242,7 @@ fun EditorScreen(
                             sv.setAppearance(project?.appearance ?: AppearanceSettings())
                             sv.setAmplitudeSettings(ampSettings)
                             sv.setAudioPlayer(audioPlayer)
+                            sv.setReferenceOverlay(project?.referenceOverlay ?: com.example.data.ReferenceOverlay())
                         }
                     },
                     update = { sv ->
@@ -245,12 +251,14 @@ fun EditorScreen(
                                 keyframes,
                                 blinkTimes     = project?.script?.blinkEvents ?: emptyList(),
                                 durationSec    = project?.audioDurationSec ?: 0f,
-                                fidgetEnvelope = envelopeArray
+                                fidgetEnvelope = envelopeArray,
+                                captionCues    = project?.script?.let { com.example.engine.TimelineCompiler.extractCaptions(it) } ?: emptyList()
                             )
                             lastLoadedKeyframes = keyframes
                         }
                         project?.appearance?.let { sv.setAppearance(it) }
                         sv.setAmplitudeSettings(ampSettings)
+                        project?.referenceOverlay?.let { sv.setReferenceOverlay(it) }
                     },
                     onRelease = { it.release() },
                     modifier = Modifier.fillMaxSize()
@@ -378,11 +386,15 @@ fun EditorScreen(
                     modifier     = Modifier.fillMaxSize()
                 )
                 1 -> AppearancePanel(
-                    appearance   = project?.appearance ?: AppearanceSettings(),
-                    ampSettings  = ampSettings,
-                    onAppearance = { vm.updateAppearance(it) },
-                    onAmplitude  = { vm.updateAmplitudeSettings(it) },
-                    modifier     = Modifier.fillMaxSize()
+                    appearance        = project?.appearance ?: AppearanceSettings(),
+                    ampSettings       = ampSettings,
+                    referenceOverlay  = project?.referenceOverlay ?: com.example.data.ReferenceOverlay(),
+                    onAppearance      = { vm.updateAppearance(it) },
+                    onAmplitude       = { vm.updateAmplitudeSettings(it) },
+                    onReferenceOverlay = { vm.updateReferenceOverlay(it) },
+                    onPickReferenceImage = { referenceImagePicker.launch(arrayOf("image/*")) },
+                    onRemoveReferenceImage = { vm.removeReferenceImage(context) },
+                    modifier          = Modifier.fillMaxSize()
                 )
                 2 -> ExportPanel(
                     settings     = project?.exportSettings ?: ExportSettings(),
@@ -499,8 +511,12 @@ private fun ScriptPanel(
 private fun AppearancePanel(
     appearance: AppearanceSettings,
     ampSettings: com.example.data.AmplitudeSettings,
+    referenceOverlay: com.example.data.ReferenceOverlay,
     onAppearance: (AppearanceSettings) -> Unit,
     onAmplitude: (com.example.data.AmplitudeSettings) -> Unit,
+    onReferenceOverlay: ((com.example.data.ReferenceOverlay) -> com.example.data.ReferenceOverlay) -> Unit,
+    onPickReferenceImage: () -> Unit,
+    onRemoveReferenceImage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp),
@@ -554,6 +570,48 @@ private fun AppearancePanel(
         ColorPickerRow("Mouth color", appearance.mouthColor) { newColor ->
             onAppearance(appearance.copy(mouthColor = newColor))
         }
+        LabeledSlider("Head size", appearance.headScaleMultiplier, 0.5f..2.0f) {
+            onAppearance(appearance.copy(headScaleMultiplier = it))
+        }
+        LabeledSwitch("Show eyes", appearance.showEyes) {
+            onAppearance(appearance.copy(showEyes = it))
+        }
+        ColorPickerRow("Eye color", appearance.eyeColor) { newColor ->
+            onAppearance(appearance.copy(eyeColor = newColor))
+        }
+        ColorPickerRow("Eyebrow color", appearance.eyebrowColor) { newColor ->
+            onAppearance(appearance.copy(eyebrowColor = newColor))
+        }
+        Text("Eyebrows only draw for worried/angry expressions.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+
+        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        Text("Scene", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+
+        LabeledSwitch("Gradient background", appearance.backgroundStyle == "gradient") { on ->
+            onAppearance(appearance.copy(backgroundStyle = if (on) "gradient" else "solid"))
+        }
+        if (appearance.backgroundStyle == "gradient") {
+            ColorPickerRow("Gradient bottom color", appearance.backgroundGradientColor) { newColor ->
+                onAppearance(appearance.copy(backgroundGradientColor = newColor))
+            }
+        }
+        LabeledSwitch("Show ground line", appearance.showGroundLine) {
+            onAppearance(appearance.copy(showGroundLine = it))
+        }
+        if (appearance.showGroundLine) {
+            ColorPickerRow("Ground line color", appearance.groundLineColor) { newColor ->
+                onAppearance(appearance.copy(groundLineColor = newColor))
+            }
+            LabeledSlider("Ground line position", appearance.groundLineYFraction, 0.5f..0.95f) {
+                onAppearance(appearance.copy(groundLineYFraction = it))
+            }
+        }
+
+        TextButton(onClick = { onAppearance(AppearanceSettings()) }) {
+            Text("Reset appearance to defaults")
+        }
 
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         Text("Audio Response", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -567,13 +625,13 @@ private fun AppearancePanel(
         LabeledSlider("Silence threshold", ampSettings.silenceThreshold, 0.0f..0.5f) {
             onAmplitude(ampSettings.copy(silenceThreshold = it))
         }
-        LabeledSlider("Talk torso amplitude (°)", ampSettings.talkTorsoAmplitude, 0f..20f) {
+        LabeledSlider("Talk torso amplitude (°)", ampSettings.talkTorsoAmplitude, 0f..8f) {
             onAmplitude(ampSettings.copy(talkTorsoAmplitude = it))
         }
-        LabeledSlider("Head nod amplitude (°)", ampSettings.talkHeadNodAmplitude, 0f..15f) {
+        LabeledSlider("Head nod amplitude (°)", ampSettings.talkHeadNodAmplitude, 0f..7f) {
             onAmplitude(ampSettings.copy(talkHeadNodAmplitude = it))
         }
-        LabeledSlider("Talk frequency (Hz)", ampSettings.talkFreqHz, 1f..10f) {
+        LabeledSlider("Talk frequency (Hz)", ampSettings.talkFreqHz, 1f..7f) {
             onAmplitude(ampSettings.copy(talkFreqHz = it))
         }
         LabeledSlider("Smoothing", ampSettings.smoothingFactor, 0.0f..0.9f) {
@@ -601,6 +659,72 @@ private fun AppearancePanel(
         if (ampSettings.idleFidgetEnabled) {
             LabeledSlider("Fidget amplitude (°)", ampSettings.fidgetAmplitude, 0.5f..8f) {
                 onAmplitude(ampSettings.copy(fidgetAmplitude = it))
+            }
+        }
+
+        TextButton(onClick = { onAmplitude(com.example.data.AmplitudeSettings()) }) {
+            Text("Reset audio response to defaults")
+        }
+
+        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        Text("Reference Overlay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("Manual image or text overlay you position yourself — never touched by AI-generated scripts.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val types = listOf(
+                com.example.data.ReferenceOverlay.OverlayType.NONE to "None",
+                com.example.data.ReferenceOverlay.OverlayType.IMAGE to "Image",
+                com.example.data.ReferenceOverlay.OverlayType.TEXT to "Text"
+            )
+            types.forEach { (type, label) ->
+                FilterChip(
+                    selected = referenceOverlay.type == type,
+                    onClick = { onReferenceOverlay { it.copy(type = type) } },
+                    label = { Text(label, fontSize = 12.sp) }
+                )
+            }
+        }
+
+        if (referenceOverlay.type == com.example.data.ReferenceOverlay.OverlayType.IMAGE) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onPickReferenceImage) {
+                    Icon(Icons.Default.Image, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (referenceOverlay.imagePath != null) "Change image" else "Choose image", fontSize = 12.sp)
+                }
+                if (referenceOverlay.imagePath != null) {
+                    OutlinedButton(onClick = onRemoveReferenceImage) { Text("Remove", fontSize = 12.sp) }
+                }
+            }
+            LabeledSlider("Crop left", referenceOverlay.cropLeft, 0f..0.9f) { v -> onReferenceOverlay { it.copy(cropLeft = v) } }
+            LabeledSlider("Crop top", referenceOverlay.cropTop, 0f..0.9f) { v -> onReferenceOverlay { it.copy(cropTop = v) } }
+            LabeledSlider("Crop right", referenceOverlay.cropRight, 0.1f..1f) { v -> onReferenceOverlay { it.copy(cropRight = v) } }
+            LabeledSlider("Crop bottom", referenceOverlay.cropBottom, 0.1f..1f) { v -> onReferenceOverlay { it.copy(cropBottom = v) } }
+        }
+
+        if (referenceOverlay.type == com.example.data.ReferenceOverlay.OverlayType.TEXT) {
+            OutlinedTextField(
+                value = referenceOverlay.text ?: "",
+                onValueChange = { v -> onReferenceOverlay { it.copy(text = v) } },
+                label = { Text("Overlay text") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            ColorPickerRow("Text color", referenceOverlay.textColor) { newColor ->
+                onReferenceOverlay { it.copy(textColor = newColor) }
+            }
+            LabeledSwitch("Backdrop behind text", referenceOverlay.showBackdrop) { v ->
+                onReferenceOverlay { it.copy(showBackdrop = v) }
+            }
+        }
+
+        if (referenceOverlay.type != com.example.data.ReferenceOverlay.OverlayType.NONE) {
+            LabeledSlider("Position X", referenceOverlay.posX, 0f..1f) { v -> onReferenceOverlay { it.copy(posX = v) } }
+            LabeledSlider("Position Y", referenceOverlay.posY, 0f..1f) { v -> onReferenceOverlay { it.copy(posY = v) } }
+            LabeledSlider("Size", referenceOverlay.sizeFraction, 0.05f..0.8f) { v -> onReferenceOverlay { it.copy(sizeFraction = v) } }
+            LabeledSwitch("In front of figure", referenceOverlay.inFrontOfFigure) { v ->
+                onReferenceOverlay { it.copy(inFrontOfFigure = v) }
             }
         }
     }

@@ -198,6 +198,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     proj.audioFilePath?.let { runCatching { File(it).delete() } }
                     EnvelopeStore.deletePaths(proj.amplitudeEnvelopePath, proj.mouthShapeEnvelopePath)
                     proj.referenceOverlay.imagePath?.let { runCatching { File(it).delete() } }
+                    proj.backgroundMusic.musicFilePath?.let { runCatching { File(it).delete() } }
                 }
             }
             repo.deleteProject(id)
@@ -397,6 +398,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateReferenceOverlay(transform: (ReferenceOverlay) -> ReferenceOverlay) {
         updateActive { it.copy(referenceOverlay = transform(it.referenceOverlay)) }
+        scheduleSave()
+    }
+
+    // ── Background music (V2) ─────────────────────────────────────────────────
+    // Same file-handling boundary as audio/reference-overlay import above —
+    // file I/O lives here, AppRepository stays DB-only.
+
+    fun importBackgroundMusic(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            val project = _activeProject.value ?: return@launch
+            val destDir  = File(context.filesDir, "background_music").also { it.mkdirs() }
+            val fileName = queryFileName(context, uri) ?: "music_${project.id}"
+
+            withContext(Dispatchers.IO) {
+                project.backgroundMusic.musicFilePath?.let { runCatching { File(it).delete() } }
+            }
+
+            val destFile = File(destDir, "${project.id}_$fileName")
+            withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+
+            updateBackgroundMusic { it.copy(musicFilePath = destFile.absolutePath) }
+            saveActiveProject()
+            _message.emit("Background music imported: $fileName")
+        }
+    }
+
+    fun removeBackgroundMusic(context: Context) {
+        val project = _activeProject.value ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                project.backgroundMusic.musicFilePath?.let { runCatching { File(it).delete() } }
+            }
+            updateBackgroundMusic { it.copy(musicFilePath = null) }
+            saveActiveProject()
+        }
+    }
+
+    fun updateBackgroundMusic(transform: (BackgroundMusicSettings) -> BackgroundMusicSettings) {
+        updateActive { it.copy(backgroundMusic = transform(it.backgroundMusic)) }
         scheduleSave()
     }
 

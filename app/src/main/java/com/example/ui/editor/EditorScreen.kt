@@ -117,8 +117,13 @@ fun EditorScreen(
     val audioPlayer = remember { AudioPlayer.getInstance() }
     var isAudioPlaying by remember { mutableStateOf(false) }
 
+    // V2 — background music. Separate player from narration (see
+    // BackgroundMusicPlayer's doc comment for why); driven in lockstep with
+    // audioPlayer's transport below rather than independently.
+    val musicPlayer = remember { com.example.engine.BackgroundMusicPlayer.getInstance() }
+
     DisposableEffect(Unit) {
-        onDispose { audioPlayer.pause() }
+        onDispose { audioPlayer.pause(); musicPlayer.pause() }
     }
 
     LaunchedEffect(project?.audioFilePath) {
@@ -137,6 +142,20 @@ fun EditorScreen(
         }
     }
 
+    // V2 — (re)load background music whenever its file path changes; volume/
+    // loop changes are applied live below without a reload.
+    LaunchedEffect(project?.backgroundMusic?.musicFilePath) {
+        project?.backgroundMusic?.musicFilePath?.let { path ->
+            musicPlayer.load(path, project.backgroundMusic.volume, project.backgroundMusic.loop)
+        }
+    }
+    LaunchedEffect(project?.backgroundMusic?.volume) {
+        project?.backgroundMusic?.volume?.let { musicPlayer.setVolume(it) }
+    }
+    LaunchedEffect(project?.backgroundMusic?.loop) {
+        project?.backgroundMusic?.let { musicPlayer.setLooping(it.loop) }
+    }
+
     val audioPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.importAudio(context, it) } }
@@ -145,6 +164,11 @@ fun EditorScreen(
     val referenceImagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.importReferenceImage(context, it) } }
+
+    // V2 — background music picker, same pattern as audioPicker.
+    val musicPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.importBackgroundMusic(context, it) } }
 
     // F1: Script import — pick any .json file and load it as the animation script
     val scriptPicker = rememberLauncherForActivityResult(
@@ -299,9 +323,11 @@ fun EditorScreen(
                 onPlayPause  = {
                     if (isAudioPlaying) {
                         audioPlayer.pause()
+                        musicPlayer.pause()
                         surfaceView?.pause()
                     } else {
                         audioPlayer.play()
+                        musicPlayer.play()
                         surfaceView?.play()
                     }
                     isAudioPlaying = !isAudioPlaying
@@ -309,6 +335,8 @@ fun EditorScreen(
                 onStop = {
                     audioPlayer.pause()
                     audioPlayer.seekTo(0)
+                    musicPlayer.pause()
+                    musicPlayer.seekTo(0)
                     surfaceView?.stop()
                     isAudioPlaying = false
                 }
@@ -334,7 +362,10 @@ fun EditorScreen(
             val seekPlayback: (Float) -> Unit = { pos ->
                 scrubberPos = pos
                 surfaceView?.seekTo(pos)
-                if (isAudioPlaying) audioPlayer.seekTo((pos * 1000).toInt())
+                if (isAudioPlaying) {
+                    audioPlayer.seekTo((pos * 1000).toInt())
+                    musicPlayer.seekTo((pos * 1000).toInt())
+                }
             }
 
             // V2 — visual overview of event pacing over the waveform. Tap a
@@ -389,11 +420,15 @@ fun EditorScreen(
                     appearance        = project?.appearance ?: AppearanceSettings(),
                     ampSettings       = ampSettings,
                     referenceOverlay  = project?.referenceOverlay ?: com.example.data.ReferenceOverlay(),
+                    backgroundMusic   = project?.backgroundMusic ?: com.example.data.BackgroundMusicSettings(),
                     onAppearance      = { vm.updateAppearance(it) },
                     onAmplitude       = { vm.updateAmplitudeSettings(it) },
                     onReferenceOverlay = { vm.updateReferenceOverlay(it) },
                     onPickReferenceImage = { referenceImagePicker.launch(arrayOf("image/*")) },
                     onRemoveReferenceImage = { vm.removeReferenceImage(context) },
+                    onBackgroundMusic = { vm.updateBackgroundMusic(it) },
+                    onPickBackgroundMusic = { musicPicker.launch(arrayOf("audio/*")) },
+                    onRemoveBackgroundMusic = { vm.removeBackgroundMusic(context) },
                     modifier          = Modifier.fillMaxSize()
                 )
                 2 -> ExportPanel(
@@ -512,11 +547,15 @@ private fun AppearancePanel(
     appearance: AppearanceSettings,
     ampSettings: com.example.data.AmplitudeSettings,
     referenceOverlay: com.example.data.ReferenceOverlay,
+    backgroundMusic: com.example.data.BackgroundMusicSettings,
     onAppearance: (AppearanceSettings) -> Unit,
     onAmplitude: (com.example.data.AmplitudeSettings) -> Unit,
     onReferenceOverlay: ((com.example.data.ReferenceOverlay) -> com.example.data.ReferenceOverlay) -> Unit,
     onPickReferenceImage: () -> Unit,
     onRemoveReferenceImage: () -> Unit,
+    onBackgroundMusic: ((com.example.data.BackgroundMusicSettings) -> com.example.data.BackgroundMusicSettings) -> Unit,
+    onPickBackgroundMusic: () -> Unit,
+    onRemoveBackgroundMusic: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp),
@@ -725,6 +764,35 @@ private fun AppearancePanel(
             LabeledSlider("Size", referenceOverlay.sizeFraction, 0.05f..0.8f) { v -> onReferenceOverlay { it.copy(sizeFraction = v) } }
             LabeledSwitch("In front of figure", referenceOverlay.inFrontOfFigure) { v ->
                 onReferenceOverlay { it.copy(inFrontOfFigure = v) }
+            }
+        }
+
+        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        Text("Background Music", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("Mixed under the narration on export. Previewed here as a separate track, not a live mix — see export for the real mixed result.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onPickBackgroundMusic) {
+                Icon(Icons.Default.MusicNote, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (backgroundMusic.musicFilePath != null) "Change music" else "Choose music", fontSize = 12.sp)
+            }
+            if (backgroundMusic.musicFilePath != null) {
+                OutlinedButton(onClick = onRemoveBackgroundMusic) { Text("Remove", fontSize = 12.sp) }
+            }
+        }
+
+        if (backgroundMusic.musicFilePath != null) {
+            LabeledSlider("Music volume", backgroundMusic.volume, 0f..1f) { v ->
+                onBackgroundMusic { it.copy(volume = v) }
+            }
+            LabeledSlider("Narration volume", backgroundMusic.narrationVolume, 0f..1f) { v ->
+                onBackgroundMusic { it.copy(narrationVolume = v) }
+            }
+            LabeledSwitch("Loop music to fill video length", backgroundMusic.loop) { v ->
+                onBackgroundMusic { it.copy(loop = v) }
             }
         }
     }

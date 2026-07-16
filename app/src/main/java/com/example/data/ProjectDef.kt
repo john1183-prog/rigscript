@@ -46,5 +46,7 @@ data class ProjectDef(
     val exportSettings: ExportSettings = ExportSettings(),
     /** Manual, one-time-configured reference image/text overlay. Never touched by the AI script pipeline — see [ReferenceOverlay]'s doc comment. */
     val referenceOverlay: ReferenceOverlay = ReferenceOverlay(),
+    /** Optional background music mixed under the narration on export — see [BackgroundMusicSettings]'s doc comment. */
+    val backgroundMusic: BackgroundMusicSettings = BackgroundMusicSettings(),
     val lastModifiedMs: Long = System.currentTimeMillis()
 )

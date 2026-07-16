@@ -123,6 +123,27 @@ object VideoExporter {
         val pixels  = IntArray(width * height)   // reused every frame — one bulk read replaces w*h getPixel() calls
         val nv12    = ByteArray(width * height * 3 / 2)
 
+        // V2 — background music. Only actually decodes/mixes/re-encodes when
+        // music is configured; every other export keeps using the fast
+        // verbatim-copy audio path below, untouched — see BackgroundMusicSettings
+        // and AudioMixer's doc comments for why this is gated rather than
+        // always running through the mixer.
+        val music = project.backgroundMusic
+        val mixedTrack: AudioMixer.EncodedAudioTrack? =
+            if (settings.embedAudio && music.musicFilePath != null) {
+                runCatching {
+                    AudioMixer.buildMixedTrack(
+                        narrationPath   = project.audioFilePath,
+                        musicPath       = music.musicFilePath,
+                        narrationVolume = music.narrationVolume,
+                        musicVolume     = music.volume,
+                        loopMusic       = music.loop,
+                        totalSec        = totalSec
+                    )
+                }.onFailure { Log.e(TAG, "Background music mix failed, falling back to narration-only", it) }
+                    .getOrNull()
+            } else null
+
         val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
@@ -139,6 +160,7 @@ object VideoExporter {
 
         var videoTrackIdx    = -1
         var audioTrackIdx    = -1
+        var mixedAudioTrackIdx = -1
         var muxerStarted     = false
         var encoderReleased  = false
         var muxerReleased    = false
@@ -148,8 +170,11 @@ object VideoExporter {
         fun startMuxerIfNeeded() {
             if (!muxerStarted) {
                 videoTrackIdx = muxer.addTrack(encoder.outputFormat)
-                if (settings.embedAudio && project.audioFilePath != null)
+                if (mixedTrack != null) {
+                    mixedAudioTrackIdx = muxer.addTrack(mixedTrack.format)
+                } else if (settings.embedAudio && project.audioFilePath != null) {
                     audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
+                }
                 muxer.start(); muxerStarted = true
             }
         }
@@ -267,8 +292,20 @@ object VideoExporter {
 
             // ── Drain + audio + finish ────────────────────────────────────────
             drainUntilEndOfStream()
-            if (muxerStarted && audioTrackIdx >= 0 && project.audioFilePath != null) {
-                copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (totalSec * 1_000_000L).toLong())
+            if (muxerStarted) {
+                if (mixedAudioTrackIdx >= 0 && mixedTrack != null) {
+                    val audioInfo = MediaCodec.BufferInfo()
+                    for (s in mixedTrack.samples) {
+                        val buf = ByteBuffer.wrap(s.data)
+                        audioInfo.offset = 0
+                        audioInfo.size = s.data.size
+                        audioInfo.presentationTimeUs = s.presentationTimeUs
+                        audioInfo.flags = s.flags
+                        muxer.writeSampleData(mixedAudioTrackIdx, buf, audioInfo)
+                    }
+                } else if (audioTrackIdx >= 0 && project.audioFilePath != null) {
+                    copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (totalSec * 1_000_000L).toLong())
+                }
             }
             onProgress(1f, 0f)
 

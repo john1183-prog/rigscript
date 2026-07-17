@@ -623,6 +623,18 @@ private fun AppearancePanel(
         LabeledSwitch("Show joints in export", appearance.showJointsOnExport) {
             onAppearance(appearance.copy(showJointsOnExport = it))
         }
+
+        LabeledSwitch("Outline", appearance.outlineEnabled) {
+            onAppearance(appearance.copy(outlineEnabled = it))
+        }
+        if (appearance.outlineEnabled) {
+            ColorPickerRow("Outline color", appearance.outlineColor) { newColor ->
+                onAppearance(appearance.copy(outlineColor = newColor))
+            }
+            LabeledSlider("Outline width", appearance.outlineWidthNormalized, 0.002f..0.02f) {
+                onAppearance(appearance.copy(outlineWidthNormalized = it))
+            }
+        }
         LabeledSwitch("Show grid (preview only)", appearance.showGrid) {
             onAppearance(appearance.copy(showGrid = it))
         }

@@ -35,6 +35,10 @@ class RigRenderer {
     private val eyebrowPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val groundPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val backgroundPaint = Paint().apply { style = Paint.Style.FILL }
+    // V2 — figure outline. Reconfigured per-use (STROKE for bones, FILL for
+    // the head circle) rather than two separate Paints, same reuse pattern
+    // already used for backgroundPaint above.
+    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     // V2 — scene shapes / atmosphere / caption / reference overlay
     private val sceneShapePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -168,9 +172,22 @@ class RigRenderer {
         mouthPaint.color         = appearance.mouthColor.toInt()
         eyePaint.color           = appearance.eyeColor.toInt()
         eyebrowPaint.color       = appearance.eyebrowColor.toInt()
-        eyebrowPaint.strokeWidth = appearance.boneStrokeNormalized * minDim * 0.7f
+        // strokeWidth is NOT set here — it needs to scale with the head's
+        // current drawn size (headScaleMultiplier), so it's set per-draw
+        // inside drawEyebrows() instead of once with a fixed absolute value.
+        // A fixed value here looked disproportionately thick on a shrunk head
+        // and disproportionately thin on an enlarged one.
         val jointR               = appearance.jointRadiusNormalized * minDim
         val showJoints           = if (forExport) appearance.showJointsOnExport else appearance.showJoints
+
+        // V2 — outline. Width is in the same normalized-to-minDim units as
+        // bonePaint's own stroke width, so it scales consistently with the
+        // rest of the figure across canvas sizes/resolutions.
+        val outlineEnabled = appearance.outlineEnabled
+        val outlineWidth   = appearance.outlineWidthNormalized * minDim
+        if (outlineEnabled) {
+            outlinePaint.color = appearance.outlineColor.toInt()
+        }
 
         // ── FK pass ───────────────────────────────────────────────────────────
         for (i in 0 until n) {
@@ -207,14 +224,29 @@ class RigRenderer {
                 // visible. Previously it was drawn at startX/startY (the
                 // origin), where rotation has no effect on position.
                 val r = bone.headNormalizedRadius * scale * appearance.headScaleMultiplier
+                if (outlineEnabled) {
+                    // A slightly bigger solid circle drawn first, in the
+                    // outline color, reads as an outline once the normal
+                    // (smaller) head circle is drawn on top of it — avoids
+                    // any stroke-centering math for what's otherwise a filled
+                    // shape.
+                    outlinePaint.style = Paint.Style.FILL
+                    canvas.drawCircle(endX, endY, r + outlineWidth, outlinePaint)
+                }
                 canvas.drawCircle(endX, endY, r, headPaint)
                 if (appearance.showMouth) {
-                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression)
+                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression, appearance.headScaleMultiplier)
                 }
                 if (appearance.showEyes) {
-                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression)
+                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, appearance.headScaleMultiplier)
                 }
             } else {
+                if (outlineEnabled) {
+                    outlinePaint.style = Paint.Style.STROKE
+                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                    outlinePaint.strokeWidth = bonePaint.strokeWidth + outlineWidth * 2f
+                    canvas.drawLine(startX, startY, endX, endY, outlinePaint)
+                }
                 canvas.drawLine(startX, startY, endX, endY, bonePaint)
             }
 
@@ -479,10 +511,18 @@ class RigRenderer {
         nx: Float, ny: Float,   // neck point (origin)
         r: Float,
         mouthShape: Int, mouthOpenness: Float,
-        expression: Int
+        expression: Int,
+        headScaleMultiplier: Float
     ) {
-        val cx = hx + (nx - hx) * 0.42f
-        var cy = hy + (ny - hy) * 0.42f
+        // The (nx-hx, ny-hy) vector's length is the head BONE's fixed FK
+        // length — it does NOT change with headScaleMultiplier, which only
+        // scales the drawn circle radius `r`. Multiplying the offset fraction
+        // by headScaleMultiplier here keeps the mouth anchored correctly
+        // relative to the visually-scaled circle instead of staying pinned to
+        // where the default-size head used to be. At the default multiplier
+        // (1.0) this is exactly the previous behavior — unchanged look.
+        val cx = hx + (nx - hx) * 0.42f * headScaleMultiplier
+        var cy = hy + (ny - hy) * 0.42f * headScaleMultiplier
 
         val (wFrac, hFrac) = when (mouthShape) {
             MouthShape.WIDE   -> 0.44f to 0.28f
@@ -514,6 +554,13 @@ class RigRenderer {
      * [com.example.data.AnimScript.blinkEvents]; this function doesn't know or
      * care which triggered it, it just draws the current openness value.
      *
+     * [headScaleMultiplier] is needed for the same anchor-scaling reason as
+     * [drawMouth] — see that function's doc comment. Eye SIZE/spacing already
+     * scaled correctly with [r] before this fix; only the anchor position
+     * (where the eyes sit relative to the head circle) was the bug, because
+     * it was computed from the head bone's fixed FK length rather than the
+     * visually-scaled radius.
+     *
      * Eyebrows are NOT rig bones (the rig has none) — they're synthetic lines
      * drawn only for [Expression.WORRIED]/[Expression.ANGRY], per
      * [Expression]'s own doc comment. Their tilt direction was derived
@@ -527,12 +574,14 @@ class RigRenderer {
         nx: Float, ny: Float,
         r: Float,
         openness: Float,
-        expression: Int
+        expression: Int,
+        headScaleMultiplier: Float
     ) {
         // Toward-neck interpolation, same technique as drawMouth but a smaller
         // fraction — eyes sit higher on the face than the mouth's 0.42f.
-        val cx = hx + (nx - hx) * 0.12f
-        val cy = hy + (ny - hy) * 0.12f
+        // See drawMouth's doc comment for why headScaleMultiplier is applied here.
+        val cx = hx + (nx - hx) * 0.12f * headScaleMultiplier
+        val cy = hy + (ny - hy) * 0.12f * headScaleMultiplier
 
         // Perpendicular to the head-neck axis, normalised — gives left/right
         // eye separation that automatically follows head TILT, not just
@@ -577,6 +626,11 @@ class RigRenderer {
         eyeRadius: Float,
         expression: Int
     ) {
+        // Stroke width scales with eyeRadius (which itself scales with the
+        // head's current drawn radius) rather than a fixed absolute value —
+        // see the note where eyebrowPaint.color is set for why a fixed value
+        // looked wrong at non-default headScaleMultiplier.
+        eyebrowPaint.strokeWidth = eyeRadius * 0.35f
         val browHeight = eyeRadius * 1.8f
         val browHalfLen = eyeRadius * 1.0f
         // WORRIED: inner end (toward the other eye) lifts — concerned slant.

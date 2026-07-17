@@ -67,5 +67,12 @@ data class AppearanceSettings(
     /** Root anchor as fraction of canvas width (0..1). */
     val rootAnchorX: Float = 0.50f,
     /** Root anchor as fraction of canvas height (0..1). */
-    val rootAnchorY: Float = 0.52f
+    val rootAnchorY: Float = 0.52f,
+
+    // ── Outline (V2) ──────────────────────────────────────────────────────────
+    /** Draws an outline around the figure's silhouette (limbs + head) — a wider stroke of [outlineColor] drawn behind the normal fill/stroke. Off by default (matches the figure's existing flat-color look unchanged). */
+    val outlineEnabled: Boolean = false,
+    val outlineColor: Long = 0xFF000000L,
+    /** Outline thickness as a fraction of min(canvasW, canvasH), same normalization convention as [boneStrokeNormalized]. */
+    val outlineWidthNormalized: Float = 0.006f
 )

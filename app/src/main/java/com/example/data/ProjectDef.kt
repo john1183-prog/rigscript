@@ -48,5 +48,7 @@ data class ProjectDef(
     val referenceOverlay: ReferenceOverlay = ReferenceOverlay(),
     /** Optional background music mixed under the narration on export — see [BackgroundMusicSettings]'s doc comment. */
     val backgroundMusic: BackgroundMusicSettings = BackgroundMusicSettings(),
+    /** Per-project sound effect library, referenced by id from [ScriptEvent.soundEffect] — see [SoundEffectClip]'s doc comment. */
+    val soundEffects: List<SoundEffectClip> = emptyList(),
     val lastModifiedMs: Long = System.currentTimeMillis()
 )

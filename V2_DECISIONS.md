@@ -167,6 +167,58 @@ pushed.
 - `AppDatabase` uses a `lateinit var instance` pattern to fix a cold-
   start seeding race.
 
+**Background music**
+- `BackgroundMusicSettings` (`musicFilePath`/`volume`/`narrationVolume`/`loop`)
+  is a single project-level slot, mixed under the narration on export.
+- Export-time mixing is real PCM work, not just muxing two tracks: decode
+  both narration and music to PCM (`AudioMixer`), resample/channel-convert
+  both to a common 44.1kHz-stereo format, mix sample-wise at their
+  configured volumes, and re-encode to a single AAC track. This only runs
+  when `backgroundMusic.musicFilePath` is actually set — every other
+  export keeps the fast verbatim-copy audio path unchanged.
+- Neither volume is normalized against the other — narration and music are
+  independent multipliers on the mix, not two ends of a single balance
+  slider. Deliberate: lets narration be ducked without needing to guess a
+  compensating music level.
+- Live preview uses a second, separate `MediaPlayer` alongside the
+  narration player rather than real-time PCM mixing — small sync drift
+  between them while scrubbing is an accepted preview-only tradeoff; the
+  export path is what actually needs one correctly-mixed result.
+- Flagged as the highest-risk unverified code in the project so far: it's
+  the first code path exercising MediaCodec's audio decode/encode side at
+  all (everything before it only used MediaCodec for video), and none of
+  it has run against a real device/compiler yet.
+
+**Sound effects**
+- Per-project sound effect library (`SoundEffectClip`: `id`/`filePath`/
+  `volume`), a growable list rather than a single slot — a project can
+  have several distinct clips, each triggered independently.
+- User-imported per project rather than drawn from a bundled catalog — a
+  bundled CC0 library (Kenney assets) was the original plan, but wasn't
+  pursued this session because the sandbox's network allowlist doesn't
+  include a general asset host to fetch real audio files from (only dev-
+  tooling domains like github.com/pypi.org/npmjs.com are reachable). This
+  is a factual constraint of the current session, not a design rejection
+  — a bundled library remains a reasonable future addition if assets are
+  sourced through a channel that's actually reachable, and the two
+  approaches aren't mutually exclusive (bundled clips could simply be a
+  richer default library alongside user imports).
+- `ScriptEvent.soundEffect` + `soundEffectVolume` are one-shot, bounded to
+  a single instant — same category as `cameraShake`, not `caption`
+  (there's no "end," just a trigger). An unrecognized id is silently
+  ignored rather than erroring, matching `SceneShape`/`SceneAtmosphere`'s
+  graceful-degradation convention.
+- Preview and export use genuinely different mechanisms, same split as
+  background music: preview uses `SoundPool` (Android's low-latency
+  one-shot mechanism) with edge-triggered firing in `PlaybackEngine`
+  (fires exactly once when the playhead crosses a cue during forward
+  `tick()` playback; never fires on seek/scrub, since scrubbing shouldn't
+  replay every effect between the old and new position). Export instead
+  hands the same cue list straight to `AudioMixer`, which decodes and
+  overlays each clip into the mixed PCM buffer at its exact timestamp —
+  no edge-triggering needed there since export already knows every
+  timestamp up front.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -182,15 +234,14 @@ zoom in."
 
 - Dual-aspect-ratio export in a single pass
 - Low-res preview before full export
-- Background music with real audio mixing and adjustable volume
-- Sound effects support (CC0 Kenney assets identified as a candidate
-  source, license verified via GitHub, not yet integrated)
 - Amplitude-reactive background motion (separate from the purely
   JSON-driven scene system above — this would be an opt-in additional
   layer, not a replacement)
 - Procedural animated shapes with figure-shape interaction
 - Auto-highlight reel generation
 - Character variants
+- A bundled built-in sound effect library (see "Sound effects" above for
+  why this wasn't pursued alongside the user-import mechanism this session)
 
 ## Deferred, with rationale
 

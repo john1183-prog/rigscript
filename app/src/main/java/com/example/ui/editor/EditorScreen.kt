@@ -145,8 +145,9 @@ fun EditorScreen(
     // V2 — (re)load background music whenever its file path changes; volume/
     // loop changes are applied live below without a reload.
     LaunchedEffect(project?.backgroundMusic?.musicFilePath) {
-        project?.backgroundMusic?.musicFilePath?.let { path ->
-            musicPlayer.load(path, project.backgroundMusic.volume, project.backgroundMusic.loop)
+        val proj = project
+        proj?.backgroundMusic?.musicFilePath?.let { path ->
+            musicPlayer.load(path, proj.backgroundMusic.volume, proj.backgroundMusic.loop)
         }
     }
     LaunchedEffect(project?.backgroundMusic?.volume) {
@@ -169,6 +170,11 @@ fun EditorScreen(
     val musicPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.importBackgroundMusic(context, it) } }
+
+    // V2 — sound effect library picker, same pattern as audioPicker.
+    val soundEffectPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.importSoundEffect(context, it) } }
 
     // F1: Script import — pick any .json file and load it as the animation script
     val scriptPicker = rememberLauncherForActivityResult(
@@ -267,22 +273,25 @@ fun EditorScreen(
                             sv.setAmplitudeSettings(ampSettings)
                             sv.setAudioPlayer(audioPlayer)
                             sv.setReferenceOverlay(project?.referenceOverlay ?: com.example.data.ReferenceOverlay())
+                            sv.setSoundEffectLibrary(project?.soundEffects ?: emptyList())
                         }
                     },
                     update = { sv ->
                         if (keyframes !== lastLoadedKeyframes) {
                             sv.loadTimeline(
                                 keyframes,
-                                blinkTimes     = project?.script?.blinkEvents ?: emptyList(),
-                                durationSec    = project?.audioDurationSec ?: 0f,
-                                fidgetEnvelope = envelopeArray,
-                                captionCues    = project?.script?.let { com.example.engine.TimelineCompiler.extractCaptions(it) } ?: emptyList()
+                                blinkTimes      = project?.script?.blinkEvents ?: emptyList(),
+                                durationSec     = project?.audioDurationSec ?: 0f,
+                                fidgetEnvelope  = envelopeArray,
+                                captionCues     = project?.script?.let { com.example.engine.TimelineCompiler.extractCaptions(it) } ?: emptyList(),
+                                soundEffectCues = project?.script?.let { com.example.engine.TimelineCompiler.extractSoundEffectCues(it) } ?: emptyList()
                             )
                             lastLoadedKeyframes = keyframes
                         }
                         project?.appearance?.let { sv.setAppearance(it) }
                         sv.setAmplitudeSettings(ampSettings)
                         project?.referenceOverlay?.let { sv.setReferenceOverlay(it) }
+                        sv.setSoundEffectLibrary(project?.soundEffects ?: emptyList())
                     },
                     onRelease = { it.release() },
                     modifier = Modifier.fillMaxSize()
@@ -421,6 +430,7 @@ fun EditorScreen(
                     ampSettings       = ampSettings,
                     referenceOverlay  = project?.referenceOverlay ?: com.example.data.ReferenceOverlay(),
                     backgroundMusic   = project?.backgroundMusic ?: com.example.data.BackgroundMusicSettings(),
+                    soundEffects      = project?.soundEffects ?: emptyList(),
                     onAppearance      = { vm.updateAppearance(it) },
                     onAmplitude       = { vm.updateAmplitudeSettings(it) },
                     onReferenceOverlay = { vm.updateReferenceOverlay(it) },
@@ -429,6 +439,10 @@ fun EditorScreen(
                     onBackgroundMusic = { vm.updateBackgroundMusic(it) },
                     onPickBackgroundMusic = { musicPicker.launch(arrayOf("audio/*")) },
                     onRemoveBackgroundMusic = { vm.removeBackgroundMusic(context) },
+                    onPickSoundEffect = { soundEffectPicker.launch(arrayOf("audio/*")) },
+                    onRemoveSoundEffect = { vm.removeSoundEffect(it) },
+                    onSoundEffectVolume = { id, v -> vm.updateSoundEffectVolume(id, v) },
+                    onRenameSoundEffect = { oldId, newId -> vm.renameSoundEffect(oldId, newId) },
                     modifier          = Modifier.fillMaxSize()
                 )
                 2 -> ExportPanel(
@@ -548,6 +562,7 @@ private fun AppearancePanel(
     ampSettings: com.example.data.AmplitudeSettings,
     referenceOverlay: com.example.data.ReferenceOverlay,
     backgroundMusic: com.example.data.BackgroundMusicSettings,
+    soundEffects: List<com.example.data.SoundEffectClip>,
     onAppearance: (AppearanceSettings) -> Unit,
     onAmplitude: (com.example.data.AmplitudeSettings) -> Unit,
     onReferenceOverlay: ((com.example.data.ReferenceOverlay) -> com.example.data.ReferenceOverlay) -> Unit,
@@ -556,6 +571,10 @@ private fun AppearancePanel(
     onBackgroundMusic: ((com.example.data.BackgroundMusicSettings) -> com.example.data.BackgroundMusicSettings) -> Unit,
     onPickBackgroundMusic: () -> Unit,
     onRemoveBackgroundMusic: () -> Unit,
+    onPickSoundEffect: () -> Unit,
+    onRemoveSoundEffect: (String) -> Unit,
+    onSoundEffectVolume: (String, Float) -> Unit,
+    onRenameSoundEffect: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp),
@@ -794,6 +813,38 @@ private fun AppearancePanel(
             LabeledSwitch("Loop music to fill video length", backgroundMusic.loop) { v ->
                 onBackgroundMusic { it.copy(loop = v) }
             }
+        }
+
+        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        Text("Sound Effects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("Import clips here, then trigger them by id from the script (soundEffect field on an event).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+
+        soundEffects.forEach { clip ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = clip.id,
+                    onValueChange = { newId -> onRenameSoundEffect(clip.id, newId) },
+                    label = { Text("id", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { onRemoveSoundEffect(clip.id) }) {
+                    Icon(Icons.Default.Delete, "Remove ${clip.id}")
+                }
+            }
+            LabeledSlider("Volume", clip.volume, 0f..1f) { v -> onSoundEffectVolume(clip.id, v) }
+        }
+
+        OutlinedButton(onClick = onPickSoundEffect) {
+            Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Add sound effect", fontSize = 12.sp)
         }
     }
 }

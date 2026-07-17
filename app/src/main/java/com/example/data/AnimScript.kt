@@ -65,6 +65,18 @@ import kotlinx.serialization.Serializable
  * [sceneAtmosphere]  Optional foreground weather/atmosphere overlay — one of
  *                    [com.example.engine.SceneAtmosphere]'s constants as a
  *                    string (none|rain|snow|fog|stars). null = hold previous.
+ * [soundEffect]      Optional one-shot sound effect id, triggered AT this
+ *                    event's [timeSec]. Does NOT carry forward — same
+ *                    category as [cameraShake], not [caption]. The id must
+ *                    match a clip already imported into the project's sound
+ *                    effect library (see
+ *                    [com.example.viewmodel.MainViewModel.importSoundEffect]);
+ *                    an unrecognized id is silently ignored rather than
+ *                    treated as an error, same graceful-degradation
+ *                    reasoning as [com.example.engine.SceneShape.fromString].
+ * [soundEffectVolume] Multiplier (0..1 typical, not hard-clamped) applied on
+ *                    top of the clip's own configured volume for this
+ *                    specific trigger. Ignored if [soundEffect] is null.
  */
 @Serializable
 data class ScriptEvent(
@@ -85,7 +97,9 @@ data class ScriptEvent(
     val groundColor: Long? = null,
     val horizonY: Float? = null,
     val sceneShape: String? = null,
-    val sceneAtmosphere: String? = null
+    val sceneAtmosphere: String? = null,
+    val soundEffect: String? = null,
+    val soundEffectVolume: Float = 1.0f
 )
 
 /**

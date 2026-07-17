@@ -199,6 +199,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     EnvelopeStore.deletePaths(proj.amplitudeEnvelopePath, proj.mouthShapeEnvelopePath)
                     proj.referenceOverlay.imagePath?.let { runCatching { File(it).delete() } }
                     proj.backgroundMusic.musicFilePath?.let { runCatching { File(it).delete() } }
+                    proj.soundEffects.forEach { clip -> runCatching { File(clip.filePath).delete() } }
                 }
             }
             repo.deleteProject(id)
@@ -441,6 +442,69 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateBackgroundMusic(transform: (BackgroundMusicSettings) -> BackgroundMusicSettings) {
         updateActive { it.copy(backgroundMusic = transform(it.backgroundMusic)) }
+        scheduleSave()
+    }
+
+    // ── Sound effect library (V2) ─────────────────────────────────────────────
+    // A growable per-project list, unlike the single-slot reference overlay/
+    // background music above — see SoundEffectClip's doc comment for why
+    // clips are user-imported rather than drawn from a bundled catalog.
+
+    fun importSoundEffect(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            val project = _activeProject.value ?: return@launch
+            val destDir  = File(context.filesDir, "sound_effects").also { it.mkdirs() }
+            val rawName  = queryFileName(context, uri) ?: "effect"
+            val baseId   = rawName.substringBeforeLast('.').lowercase()
+                .replace(Regex("[^a-z0-9_]+"), "_").trim('_').ifBlank { "effect" }
+            val existingIds = project.soundEffects.map { it.id }.toSet()
+            var id = baseId
+            var suffix = 1
+            while (id in existingIds) { id = "${baseId}_$suffix"; suffix++ }
+
+            val destFile = File(destDir, "${project.id}_${id}_$rawName")
+            withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+
+            updateActive { it.copy(soundEffects = it.soundEffects + SoundEffectClip(id, destFile.absolutePath)) }
+            scheduleSave()
+            _message.emit("Sound effect imported as \"$id\"")
+        }
+    }
+
+    fun removeSoundEffect(id: String) {
+        val project = _activeProject.value ?: return
+        val clip = project.soundEffects.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { File(clip.filePath).delete() } }
+            updateActive { it.copy(soundEffects = it.soundEffects.filterNot { c -> c.id == id }) }
+            scheduleSave()
+        }
+    }
+
+    fun updateSoundEffectVolume(id: String, volume: Float) {
+        updateActive { proj ->
+            proj.copy(soundEffects = proj.soundEffects.map {
+                if (it.id == id) it.copy(volume = volume) else it
+            })
+        }
+        scheduleSave()
+    }
+
+    /** Renames a clip's reference id — the id scripts use in [ScriptEvent.soundEffect]. No-ops if [newId] is blank or already taken by another clip. */
+    fun renameSoundEffect(oldId: String, newId: String) {
+        val sanitized = newId.lowercase().replace(Regex("[^a-z0-9_]+"), "_").trim('_')
+        if (sanitized.isBlank()) return
+        val project = _activeProject.value ?: return
+        if (sanitized != oldId && project.soundEffects.any { it.id == sanitized }) return
+        updateActive { proj ->
+            proj.copy(soundEffects = proj.soundEffects.map {
+                if (it.id == oldId) it.copy(id = sanitized) else it
+            })
+        }
         scheduleSave()
     }
 

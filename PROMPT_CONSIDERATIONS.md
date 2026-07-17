@@ -89,6 +89,23 @@ matters as much as renderer correctness.
   (a deliberate graceful-degradation choice, but one that means a typo'd
   value produces a silent no-op, not an error the AI could learn from).
 
+### `soundEffect` / `soundEffectVolume`
+- One-shot, not carry-forward — same category as `cameraShake`. The AI
+  should only emit this on events where a sound genuinely belongs, not as
+  a way to "punctuate" every pose change.
+- The id must match a clip actually present in the project's sound
+  effect library (`ProjectDef.soundEffects`), which is user-imported per
+  project — there's no fixed bundled catalog the AI can assume exists (see
+  V2_DECISIONS.md's "Sound effects" section for why). This means the
+  prompt needs to be given the project's actual available ids explicitly
+  each time, the same "don't let the AI assume a catalog that isn't
+  there" principle as the reference-overlay exclusion below, just for a
+  different reason (this one's about a missing bundled library, not about
+  the field being manual-only).
+- An unrecognized id is silently ignored at render time, not an error —
+  worth mentioning in the prompt so a typo'd id is understood as a
+  no-op, not a guaranteed failure the AI would get feedback on.
+
 ## Explicit exclusions — never prompt for these
 
 - **Reference overlay** (`ReferenceOverlay`) is manual and

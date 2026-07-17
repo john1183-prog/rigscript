@@ -81,6 +81,41 @@ class PlaybackEngine {
         return captionCues.firstOrNull { timeSec >= it.startSec && timeSec <= it.endSec }?.text
     }
 
+    // ── Sound effects (V2) — one-shot, edge-triggered, preview-only ─────────────
+    // Unlike captions (a pull-based "what's active right now" query), a
+    // one-shot trigger needs edge detection: fire exactly once when the
+    // playhead crosses the cue's timeSec during forward playback, never on
+    // seek (scrubbing shouldn't replay every effect between the old and new
+    // position), and never twice for the same cue. Export doesn't use this
+    // mechanism at all — VideoExporter mixes sound effects directly via
+    // AudioMixer using the same SoundEffectCue list, since export already
+    // knows every timestamp up front and doesn't need a live "just crossed
+    // it" signal.
+    private var soundEffectCues: List<SoundEffectCue> = emptyList()
+    private var lastCueScanTimeSec: Float = 0f
+    private val pendingSoundEffectTriggers = mutableListOf<SoundEffectCue>()
+
+    /** Loads the project's sound-effect trigger cues — call whenever the active script changes. */
+    fun loadSoundEffectCues(cues: List<SoundEffectCue>) {
+        soundEffectCues = cues
+        lastCueScanTimeSec = currentTimeSec
+        pendingSoundEffectTriggers.clear()
+    }
+
+    /**
+     * Returns cues newly crossed since the last call, then clears them.
+     * Call once per frame from the same thread that calls [tick] — this app
+     * calls both from `AnimationSurfaceView`'s render thread, so no extra
+     * synchronization is needed here beyond what already applies to
+     * [currentTimeSec] elsewhere in this class.
+     */
+    fun pollTriggeredSoundEffects(): List<SoundEffectCue> {
+        if (pendingSoundEffectTriggers.isEmpty()) return emptyList()
+        val out = pendingSoundEffectTriggers.toList()
+        pendingSoundEffectTriggers.clear()
+        return out
+    }
+
     /**
      * Eye openness for the current frame (1 = fully open, 0 = fully closed).
      * Resolved analytically from [currentTimeSec] against [blinkSchedule] rather
@@ -225,6 +260,8 @@ class PlaybackEngine {
         springVelocities.fill(0f)
         resolveBaseAngles(0f, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
+        lastCueScanTimeSec = 0f
+        pendingSoundEffectTriggers.clear()
     }
 
     // ── Tick (called ~60fps from background thread) ───────────────────────────
@@ -236,6 +273,19 @@ class PlaybackEngine {
     fun tick(dtSec: Float, rawAmp: Float = this.rawAmplitude) {
         val safeDt = dtSec.coerceIn(0f, 0.05f)   // cap to prevent spring explosion on lag
         currentTimeSec += safeDt
+
+        // V2 — fire any sound-effect cues the playhead just crossed. Must run
+        // BEFORE lastCueScanTimeSec is updated below, and uses (last, current]
+        // so a cue at exactly the new currentTimeSec still fires this frame
+        // rather than being skipped to the next.
+        if (soundEffectCues.isNotEmpty()) {
+            for (cue in soundEffectCues) {
+                if (cue.timeSec > lastCueScanTimeSec && cue.timeSec <= currentTimeSec) {
+                    pendingSoundEffectTriggers += cue
+                }
+            }
+        }
+        lastCueScanTimeSec = currentTimeSec
 
         // 1. Resolve target angles (and V2 expression/camera/shake) from timeline
         resolveBaseAngles(currentTimeSec, useAnalyticalSpring = false)
@@ -265,6 +315,10 @@ class PlaybackEngine {
         springVelocities.fill(0f)
         resolveBaseAngles(timeSec, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
+        // V2 — a seek/scrub should never replay every sound effect between the
+        // old and new position; just move the scan pointer, don't fire anything.
+        lastCueScanTimeSec = timeSec
+        pendingSoundEffectTriggers.clear()
     }
 
     /**

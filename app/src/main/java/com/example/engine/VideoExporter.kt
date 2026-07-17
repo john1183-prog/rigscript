@@ -123,14 +123,21 @@ object VideoExporter {
         val pixels  = IntArray(width * height)   // reused every frame — one bulk read replaces w*h getPixel() calls
         val nv12    = ByteArray(width * height * 3 / 2)
 
-        // V2 — background music. Only actually decodes/mixes/re-encodes when
-        // music is configured; every other export keeps using the fast
-        // verbatim-copy audio path below, untouched — see BackgroundMusicSettings
-        // and AudioMixer's doc comments for why this is gated rather than
-        // always running through the mixer.
+        // V2 — background music + sound effects. Only actually decodes/mixes/
+        // re-encodes when either is configured; every other export keeps
+        // using the fast verbatim-copy audio path below, untouched — see
+        // BackgroundMusicSettings and AudioMixer's doc comments for why this
+        // is gated rather than always running through the mixer.
         val music = project.backgroundMusic
+        val soundEffectsById = project.soundEffects.associateBy { it.id }
+        val soundEffectTriggers: List<AudioMixer.SoundEffectTrigger> =
+            TimelineCompiler.extractSoundEffectCues(project.script).mapNotNull { cue ->
+                val clip = soundEffectsById[cue.clipId] ?: return@mapNotNull null
+                AudioMixer.SoundEffectTrigger(cue.timeSec, clip.filePath, clip.volume * cue.volumeMultiplier)
+            }
+        val useMixer = settings.embedAudio && (music.musicFilePath != null || soundEffectTriggers.isNotEmpty())
         val mixedTrack: AudioMixer.EncodedAudioTrack? =
-            if (settings.embedAudio && music.musicFilePath != null) {
+            if (useMixer) {
                 runCatching {
                     AudioMixer.buildMixedTrack(
                         narrationPath   = project.audioFilePath,
@@ -138,7 +145,8 @@ object VideoExporter {
                         narrationVolume = music.narrationVolume,
                         musicVolume     = music.volume,
                         loopMusic       = music.loop,
-                        totalSec        = totalSec
+                        totalSec        = totalSec,
+                        soundEffects    = soundEffectTriggers
                     )
                 }.onFailure { Log.e(TAG, "Background music mix failed, falling back to narration-only", it) }
                     .getOrNull()

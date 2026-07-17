@@ -82,6 +82,24 @@ data class CaptionCue(
 )
 
 /**
+ * A one-shot sound-effect trigger extracted from [com.example.data.ScriptEvent.soundEffect].
+ * Bounded to a single instant, not a window — unlike [CaptionCue], there's no
+ * "end" time; playback duration is however long the referenced clip actually
+ * is. Kept separate from [BakedKeyframe] for the same reason [CaptionCue] is:
+ * this doesn't carry forward, so folding it into carry-forward keyframe
+ * state would misrepresent it.
+ *
+ * [clipId] is resolved against the project's sound-effect library
+ * (`ProjectDef.soundEffects`) by the caller — [TimelineCompiler] itself has
+ * no knowledge of `ProjectDef` and doesn't validate the id exists.
+ */
+data class SoundEffectCue(
+    val timeSec: Float,
+    val clipId: String,
+    val volumeMultiplier: Float
+)
+
+/**
  * Compiles an [AnimScript] into an ordered [List<BakedKeyframe>].
  *
  * [poseResolver] is called with a pose ID and should return the matching [PoseDef]
@@ -200,4 +218,11 @@ object TimelineCompiler {
             .filter { !it.caption.isNullOrBlank() }
             .sortedBy { it.timeSec }
             .map { CaptionCue(it.timeSec, it.timeSec + it.captionDurationSec.coerceAtLeast(0.1f), it.caption!!) }
+
+    /** Extracts one-shot sound-effect trigger points — see [SoundEffectCue]'s doc comment. */
+    fun extractSoundEffectCues(script: AnimScript): List<SoundEffectCue> =
+        script.events
+            .filter { !it.soundEffect.isNullOrBlank() }
+            .sortedBy { it.timeSec }
+            .map { SoundEffectCue(it.timeSec, it.soundEffect!!, it.soundEffectVolume) }
 }

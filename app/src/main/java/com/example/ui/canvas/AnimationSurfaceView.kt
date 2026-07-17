@@ -33,6 +33,10 @@ class AnimationSurfaceView @JvmOverloads constructor(
     @Volatile private var referenceOverlayBitmap: Bitmap? = null
     private var loadedOverlayImagePath: String? = null
 
+    // V2 — sound effects. See SoundEffectPlayer's doc comment for why this
+    // is a live-preview-only concern, separate from export's AudioMixer path.
+    private val soundEffectPlayer = SoundEffectPlayer()
+
     // B1: Use SystemClock.elapsedRealtime() — monotonic, never jumps backward
     // on clock sync or forward on DST. System.currentTimeMillis() could produce
     // a negative dt before coerceIn() caught it, freezing animation for that frame.
@@ -58,6 +62,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
                     player.currentAmplitude
                 } else 0f
                 engine.tick(dt.coerceIn(0f, 0.05f), amp)
+                soundEffectPlayer.playTriggered(engine.pollTriggeredSoundEffects())
             }
 
             drawFrame()
@@ -94,7 +99,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
         blinkTimes: List<Float> = emptyList(),
         durationSec: Float = 0f,
         fidgetEnvelope: FloatArray = FloatArray(0),
-        captionCues: List<CaptionCue> = emptyList()
+        captionCues: List<CaptionCue> = emptyList(),
+        soundEffectCues: List<SoundEffectCue> = emptyList()
     ) {
         val snap = !isPlaying
         renderHandler.post {
@@ -102,7 +108,13 @@ class AnimationSurfaceView @JvmOverloads constructor(
             engine.loadBlinkSchedule(blinkTimes, durationSec)
             engine.loadFidgetSchedule(fidgetEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
             engine.loadCaptions(captionCues)
+            engine.loadSoundEffectCues(soundEffectCues)
         }
+    }
+
+    /** Loads the project's sound-effect clip library. Cheap to call redundantly — see SoundEffectPlayer.loadClips. */
+    fun setSoundEffectLibrary(clips: List<com.example.data.SoundEffectClip>) {
+        renderHandler.post { soundEffectPlayer.loadClips(clips) }
     }
 
     /**
@@ -159,6 +171,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     fun release() {
         renderHandler.removeCallbacks(frameRunnable)
+        soundEffectPlayer.release()
         renderThread.quitSafely()
     }
 

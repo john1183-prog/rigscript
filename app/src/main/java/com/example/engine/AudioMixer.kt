@@ -43,6 +43,9 @@ object AudioMixer {
     data class EncodedSample(val data: ByteArray, val presentationTimeUs: Long, val flags: Int)
     data class EncodedAudioTrack(val format: MediaFormat, val samples: List<EncodedSample>)
 
+    /** A single sound-effect trigger resolved to an actual file, ready to mix. Timestamps beyond [buildMixedTrack]'s totalSec are simply clipped, same as any input running past the video's length. */
+    data class SoundEffectTrigger(val timeSec: Float, val filePath: String, val volume: Float)
+
     /**
      * Full pipeline: decode both inputs (either may be null/missing), convert
      * both to [MIX_SAMPLE_RATE]/[MIX_CHANNELS], mix at the given volumes over
@@ -56,7 +59,8 @@ object AudioMixer {
         narrationVolume: Float,
         musicVolume: Float,
         loopMusic: Boolean,
-        totalSec: Float
+        totalSec: Float,
+        soundEffects: List<SoundEffectTrigger> = emptyList()
     ): EncodedAudioTrack? {
         val narrationPcm = narrationPath?.let { runCatching { decodeToPcm(it) }.getOrElse {
             Log.e(TAG, "Failed to decode narration for mixing: $it"); null
@@ -64,7 +68,7 @@ object AudioMixer {
         val musicPcm = musicPath?.let { runCatching { decodeToPcm(it) }.getOrElse {
             Log.e(TAG, "Failed to decode background music: $it"); null
         } }
-        if (narrationPcm == null && musicPcm == null) return null
+        if (narrationPcm == null && musicPcm == null && soundEffects.isEmpty()) return null
 
         val narrationConverted = narrationPcm?.let { convert(it, MIX_SAMPLE_RATE, MIX_CHANNELS) }
         val musicConverted = musicPcm?.let { convert(it, MIX_SAMPLE_RATE, MIX_CHANNELS) }
@@ -75,6 +79,15 @@ object AudioMixer {
             music = musicConverted, musicVol = musicVolume,
             loopMusic = loopMusic, totalFrames = totalFrames, channels = MIX_CHANNELS
         )
+
+        for (trigger in soundEffects) {
+            val clipPcm = runCatching { decodeToPcm(trigger.filePath) }.getOrElse {
+                Log.e(TAG, "Failed to decode sound effect for mixing: ${trigger.filePath}", it); null
+            } ?: continue
+            val clipConverted = convert(clipPcm, MIX_SAMPLE_RATE, MIX_CHANNELS)
+            overlayAt(mixed, clipConverted, (trigger.timeSec * MIX_SAMPLE_RATE).toInt(), MIX_CHANNELS, trigger.volume)
+        }
+
         return encodeAac(mixed, MIX_SAMPLE_RATE, MIX_CHANNELS)
     }
 
@@ -216,6 +229,22 @@ object AudioMixer {
             }
         }
         return out
+    }
+
+    /**
+     * Adds [clip] into [dest] (in place) starting at [startFrame], clamped to
+     * the 16-bit range and to [dest]'s own bounds — a clip whose trigger time
+     * is near the end of the video is simply truncated, not an error.
+     */
+    private fun overlayAt(dest: ShortArray, clip: ShortArray, startFrame: Int, channels: Int, volume: Float) {
+        val startSample = (startFrame.coerceAtLeast(0)) * channels
+        var i = 0
+        while (i < clip.size && startSample + i < dest.size) {
+            val destIdx = startSample + i
+            val mixedSample = dest[destIdx] + (clip[i] * volume).toInt()
+            dest[destIdx] = mixedSample.coerceIn(-32768, 32767).toShort()
+            i++
+        }
     }
 
     // ── Mix ──────────────────────────────────────────────────────────────────

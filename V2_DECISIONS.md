@@ -195,14 +195,19 @@ pushed.
   have several distinct clips, each triggered independently.
 - User-imported per project rather than drawn from a bundled catalog — a
   bundled CC0 library (Kenney assets) was the original plan, but wasn't
-  pursued this session because the sandbox's network allowlist doesn't
-  include a general asset host to fetch real audio files from (only dev-
-  tooling domains like github.com/pypi.org/npmjs.com are reachable). This
-  is a factual constraint of the current session, not a design rejection
-  — a bundled library remains a reasonable future addition if assets are
-  sourced through a channel that's actually reachable, and the two
-  approaches aren't mutually exclusive (bundled clips could simply be a
-  richer default library alongside user imports).
+  pursued in the same session this was implemented because kenney.nl
+  itself isn't on the sandbox's network allowlist.
+  **Correction, verified in a later session**: this was too pessimistic.
+  GitHub (which IS reachable) hosts real repackagings of Kenney's CC0
+  packs — confirmed directly via the GitHub API, not assumed:
+  `Calinou/kenney-ui-audio` and `Calinou/kenney-interface-sounds` both
+  exist, are public, and (per their own descriptions) are Kenney's actual
+  UI/interface sound packs repackaged for quick use. Both carry Kenney's
+  CC0 terms. A bundled default library is therefore genuinely tractable
+  from this environment and just hasn't been integrated yet — it's not
+  blocked, only not-yet-done. The two approaches aren't mutually
+  exclusive either way: bundled clips could be a richer default library
+  alongside user imports, not a replacement for them.
 - `ScriptEvent.soundEffect` + `soundEffectVolume` are one-shot, bounded to
   a single instant — same category as `cameraShake`, not `caption`
   (there's no "end," just a trigger). An unrecognized id is silently
@@ -219,6 +224,33 @@ pushed.
   no edge-triggering needed there since export already knows every
   timestamp up front.
 
+**Dual-aspect export**
+- `ExportSettings.dualAspectExport` produces both 9:16 and 16:9 as two
+  separate output files in one export call, ignoring `aspectRatio` when
+  set. Not just "run export twice": `VideoExporter` builds a list of
+  `ExportTarget`s (one per aspect ratio, each with its own bitmap/canvas/
+  encoder/muxer/output file) and drives them from a single shared frame
+  loop — `PlaybackEngine.seekToWithAmplitude()` (the actual timeline/pose/
+  expression/camera/scene resolution) runs exactly once per frame
+  regardless of target count, and the audio (verbatim narration copy, or
+  the background-music/sound-effect mix) is computed once and written
+  into every target's muxer. Only the per-target draw + YUV convert +
+  MediaCodec encode genuinely repeats — unavoidable, since two different
+  pixel grids are two different encode jobs no matter what.
+- This is why the figure/camera/scene composition works correctly across
+  both aspect ratios with no special-casing: `RigRenderer` already
+  expresses every position (root anchor, camera pan, scene shapes,
+  caption/overlay placement) as a fraction of canvas width/height rather
+  than fixed pixels, so calling `draw()` with a different canvas size
+  naturally reframes correctly. Dual-aspect export didn't need any new
+  composition logic — it's a consequence of a design choice already made
+  for other reasons (screen-size portability).
+- `VideoExporter.export()`'s return type changed from a single
+  `ExportResult` to `List<ExportResult>` (each tagged with `aspectLabel`)
+  to represent this — a normal export still returns a one-element list,
+  so nothing about single-target export's behavior changed, just its
+  return shape. `MainViewModel`/`EditorScreen` updated accordingly.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -232,7 +264,6 @@ zoom in."
 
 ## On the horizon (not yet started)
 
-- Dual-aspect-ratio export in a single pass
 - Low-res preview before full export
 - Amplitude-reactive background motion (separate from the purely
   JSON-driven scene system above — this would be an opt-in additional
@@ -240,8 +271,9 @@ zoom in."
 - Procedural animated shapes with figure-shape interaction
 - Auto-highlight reel generation
 - Character variants
-- A bundled built-in sound effect library (see "Sound effects" above for
-  why this wasn't pursued alongside the user-import mechanism this session)
+- A bundled built-in sound effect library — see the correction note
+  below; this is more tractable than originally assessed and just hasn't
+  been done yet, not blocked.
 
 ## Deferred, with rationale
 

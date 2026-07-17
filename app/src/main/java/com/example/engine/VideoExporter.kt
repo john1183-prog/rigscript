@@ -27,22 +27,38 @@ import java.io.File
 import java.nio.ByteBuffer
 
 /**
- * Result of a completed export.
+ * Result of one completed export output file.
  *
- * [uri]      A `content://` URI suitable for `ACTION_VIEW` / `ACTION_SEND` — works
- *            for both the MediaStore path (API 29+) and the FileProvider-wrapped
- *            legacy path (API 26-28).
- * [location] Human-readable location, for display in the UI.
+ * [uri]         A `content://` URI suitable for `ACTION_VIEW` / `ACTION_SEND` — works
+ *               for both the MediaStore path (API 29+) and the FileProvider-wrapped
+ *               legacy path (API 26-28).
+ * [location]    Human-readable location, for display in the UI.
+ * [aspectLabel] Which aspect ratio this file is ("9:16" or "16:9") — [export]
+ *               always returns a list (one entry normally, two when
+ *               [com.example.data.ExportSettings.dualAspectExport] is set),
+ *               and the UI needs to label which file is which.
  */
-data class ExportResult(val uri: Uri, val location: String)
+data class ExportResult(val uri: Uri, val location: String, val aspectLabel: String)
 
 /**
- * Encodes the animation to an H.264/MP4 file and optionally muxes the source
- * audio track verbatim (no re-encoding, lossless, fast).
+ * Encodes the animation to an H.264/MP4 file (or, with
+ * [com.example.data.ExportSettings.dualAspectExport], two files at once —
+ * one per aspect ratio) and optionally muxes the source audio track
+ * verbatim (no re-encoding, lossless, fast) or a mixed background-music/
+ * sound-effect track (see [AudioMixer]).
  *
  * Each frame is drawn onto an off-screen [Bitmap], converted to NV12
  * (YUV420SemiPlanar) in software, then queued to [MediaCodec] as a byte-buffer
  * input. This works on all API 26+ devices without EGL.
+ *
+ * Dual-aspect export is a genuine single-pass optimization, not two
+ * sequential exports: [PlaybackEngine.seekToWithAmplitude] — the actual
+ * timeline/pose/expression/camera/scene resolution — runs exactly once per
+ * frame regardless of target count, and audio (verbatim copy or the mixed
+ * track) is computed once and written into both outputs. Only the
+ * per-target draw+YUV-convert+encode genuinely repeats, since two different
+ * pixel grids are unavoidably two different encode jobs — see
+ * [ExportTarget] and the loop in [export].
  *
  * Output location: API 29+ writes to the public `Movies/RigScript/` collection
  * via [MediaStore] (shows up in Gallery/Files immediately, no permission needed).
@@ -61,6 +77,32 @@ object VideoExporter {
      *  pessimistic and then visibly jump. */
     private const val MIN_FRAMES_FOR_ETA = 10
 
+    /**
+     * All per-output-file mutable state for one aspect ratio's encode job.
+     * [export] creates one of these per target (one normally, two for dual
+     * export) and drives them together from a single shared frame loop.
+     */
+    private class ExportTarget(
+        val aspectLabel: String,
+        val width: Int,
+        val height: Int,
+        val output: OutputTarget,
+        val encoder: MediaCodec,
+        val muxer: MediaMuxer
+    ) {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val pixels = IntArray(width * height)
+        val nv12   = ByteArray(width * height * 3 / 2)
+        val bufferInfo = MediaCodec.BufferInfo()
+        var videoTrackIdx      = -1
+        var audioTrackIdx      = -1
+        var mixedAudioTrackIdx = -1
+        var muxerStarted       = false
+        var encoderReleased    = false
+        var muxerReleased      = false
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     suspend fun export(
@@ -69,13 +111,15 @@ object VideoExporter {
         keyframes: List<BakedKeyframe>,
         amplitudeSettings: com.example.data.AmplitudeSettings = com.example.data.AmplitudeSettings(),
         onProgress: (progress: Float, etaSec: Float?) -> Unit
-    ): ExportResult = withContext(Dispatchers.Default) {
+    ): List<ExportResult> = withContext(Dispatchers.Default) {
 
-        val settings        = project.exportSettings
-        val (width, height) = settings.dimensions()
-        val fps             = settings.fps
-        val bitrate         = settings.bitrateMbps * 1_000_000
-        val appearance      = project.appearance
+        val settings   = project.exportSettings
+        val fps        = settings.fps
+        val bitrate    = settings.bitrateMbps * 1_000_000
+        val appearance = project.appearance
+
+        val aspectsToExport: List<String> =
+            if (settings.dualAspectExport) listOf("9:16", "16:9") else listOf(settings.aspectRatio)
 
         // Duration = max(script length, actual audio length) + 1s tail. If the
         // audio runs longer than the scripted pose changes, the figure holds its
@@ -106,28 +150,26 @@ object VideoExporter {
             it.loadFidgetSchedule(envelope, envFps)
             it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
         }
-        // Own private renderer instance — see the class doc on RigRenderer for
-        // why this must never be a shared singleton with the live preview.
+        // One shared renderer instance across all targets — safe because targets
+        // are drawn sequentially within a single thread here, not concurrently.
+        // (The "never a shared singleton" rule on RigRenderer is specifically
+        // about preview and export running on DIFFERENT threads at the same
+        // time; that doesn't apply between targets within one export call.)
         val renderer = RigRenderer()
 
-        // V2 — reference overlay image decoded ONCE up front (I/O + allocation
-        // must never happen inside the per-frame render loop below).
+        // V2 — reference overlay image decoded ONCE up front, shared by every
+        // target — I/O + allocation must never happen inside the per-frame loop.
         val overlay = project.referenceOverlay
         val overlayBitmap: Bitmap? =
             if (overlay.type == com.example.data.ReferenceOverlay.OverlayType.IMAGE && overlay.imagePath != null)
                 runCatching { BitmapFactory.decodeFile(overlay.imagePath) }.getOrNull()
             else null
 
-        val bitmap  = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val fCanvas = Canvas(bitmap)
-        val pixels  = IntArray(width * height)   // reused every frame — one bulk read replaces w*h getPixel() calls
-        val nv12    = ByteArray(width * height * 3 / 2)
-
-        // V2 — background music + sound effects. Only actually decodes/mixes/
-        // re-encodes when either is configured; every other export keeps
-        // using the fast verbatim-copy audio path below, untouched — see
-        // BackgroundMusicSettings and AudioMixer's doc comments for why this
-        // is gated rather than always running through the mixer.
+        // V2 — background music + sound effects. Computed ONCE and reused for
+        // every target below — see the class doc comment's "single pass"
+        // explanation. Only actually decodes/mixes/re-encodes when either is
+        // configured; every other export keeps using the fast verbatim-copy
+        // audio path, untouched.
         val music = project.backgroundMusic
         val soundEffectsById = project.soundEffects.associateBy { it.id }
         val soundEffectTriggers: List<AudioMixer.SoundEffectTrigger> =
@@ -152,110 +194,123 @@ object VideoExporter {
                     .getOrNull()
             } else null
 
-        val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT,
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
-            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+        // ── Build one ExportTarget per aspect ratio ───────────────────────────
+        val targets = aspectsToExport.map { aspect ->
+            val (w, h) = settings.dimensions(aspect)
+            val videoFormat = MediaFormat.createVideoFormat(MIME, w, h).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT,
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            }
+            val encoder = MediaCodec.createEncoderByType(MIME)
+            encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.start()
+
+            val labelSuffix = if (aspectsToExport.size > 1) "_${aspect.replace(":", "x")}" else ""
+            val output = OutputTarget.create(context, project.projectName + labelSuffix)
+            val muxer  = output.openMuxer()
+
+            ExportTarget(aspect, w, h, output, encoder, muxer)
         }
-        val encoder = MediaCodec.createEncoderByType(MIME)
-        encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
 
-        val output = OutputTarget.create(context, project.projectName)
-        val muxer  = output.openMuxer()
-
-        var videoTrackIdx    = -1
-        var audioTrackIdx    = -1
-        var mixedAudioTrackIdx = -1
-        var muxerStarted     = false
-        var encoderReleased  = false
-        var muxerReleased    = false
-        var success          = false
-        val bufferInfo       = MediaCodec.BufferInfo()
-
-        fun startMuxerIfNeeded() {
-            if (!muxerStarted) {
-                videoTrackIdx = muxer.addTrack(encoder.outputFormat)
+        fun startMuxerIfNeeded(t: ExportTarget) {
+            if (!t.muxerStarted) {
+                t.videoTrackIdx = t.muxer.addTrack(t.encoder.outputFormat)
                 if (mixedTrack != null) {
-                    mixedAudioTrackIdx = muxer.addTrack(mixedTrack.format)
+                    t.mixedAudioTrackIdx = t.muxer.addTrack(mixedTrack.format)
                 } else if (settings.embedAudio && project.audioFilePath != null) {
-                    audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
+                    t.audioTrackIdx = addAudioTrack(t.muxer, project.audioFilePath)
                 }
-                muxer.start(); muxerStarted = true
+                t.muxer.start(); t.muxerStarted = true
             }
         }
 
-        /**
-         * Drains whatever output is immediately available (timeout = 0, i.e.
-         * non-blocking). Called once per rendered frame to keep the encoder's
-         * output queue from backing up. Returns true once the end-of-stream
-         * buffer has been observed and released.
-         */
-        fun drainAvailable(): Boolean {
+        /** Non-blocking drain — called once per rendered frame per target to keep each encoder's output queue from backing up. */
+        fun drainAvailable(t: ExportTarget): Boolean {
             while (true) {
-                val outIdx = encoder.dequeueOutputBuffer(bufferInfo, 0)
+                val outIdx = t.encoder.dequeueOutputBuffer(t.bufferInfo, 0)
                 when {
                     outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> return false
-                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> startMuxerIfNeeded()
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> startMuxerIfNeeded(t)
                     outIdx >= 0 -> {
-                        val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                        if (!isConfig && muxerStarted && bufferInfo.size > 0) {
-                            muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
+                        val isConfig = t.bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                        if (!isConfig && t.muxerStarted && t.bufferInfo.size > 0) {
+                            t.muxer.writeSampleData(t.videoTrackIdx, t.encoder.getOutputBuffer(outIdx)!!, t.bufferInfo)
                         }
-                        encoder.releaseOutputBuffer(outIdx, false)
-                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return true
+                        t.encoder.releaseOutputBuffer(outIdx, false)
+                        if (t.bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return true
                     }
                 }
             }
         }
 
         /** Blocking variant used only for the final drain, where we must wait for EOS. */
-        fun drainUntilEndOfStream() {
+        fun drainUntilEndOfStream(t: ExportTarget) {
             while (true) {
-                val outIdx = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT)
+                val outIdx = t.encoder.dequeueOutputBuffer(t.bufferInfo, TIMEOUT)
                 when {
-                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> startMuxerIfNeeded()
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> startMuxerIfNeeded(t)
                     outIdx >= 0 -> {
-                        val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                        if (!isConfig && muxerStarted && bufferInfo.size > 0) {
-                            muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
+                        val isConfig = t.bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                        if (!isConfig && t.muxerStarted && t.bufferInfo.size > 0) {
+                            t.muxer.writeSampleData(t.videoTrackIdx, t.encoder.getOutputBuffer(outIdx)!!, t.bufferInfo)
                         }
-                        encoder.releaseOutputBuffer(outIdx, false)
-                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
+                        t.encoder.releaseOutputBuffer(outIdx, false)
+                        if (t.bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
                     }
                 }
             }
         }
 
         /**
-         * Queues one frame of NV12 data to the encoder. EOS must be signalled
+         * Queues one frame of NV12 data to [t]'s encoder. EOS must be signalled
          * via [MediaCodec.BUFFER_FLAG_END_OF_STREAM] on the last buffer —
          * signalEndOfInputStream() is only valid for Surface-input mode.
          */
-        fun queueFrame(data: ByteArray, presentationTimeUs: Long, isEos: Boolean) {
+        fun queueFrame(t: ExportTarget, data: ByteArray, presentationTimeUs: Long, isEos: Boolean) {
             var inIdx = -1; var attempts = 0
             while (inIdx < 0) {
-                inIdx = encoder.dequeueInputBuffer(TIMEOUT)
+                inIdx = t.encoder.dequeueInputBuffer(TIMEOUT)
                 if (inIdx < 0) {
-                    drainAvailable()
+                    drainAvailable(t)
                     check(++attempts < 500) { "Encoder stalled: no input buffer became available" }
                 }
             }
-            encoder.getInputBuffer(inIdx)!!.let { it.clear(); it.put(data) }
-            encoder.queueInputBuffer(inIdx, 0, data.size, presentationTimeUs,
+            t.encoder.getInputBuffer(inIdx)!!.let { it.clear(); it.put(data) }
+            t.encoder.queueInputBuffer(inIdx, 0, data.size, presentationTimeUs,
                 if (isEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
         }
 
+        /** Writes the shared mixed/verbatim audio into [t]'s muxer — same source data, once per target, no re-decode/re-mix. */
+        fun writeAudio(t: ExportTarget) {
+            if (!t.muxerStarted) return
+            if (t.mixedAudioTrackIdx >= 0 && mixedTrack != null) {
+                val audioInfo = MediaCodec.BufferInfo()
+                for (s in mixedTrack.samples) {
+                    val buf = ByteBuffer.wrap(s.data)
+                    audioInfo.offset = 0
+                    audioInfo.size = s.data.size
+                    audioInfo.presentationTimeUs = s.presentationTimeUs
+                    audioInfo.flags = s.flags
+                    t.muxer.writeSampleData(t.mixedAudioTrackIdx, buf, audioInfo)
+                }
+            } else if (t.audioTrackIdx >= 0 && project.audioFilePath != null) {
+                copyAudioTrack(project.audioFilePath, t.muxer, t.audioTrackIdx, (totalSec * 1_000_000L).toLong())
+            }
+        }
+
+        var overallSuccess = false
         try {
-            // ── Render + encode loop ──────────────────────────────────────────
+            // ── Render + encode loop — ONE pass shared across all targets ─────
             // ensureActive() every 10 frames is the key fix for real cancellation.
             // Coroutine cancellation is cooperative — without a suspension/check
             // point inside this tight CPU loop, cancelExport() sets the flag but
             // the loop keeps running to completion. ensureActive() throws
             // CancellationException as soon as the flag is seen, propagating to
-            // the finally block which releases encoder/muxer and aborts the output.
+            // the finally block which releases every target's encoder/muxer and
+            // aborts every target's output.
             val exportStartMs = System.currentTimeMillis()
             for (frameIdx in 0 until totalFrames) {
                 if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
@@ -267,71 +322,70 @@ object VideoExporter {
                 val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
                     mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
 
+                // Timeline resolution — the expensive per-frame animation
+                // computation — happens exactly ONCE here, not once per target.
                 engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
-                renderer.draw(fCanvas, engine.currentAngles, appearance, width, height,
-                    forExport              = true,
-                    mouthShape             = engine.currentMouthShape,
-                    mouthOpenness          = engine.currentAmplitude,
-                    expression             = engine.currentExpression,
-                    eyeOpenness            = engine.currentEyeOpenness,
-                    cameraZoom             = engine.currentCameraZoom,
-                    cameraPanX             = engine.currentCameraPanX,
-                    cameraPanY             = engine.currentCameraPanY,
-                    cameraShakeIntensity   = engine.currentShakeIntensity,
-                    skyColor               = engine.currentSkyColor,
-                    groundColor            = engine.currentGroundColor,
-                    horizonY               = engine.currentHorizonY,
-                    sceneShape             = engine.currentSceneShape,
-                    sceneAtmosphere        = engine.currentSceneAtmosphere,
-                    currentTimeSec         = timeSec,
-                    captionText            = engine.currentCaption,
-                    referenceOverlay       = overlay,
-                    referenceOverlayBitmap = overlayBitmap)
-
-                bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-                argbToNV12(pixels, width, height, nv12)
-
                 val presentationTimeUs = frameIdx.toLong() * 1_000_000L / fps
-                queueFrame(nv12, presentationTimeUs, isEos = frameIdx == totalFrames - 1)
-                drainAvailable()
+                val isEos = frameIdx == totalFrames - 1
+
+                for (t in targets) {
+                    renderer.draw(t.canvas, engine.currentAngles, appearance, t.width, t.height,
+                        forExport              = true,
+                        mouthShape             = engine.currentMouthShape,
+                        mouthOpenness          = engine.currentAmplitude,
+                        expression             = engine.currentExpression,
+                        eyeOpenness            = engine.currentEyeOpenness,
+                        cameraZoom             = engine.currentCameraZoom,
+                        cameraPanX             = engine.currentCameraPanX,
+                        cameraPanY             = engine.currentCameraPanY,
+                        cameraShakeIntensity   = engine.currentShakeIntensity,
+                        skyColor               = engine.currentSkyColor,
+                        groundColor            = engine.currentGroundColor,
+                        horizonY               = engine.currentHorizonY,
+                        sceneShape             = engine.currentSceneShape,
+                        sceneAtmosphere        = engine.currentSceneAtmosphere,
+                        currentTimeSec         = timeSec,
+                        captionText            = engine.currentCaption,
+                        referenceOverlay       = overlay,
+                        referenceOverlayBitmap = overlayBitmap)
+
+                    t.bitmap.getPixels(t.pixels, 0, t.width, 0, 0, t.width, t.height)
+                    argbToNV12(t.pixels, t.width, t.height, t.nv12)
+                    queueFrame(t, t.nv12, presentationTimeUs, isEos)
+                    drainAvailable(t)
+                }
 
                 onProgress(frameIdx.toFloat() / totalFrames * 0.90f, computeEtaSec(frameIdx + 1, totalFrames, exportStartMs))
             }
 
-            // ── Drain + audio + finish ────────────────────────────────────────
-            drainUntilEndOfStream()
-            if (muxerStarted) {
-                if (mixedAudioTrackIdx >= 0 && mixedTrack != null) {
-                    val audioInfo = MediaCodec.BufferInfo()
-                    for (s in mixedTrack.samples) {
-                        val buf = ByteBuffer.wrap(s.data)
-                        audioInfo.offset = 0
-                        audioInfo.size = s.data.size
-                        audioInfo.presentationTimeUs = s.presentationTimeUs
-                        audioInfo.flags = s.flags
-                        muxer.writeSampleData(mixedAudioTrackIdx, buf, audioInfo)
-                    }
-                } else if (audioTrackIdx >= 0 && project.audioFilePath != null) {
-                    copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (totalSec * 1_000_000L).toLong())
-                }
+            // ── Drain + audio + finish, per target ─────────────────────────────
+            for (t in targets) {
+                drainUntilEndOfStream(t)
+                writeAudio(t)
             }
             onProgress(1f, 0f)
 
-            encoder.stop();  encoder.release();  encoderReleased = true
-            if (muxerStarted) { muxer.stop(); muxer.release(); muxerReleased = true }
-            output.finish(context)
-            success = true
+            for (t in targets) {
+                t.encoder.stop(); t.encoder.release(); t.encoderReleased = true
+                if (t.muxerStarted) { t.muxer.stop(); t.muxer.release(); t.muxerReleased = true }
+                t.output.finish(context)
+            }
+            overallSuccess = true
 
-            Log.i(TAG, "Exported $totalFrames frames -> ${output.location}")
-            ExportResult(output.uri, output.location)
+            Log.i(TAG, "Exported $totalFrames frames x ${targets.size} target(s) -> " +
+                targets.joinToString { it.output.location })
+
+            targets.map { ExportResult(it.output.uri, it.output.location, it.aspectLabel) }
 
         } finally {
-            bitmap.recycle()
-            // Release hardware resources if the success path didn't get there —
-            // covers both cancellation (CancellationException) and unexpected errors.
-            if (!encoderReleased) { runCatching { encoder.stop() }; runCatching { encoder.release() } }
-            if (muxerStarted && !muxerReleased) { runCatching { muxer.stop() }; runCatching { muxer.release() } }
-            if (!success) output.abort(context)
+            for (t in targets) {
+                t.bitmap.recycle()
+                // Release hardware resources if the success path didn't get there —
+                // covers both cancellation (CancellationException) and unexpected errors.
+                if (!t.encoderReleased) { runCatching { t.encoder.stop() }; runCatching { t.encoder.release() } }
+                if (t.muxerStarted && !t.muxerReleased) { runCatching { t.muxer.stop() }; runCatching { t.muxer.release() } }
+                if (!overallSuccess) t.output.abort(context)
+            }
         }
 
     } // end withContext(Dispatchers.Default)

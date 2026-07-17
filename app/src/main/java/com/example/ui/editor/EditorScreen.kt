@@ -854,7 +854,7 @@ private fun AppearancePanel(
 @Composable
 private fun ExportPanel(
     settings: ExportSettings,
-    exportedFile: ExportResult?,
+    exportedFile: List<ExportResult>,
     onChange: (ExportSettings) -> Unit,
     onExport: () -> Unit,
     onOpen: (Uri) -> Unit,
@@ -864,21 +864,31 @@ private fun ExportPanel(
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        exportedFile?.let { result ->
+        if (exportedFile.isNotEmpty()) {
             Card(colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Export complete", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (exportedFile.size > 1) "Export complete — ${exportedFile.size} files" else "Export complete",
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
-                    Text(result.location, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onOpen(result.uri) }, Modifier.weight(1f)) { Text("Open") }
-                        OutlinedButton(onClick = { onShare(result.uri) }, Modifier.weight(1f)) { Text("Share") }
+                    exportedFile.forEach { result ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (exportedFile.size > 1) {
+                                Text(result.aspectLabel, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text(result.location, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { onOpen(result.uri) }, Modifier.weight(1f)) { Text("Open") }
+                                OutlinedButton(onClick = { onShare(result.uri) }, Modifier.weight(1f)) { Text("Share") }
+                            }
+                        }
                     }
                 }
             }
@@ -886,8 +896,17 @@ private fun ExportPanel(
 
         Text("Export Settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
-        SegmentedRow("Aspect Ratio", listOf("9:16", "16:9"), settings.aspectRatio) {
-            onChange(settings.copy(aspectRatio = it))
+        LabeledSwitch("Export both 9:16 and 16:9", settings.dualAspectExport) {
+            onChange(settings.copy(dualAspectExport = it))
+        }
+        if (!settings.dualAspectExport) {
+            SegmentedRow("Aspect Ratio", listOf("9:16", "16:9"), settings.aspectRatio) {
+                onChange(settings.copy(aspectRatio = it))
+            }
+        } else {
+            Text("Producing two files: 9:16 and 16:9. Timeline is resolved once and shared — only the video encode itself runs twice.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
         }
         SegmentedRow("Resolution", listOf("720p", "1080p"), settings.resolution) {
             onChange(settings.copy(resolution = it))

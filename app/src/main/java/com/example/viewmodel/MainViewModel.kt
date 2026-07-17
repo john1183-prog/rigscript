@@ -90,8 +90,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _exportEtaSec = MutableStateFlow<Float?>(null)
     val exportEtaSec: StateFlow<Float?> = _exportEtaSec.asStateFlow()
 
-    private val _exportedFile = MutableStateFlow<ExportResult?>(null)
-    val exportedFile: StateFlow<ExportResult?> = _exportedFile.asStateFlow()
+    private val _exportedFile = MutableStateFlow<List<ExportResult>>(emptyList())
+    val exportedFile: StateFlow<List<ExportResult>> = _exportedFile.asStateFlow()
 
     private var exportJob: Job? = null
 
@@ -177,7 +177,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _scriptText.value    = json.encodeToString(project.script)
             _scriptError.value   = null
             _audioFileName.value = project.audioFilePath?.let { File(it).name }
-            _exportedFile.value  = null
+            _exportedFile.value  = emptyList()
         }
     }
 
@@ -545,18 +545,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             wakeLock.acquire(3 * 60 * 60 * 1000L)
             _exportProgress.value = 0f
             _exportEtaSec.value   = null
-            _exportedFile.value   = null
+            _exportedFile.value   = emptyList()
             try {
                 val compiled = compileTimeline(project.script)
-                val result = VideoExporter.export(
+                val results = VideoExporter.export(
                     context           = context,
                     project           = project,
                     keyframes         = compiled,
                     amplitudeSettings = _amplitudeSettings.value,
                     onProgress        = { progress, eta -> _exportProgress.value = progress; _exportEtaSec.value = eta }
                 )
-                _exportedFile.value = result
-                _message.emit("Export complete: ${result.location}")
+                _exportedFile.value = results
+                _message.emit(
+                    if (results.size > 1) "Export complete: ${results.size} files (${results.joinToString { it.aspectLabel }})"
+                    else "Export complete: ${results.first().location}"
+                )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 _message.emit("Export cancelled")
                 throw e

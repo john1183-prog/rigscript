@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -443,6 +445,7 @@ fun EditorScreen(
                     onRemoveSoundEffect = { vm.removeSoundEffect(it) },
                     onSoundEffectVolume = { id, v -> vm.updateSoundEffectVolume(id, v) },
                     onRenameSoundEffect = { oldId, newId -> vm.renameSoundEffect(oldId, newId) },
+                    onPickBuiltInSoundEffect = { vm.importBuiltInSoundEffect(context, it) },
                     modifier          = Modifier.fillMaxSize()
                 )
                 2 -> ExportPanel(
@@ -575,6 +578,7 @@ private fun AppearancePanel(
     onRemoveSoundEffect: (String) -> Unit,
     onSoundEffectVolume: (String, Float) -> Unit,
     onRenameSoundEffect: (String, String) -> Unit,
+    onPickBuiltInSoundEffect: (com.example.data.BuiltInSoundEffect) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp),
@@ -845,6 +849,18 @@ private fun AppearancePanel(
             Icon(Icons.Default.Add, null, Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text("Add sound effect", fontSize = 12.sp)
+        }
+
+        Text("Or add from the bundled starter library (CC0):",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(com.example.data.BuiltInSoundEffects.ALL) { builtIn ->
+                AssistChip(
+                    onClick = { onPickBuiltInSoundEffect(builtIn) },
+                    label = { Text(builtIn.label, fontSize = 12.sp) }
+                )
+            }
         }
     }
 }

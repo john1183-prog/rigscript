@@ -475,6 +475,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Copies a bundled built-in clip (see [BuiltInSoundEffect]) from APK
+     * assets into the active project's own sound-effect directory, then adds
+     * it exactly like [importSoundEffect] would — same de-duplication, same
+     * resulting [SoundEffectClip]. This is a one-time copy, not a reference
+     * back into assets: once added, the clip behaves identically to a
+     * user-imported one everywhere else in the app.
+     */
+    fun importBuiltInSoundEffect(context: Context, builtIn: BuiltInSoundEffect) {
+        viewModelScope.launch {
+            val project = _activeProject.value ?: return@launch
+            val destDir = File(context.filesDir, "sound_effects").also { it.mkdirs() }
+            val existingIds = project.soundEffects.map { it.id }.toSet()
+            var id = builtIn.id
+            var suffix = 1
+            while (id in existingIds) { id = "${builtIn.id}_$suffix"; suffix++ }
+
+            val destFile = File(destDir, "${project.id}_${id}.wav")
+            val copyOk = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.assets.open(builtIn.assetPath).use { input ->
+                        destFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }.isSuccess
+            }
+            if (!copyOk) { _message.emit("Couldn't load \"${builtIn.label}\""); return@launch }
+
+            updateActive { it.copy(soundEffects = it.soundEffects + SoundEffectClip(id, destFile.absolutePath)) }
+            scheduleSave()
+            _message.emit("Added \"${builtIn.label}\" as \"$id\"")
+        }
+    }
+
     fun removeSoundEffect(id: String) {
         val project = _activeProject.value ?: return
         val clip = project.soundEffects.firstOrNull { it.id == id } ?: return

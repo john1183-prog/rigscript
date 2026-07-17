@@ -1,0 +1,32 @@
+Bundled sound effects — license and provenance
+================================================
+
+Source: Kenney's "Interface Sounds" pack (www.kenney.nl), via the
+repackaged repository https://github.com/Calinou/kenney-interface-sounds
+(verified public, CC0-licensed, via the GitHub API on 2026-07-17).
+
+License: Creative Commons Zero (CC0) — http://creativecommons.org/publicdomain/zero/1.0/
+"This content is free to use in personal, educational and commercial
+projects. Support us by crediting Kenney or www.kenney.nl (this is not
+mandatory)."
+
+Files in this directory are a curated subset (one representative clip per
+category) of the original ~100-file pack, renamed to short ids:
+
+  click.wav    <- click_001.wav
+  confirm.wav  <- confirmation_001.wav
+  error.wav    <- error_001.wav
+  glitch.wav   <- glitch_001.wav
+  drop.wav     <- drop_001.wav
+  tick.wav     <- tick_001.wav
+  toggle.wav   <- toggle_001.wav
+  bong.wav     <- bong_001.wav
+  switch.wav   <- switch_001.wav
+  pluck.wav    <- pluck_001.wav
+  question.wav <- question_001.wav
+  select.wav   <- select_001.wav
+  open.wav     <- open_001.wav
+  close.wav    <- close_001.wav
+
+No attribution is legally required (CC0), but Kenney's own request for a
+credit where convenient is honored here: credit Kenney / www.kenney.nl.

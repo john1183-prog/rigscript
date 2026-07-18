@@ -148,7 +148,7 @@ class RigRenderer {
         }
 
         if (sceneShape != SceneShape.NONE) {
-            drawSceneShape(canvas, canvasW, canvasH, horizonY ?: appearance.groundLineYFraction, sceneShape, appearance)
+            drawSceneShape(canvas, canvasW, canvasH, horizonY ?: appearance.groundLineYFraction, sceneShape, appearance, currentTimeSec)
         }
 
         if (appearance.showGroundLine) {
@@ -283,33 +283,53 @@ class RigRenderer {
      * the AI never has to reason about a colour clash — see
      * [com.example.data.AppearanceSettings] doc + V2_DECISIONS.md.
      */
-    private fun drawSceneShape(canvas: Canvas, w: Int, h: Int, horizonYFraction: Float, shape: String, appearance: AppearanceSettings) {
+    /**
+     * Scene shapes are never fully static — each type gets a small,
+     * continuous, deterministic motion (a function of [timeSec], same
+     * determinism reasoning as the atmosphere effects) so the backdrop reads
+     * as alive rather than a frozen cutout, without competing with the
+     * figure for attention.
+     *
+     * Mountains/city sway very slightly (a distant-parallax "breathing"
+     * feel) rather than scroll — both shapes already overdraw past the
+     * canvas edges for mountains, or sit comfortably inside a small sway
+     * margin for city, so this needs no wraparound handling. Trees sway
+     * individually with a per-tree phase offset so they don't all move in
+     * lockstep, which would look mechanical. Clouds are the one shape that
+     * conventionally drifts continuously in a single direction rather than
+     * swaying in place, so they alone use real wraparound motion via
+     * [wrapCoord] — drawn across an extended span so a cloud re-entering
+     * from the opposite edge is never visible popping in.
+     */
+    private fun drawSceneShape(canvas: Canvas, w: Int, h: Int, horizonYFraction: Float, shape: String, appearance: AppearanceSettings, timeSec: Float) {
         val horizonPx = h * horizonYFraction
         sceneShapePaint.color = constrainSceneColor(appearance.boneColor, appearance.boneColor, alpha = 0x66)
         when (shape) {
             SceneShape.MOUNTAINS -> {
+                val sway = kotlin.math.sin(timeSec * 0.05f) * w * 0.015f
                 val peakCount = 4
                 val peakW = w.toFloat() / (peakCount - 1)
                 val path = Path()
-                path.moveTo(-w * 0.2f, horizonPx)
+                path.moveTo(-w * 0.2f + sway, horizonPx)
                 for (i in 0 until peakCount) {
-                    val x = -w * 0.2f + i * peakW * 1.4f
+                    val x = -w * 0.2f + i * peakW * 1.4f + sway
                     val peakHeight = horizonPx * (0.35f + 0.15f * ((i * 37) % 3))
                     path.lineTo(x + peakW * 0.7f, horizonPx - peakHeight)
                     path.lineTo(x + peakW * 1.4f, horizonPx)
                 }
-                path.lineTo(w * 1.2f, horizonPx)
-                path.lineTo(w * 1.2f, horizonPx + h * 0.01f)
-                path.lineTo(-w * 0.2f, horizonPx + h * 0.01f)
+                path.lineTo(w * 1.2f + sway, horizonPx)
+                path.lineTo(w * 1.2f + sway, horizonPx + h * 0.01f)
+                path.lineTo(-w * 0.2f + sway, horizonPx + h * 0.01f)
                 path.close()
                 canvas.drawPath(path, sceneShapePaint)
             }
             SceneShape.CITY -> {
+                val sway = kotlin.math.sin(timeSec * 0.08f + 1f) * w * 0.01f
                 val buildingCount = 8
                 val bw = w.toFloat() / buildingCount
                 for (i in 0 until buildingCount) {
                     val bh = horizonPx * (0.25f + 0.35f * ((i * 53) % 5) / 5f)
-                    val x = i * bw
+                    val x = i * bw + sway
                     canvas.drawRect(x, horizonPx - bh, x + bw * 0.8f, horizonPx, sceneShapePaint)
                 }
             }
@@ -317,8 +337,11 @@ class RigRenderer {
                 val treeCount = 6
                 val spacing = w.toFloat() / treeCount
                 for (i in 0 until treeCount) {
-                    val cx = spacing * i + spacing * 0.5f
                     val r = horizonPx * (0.10f + 0.04f * ((i * 29) % 3))
+                    // Per-tree phase offset (i * 0.9) so trees sway out of
+                    // sync with each other rather than all in lockstep.
+                    val sway = kotlin.math.sin(timeSec * 0.6f + i * 0.9f) * (r * 0.12f)
+                    val cx = spacing * i + spacing * 0.5f + sway
                     canvas.drawCircle(cx, horizonPx - r, r, sceneShapePaint)
                     canvas.drawRect(cx - r * 0.08f, horizonPx - r, cx + r * 0.08f, horizonPx, sceneShapePaint)
                 }
@@ -326,8 +349,11 @@ class RigRenderer {
             SceneShape.CLOUDS -> {
                 val cloudCount = 4
                 val spacing = w.toFloat() / cloudCount
+                val driftSpeed = w * 0.008f   // px/sec — slow, continuous, one direction
+                val span = w + spacing        // wrap span leaves one cloud-spacing of margin off-screen on each side
                 for (i in 0 until cloudCount) {
-                    val cx = spacing * i + spacing * 0.5f
+                    val baseCx = spacing * i + spacing * 0.5f
+                    val cx = wrapCoord(baseCx + timeSec * driftSpeed, span) - spacing * 0.5f
                     val cy = horizonPx * (0.15f + 0.10f * ((i * 41) % 3))
                     val r = w * 0.05f
                     canvas.drawCircle(cx - r, cy, r, sceneShapePaint)
@@ -336,6 +362,12 @@ class RigRenderer {
                 }
             }
         }
+    }
+
+    /** Positive-only modulo (Kotlin's `%` can return negative for a negative dividend, which a wrap coordinate must never do). */
+    private fun wrapCoord(x: Float, span: Float): Float {
+        val wrapped = x % span
+        return if (wrapped < 0f) wrapped + span else wrapped
     }
 
     /**

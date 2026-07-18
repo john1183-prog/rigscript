@@ -39,6 +39,12 @@ class RigRenderer {
     // the head circle) rather than two separate Paints, same reuse pattern
     // already used for backgroundPaint above.
     private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    // V2 — figure glow. BlurMaskFilter is immutable once created, so it's
+    // only rebuilt when the radius actually changes rather than every frame —
+    // same "don't allocate in the hot path" reasoning as the gradient Shader
+    // caching mentioned in this class's other doc comments.
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var cachedGlowRadiusPx = -1f
 
     // V2 — scene shapes / atmosphere / caption / reference overlay
     private val sceneShapePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -189,6 +195,18 @@ class RigRenderer {
             outlinePaint.color = appearance.outlineColor.toInt()
         }
 
+        // V2 — glow. Drawn BEHIND outline (which is itself behind the normal
+        // fill), so layering front-to-back is: normal fill -> outline -> glow.
+        val glowEnabled = appearance.glowEnabled
+        if (glowEnabled) {
+            val glowRadiusPx = (appearance.glowRadiusNormalized * minDim).coerceAtLeast(1f)
+            if (glowRadiusPx != cachedGlowRadiusPx) {
+                glowPaint.maskFilter = BlurMaskFilter(glowRadiusPx, BlurMaskFilter.Blur.NORMAL)
+                cachedGlowRadiusPx = glowRadiusPx
+            }
+            glowPaint.color = appearance.glowColor.toInt()
+        }
+
         // ── FK pass ───────────────────────────────────────────────────────────
         for (i in 0 until n) {
             val bone   = bones[i]
@@ -224,6 +242,10 @@ class RigRenderer {
                 // visible. Previously it was drawn at startX/startY (the
                 // origin), where rotation has no effect on position.
                 val r = bone.headNormalizedRadius * scale * appearance.headScaleMultiplier
+                if (glowEnabled) {
+                    glowPaint.style = Paint.Style.FILL
+                    canvas.drawCircle(endX, endY, r, glowPaint)
+                }
                 if (outlineEnabled) {
                     // A slightly bigger solid circle drawn first, in the
                     // outline color, reads as an outline once the normal
@@ -241,6 +263,12 @@ class RigRenderer {
                     drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, appearance.headScaleMultiplier)
                 }
             } else {
+                if (glowEnabled) {
+                    glowPaint.style = Paint.Style.STROKE
+                    glowPaint.strokeCap = Paint.Cap.ROUND
+                    glowPaint.strokeWidth = bonePaint.strokeWidth
+                    canvas.drawLine(startX, startY, endX, endY, glowPaint)
+                }
                 if (outlineEnabled) {
                     outlinePaint.style = Paint.Style.STROKE
                     outlinePaint.strokeCap = Paint.Cap.ROUND

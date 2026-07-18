@@ -74,5 +74,12 @@ data class AppearanceSettings(
     val outlineEnabled: Boolean = false,
     val outlineColor: Long = 0xFF000000L,
     /** Outline thickness as a fraction of min(canvasW, canvasH), same normalization convention as [boneStrokeNormalized]. */
-    val outlineWidthNormalized: Float = 0.006f
+    val outlineWidthNormalized: Float = 0.006f,
+
+    // ── Glow (V2) ─────────────────────────────────────────────────────────────
+    /** Soft blurred halo behind the figure's silhouette (limbs + head), via BlurMaskFilter — off by default. Independent of [outlineEnabled]; the two can be combined (glow behind, outline on the edge, normal fill on top). */
+    val glowEnabled: Boolean = false,
+    val glowColor: Long = 0xFF00AAFFL,
+    /** Blur radius as a fraction of min(canvasW, canvasH). Larger = softer/wider halo. */
+    val glowRadiusNormalized: Float = 0.025f
 )

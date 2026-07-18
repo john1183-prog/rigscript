@@ -62,6 +62,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _scriptError = MutableStateFlow<String?>(null)
     val scriptError: StateFlow<String?> = _scriptError.asStateFlow()
 
+    /** Semantic (not JSON-syntax) validation warnings — see ScriptValidator's doc comment for why this is separate from _scriptError. */
+    private val _scriptWarnings = MutableStateFlow<List<String>>(emptyList())
+    val scriptWarnings: StateFlow<List<String>> = _scriptWarnings.asStateFlow()
+
     // ── Pose library ──────────────────────────────────────────────────────────
 
     val poses: StateFlow<List<PoseDef>> = repo.observePoses()
@@ -217,6 +221,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         runCatching {
             val parsed = json.decodeFromString<AnimScript>(raw)
             _scriptError.value = null
+            val soundEffectIds = _activeProject.value?.soundEffects?.map { it.id }?.toSet() ?: emptySet()
+            _scriptWarnings.value = ScriptValidator.validate(parsed, soundEffectIds)
             // E3: Debounce the updateActive call — previously it fired immediately
             // on every keystroke, triggering a timeline recompile and a playhead
             // reset mid-typing. Now the compile only runs after 400ms of no typing,
@@ -226,7 +232,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 delay(400)
                 updateActive { it.copy(script = parsed) }
             }
-        }.onFailure { _scriptError.value = it.message?.take(120) }
+        }.onFailure {
+            _scriptError.value = it.message?.take(120)
+            _scriptWarnings.value = emptyList()
+        }
         scheduleSave()
     }
 
@@ -245,12 +254,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 updateActive { it.copy(script = parsed) }
                 _scriptText.value  = AppJson.pretty.encodeToString(parsed)
                 _scriptError.value = null
+                val soundEffectIds = _activeProject.value?.soundEffects?.map { it.id }?.toSet() ?: emptySet()
+                val warnings = ScriptValidator.validate(parsed, soundEffectIds)
+                _scriptWarnings.value = warnings
                 saveActiveProject()
-                _message.emit("Script imported — ${parsed.events.size} events")
+                _message.emit(
+                    "Script imported — ${parsed.events.size} events" +
+                        if (warnings.isNotEmpty()) " (${warnings.size} warning${if (warnings.size > 1) "s" else ""} — see Script tab)" else ""
+                )
             }.onFailure {
                 _message.emit("Invalid script file: ${it.message?.take(80)}")
             }
         }
+    }
+
+    /**
+     * Builds the full AI script-generation prompt for the "Copy AI Prompt"
+     * button: the bundled base prompt (assets/prompt/system_prompt.txt — see
+     * that directory's README.txt for why it's a deliberate duplicate of
+     * PROMPT_CONSIDERATIONS.md's fenced code block, not a shared source)
+     * plus a live section listing this project's ACTUAL sound-effect ids.
+     * The base prompt explicitly tells the AI never to assume a fixed sound
+     * effect catalog — this is what fulfills that per-project listing.
+     */
+    suspend fun buildPromptForClipboard(context: Context): String = withContext(Dispatchers.IO) {
+        val basePrompt = runCatching {
+            context.assets.open("prompt/system_prompt.txt").bufferedReader().readText()
+        }.getOrElse { "" }
+
+        val soundEffects = _activeProject.value?.soundEffects ?: emptyList()
+        val sfxSection = if (soundEffects.isEmpty()) {
+            "\n\nTHIS PROJECT'S SOUND EFFECT LIBRARY: none imported yet — do not use the soundEffect field."
+        } else {
+            "\n\nTHIS PROJECT'S SOUND EFFECT LIBRARY (only these ids are valid for soundEffect): " +
+                soundEffects.joinToString { it.id }
+        }
+
+        basePrompt + sfxSection
+    }
+
+    /** Generic public entry point for a UI-triggered confirmation message that doesn't originate from a ViewModel action of its own — e.g. a clipboard copy performed by the Composable itself. */
+    fun notify(text: String) {
+        viewModelScope.launch { _message.emit(text) }
     }
 
     fun insertScriptEvent(poseId: String, atSec: Float) {

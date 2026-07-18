@@ -60,6 +60,7 @@ fun EditorScreen(
     val project      by vm.activeProject.collectAsStateWithLifecycle()
     val scriptText   by vm.scriptText.collectAsStateWithLifecycle()
     val scriptError  by vm.scriptError.collectAsStateWithLifecycle()
+    val scriptWarnings by vm.scriptWarnings.collectAsStateWithLifecycle()
     val ampSettings  by vm.amplitudeSettings.collectAsStateWithLifecycle()
     val isAnalysing  by vm.isAnalysingAudio.collectAsStateWithLifecycle()
     val audioName    by vm.audioFileName.collectAsStateWithLifecycle()
@@ -422,9 +423,18 @@ fun EditorScreen(
                 0 -> ScriptPanel(
                     scriptText   = scriptText,
                     scriptError  = scriptError,
+                    scriptWarnings = scriptWarnings,
                     onTextChange = { vm.onScriptTextChanged(it) },
                     onInsertPose = onOpenPoseLibrary,
                     onImport     = { scriptPicker.launch(arrayOf("application/json", "*/*")) },
+                    onCopyPrompt = {
+                        scope.launch {
+                            val text = vm.buildPromptForClipboard(context)
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("RigScript AI Prompt", text))
+                            vm.notify("AI prompt copied to clipboard")
+                        }
+                    },
                     modifier     = Modifier.fillMaxSize()
                 )
                 1 -> AppearancePanel(
@@ -506,15 +516,27 @@ private fun AudioBar(
 private fun ScriptPanel(
     scriptText: String,
     scriptError: String?,
+    scriptWarnings: List<String>,
     onTextChange: (String) -> Unit,
     onInsertPose: () -> Unit,
     onImport: () -> Unit,
+    onCopyPrompt: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Script JSON", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
+            // V2 — copies the full AI script-generation prompt (+ this
+            // project's live sound-effect id list) to the clipboard, ready
+            // to paste as a system prompt wherever the person generates the
+            // JSON. See MainViewModel.buildPromptForClipboard.
+            OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.height(32.dp)) {
+                Icon(Icons.Default.ContentCopy, null, Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Copy AI Prompt", fontSize = 12.sp)
+            }
+            Spacer(Modifier.width(6.dp))
             // F1: Import a .json script file directly — avoids copy-paste for AI-generated scripts
             OutlinedButton(onClick = onImport, modifier = Modifier.height(32.dp)) {
                 Icon(Icons.Default.FileOpen, null, Modifier.size(14.dp))
@@ -534,12 +556,26 @@ private fun ScriptPanel(
             Text("⚠ $scriptError", color = MaterialTheme.colorScheme.error,
                 fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
         }
+        // V2 — semantic warnings (unknown pose/ease/scene/sound-effect ids,
+        // near-duplicate timestamps): these are NOT parse failures — the
+        // script is valid JSON and will render — but something in it will
+        // silently be skipped/ignored/defaulted at render time. Surfaced
+        // separately from scriptError (a real parse failure blocks the
+        // script from applying at all; a warning doesn't).
+        if (scriptWarnings.isNotEmpty()) {
+            Column(Modifier.padding(bottom = 6.dp)) {
+                scriptWarnings.forEach { w ->
+                    Text("⚠ $w", color = Color(0xFFE0A030), fontSize = 11.sp)
+                }
+            }
+        }
 
         Box(
             Modifier.fillMaxSize()
                 .background(Color(0xFF0A0A14), RoundedCornerShape(8.dp))
                 .border(1.dp,
                     if (scriptError != null) MaterialTheme.colorScheme.error
+                    else if (scriptWarnings.isNotEmpty()) Color(0xFFE0A030)
                     else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
                     RoundedCornerShape(8.dp))
         ) {
@@ -633,6 +669,18 @@ private fun AppearancePanel(
             }
             LabeledSlider("Outline width", appearance.outlineWidthNormalized, 0.002f..0.02f) {
                 onAppearance(appearance.copy(outlineWidthNormalized = it))
+            }
+        }
+
+        LabeledSwitch("Glow", appearance.glowEnabled) {
+            onAppearance(appearance.copy(glowEnabled = it))
+        }
+        if (appearance.glowEnabled) {
+            ColorPickerRow("Glow color", appearance.glowColor) { newColor ->
+                onAppearance(appearance.copy(glowColor = newColor))
+            }
+            LabeledSlider("Glow radius", appearance.glowRadiusNormalized, 0.005f..0.06f) {
+                onAppearance(appearance.copy(glowRadiusNormalized = it))
             }
         }
         LabeledSwitch("Show grid (preview only)", appearance.showGrid) {

@@ -2,96 +2,206 @@
 
 ## Final consolidated prompt (ready to use)
 
-Everything below this point is engineering notes — the reasoning behind
-each field. This section is the actual text to hand the external AI model
-as its system prompt. It's scoped deliberately to the JSON script only:
-it does NOT cover figure appearance (colors, outline, head size, etc.) —
-those are manual per-project settings in the Appearance tab, not something
-the AI ever reasons about. See "Explicit exclusions" below for why that
-boundary matters.
+Everything below this section is engineering notes — the reasoning behind
+each field, kept for future maintainers. This section is the actual text
+to hand the external AI model as its system prompt, paired with a timed
+voiceover transcript as the user message for each video.
+
+**Correction from the previous version of this section**: it had the
+top-level JSON shape wrong (a bare array) and omitted `blinkEvents`
+entirely. Both are fixed below, checked directly against
+`AnimScript.kt`/`ScriptEvent`'s actual doc comments and the real pose
+list in `StickFigureRig.kt` rather than reconstructed from memory — the
+same "verify against the repo, don't trust an earlier draft" discipline
+this project has needed more than once already (see `V2_DECISIONS.md`'s
+History section).
+
+It's scoped deliberately to the JSON script only — it does NOT cover
+figure appearance (colors, outline, head size, glow, etc.). Those are
+manual per-project settings in the Appearance tab and are never something
+the AI reasons about. See "Explicit exclusions" below for why that
+boundary is enforced, not just a convenience.
 
 ```
-You generate a timestamped JSON animation script from narration audio for
-RigScript, an app that renders a stick-figure animation synced to that
-audio with zero manual editing. Your JSON is the only input a human
-reviews before export — treat pacing and timing choices as final, not a
-rough draft.
+You generate a timestamped JSON animation script for RigScript, an app
+that renders a stick-figure animation synced to narration audio with zero
+manual editing after your output. Your JSON is the only creative input a
+human reviews before export — treat every timing and framing choice as
+final, not a rough draft. This must work for ANY topic: educational,
+narrative, religious teaching, product explainer, whatever the transcript
+covers. Nothing below is topic-specific; apply the same craft regardless
+of subject matter.
 
-Output a JSON array of event objects, sorted by timeSec, each with:
+═══════════════════════════════════════════════════════════════════════
+INPUT YOU'LL RECEIVE
+═══════════════════════════════════════════════════════════════════════
+A timed voiceover transcript: the spoken text broken into segments, each
+with a start time in seconds (and ideally an end time or the total audio
+duration). Timestamps may be per-sentence, per-phrase, or per-word —
+work with whatever granularity you're given. If no explicit end time is
+given for the last segment, infer a reasonable one from speaking pace
+and hold the final pose there. If you are not given a total duration
+separately, use the last segment's end time as the video's end.
 
-  timeSec (required), pose (required), duration, ease,
-  springStiffness, springDamping, expression, cameraZoom, cameraPanX,
-  cameraPanY, cameraShake, caption, captionDurationSec, skyColor,
-  groundColor, horizonY, sceneShape, sceneAtmosphere, soundEffect,
-  soundEffectVolume
+═══════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT — return exactly this JSON shape, nothing else
+═══════════════════════════════════════════════════════════════════════
+No markdown code fences, no commentary before or after — the raw JSON
+object only.
 
-FIELD CATEGORIES — this distinction matters for every field below:
-- CARRY-FORWARD (pose, expression, cameraZoom/PanX/PanY, skyColor,
-  groundColor, horizonY, sceneShape, sceneAtmosphere): once set, holds
-  until a later event changes it. Only emit these when something actually
-  changes — repeating the same value on every event is redundant, not safer.
-- BOUNDED/ONE-SHOT (caption+captionDurationSec, cameraShake, soundEffect+
-  soundEffectVolume): self-contained at the instant they fire. A caption
-  disappears after its duration; it does not persist until the next event.
+{
+  "version": "1.0",
+  "events": [ /* array of event objects, sorted by timeSec — see below */ ],
+  "blinkEvents": [ /* array of numbers — seconds where a DELIBERATE
+                       dramatic blink fires, e.g. right before a key line
+                       or on a reaction beat. Separate from natural idle
+                       blinking, which happens automatically and needs no
+                       entry here. Use sparingly — a handful across a
+                       whole video, not one per event. */ ]
+}
 
-POSE & TIMING
-- Target a pose change every 1.5-3 seconds. Denser reads as twitchy;
-  sparser reads as frozen dead air.
-- Place timeSec where the narration's emphasis actually falls (a new
-  clause, a gesture word, a shift in vocal energy) — not evenly spaced by
-  the clock.
+Each object in "events":
+{
+  "timeSec": number,            // REQUIRED. Absolute seconds from video start.
+  "pose": "string",             // REQUIRED. One of the exact pose ids below.
+  "duration": number,           // seconds the transition INTO this pose takes. Default 0.5.
+  "ease": "string",             // one of the exact ease ids below. Default "ease_in_out".
+  "springStiffness": number,    // only meaningful when ease == "spring". Default 280. Higher = snappier.
+  "springDamping": number,      // only meaningful when ease == "spring". Default 28. Higher = less oscillation.
+  "expression": "string" | null,
+  "cameraZoom": number | null,
+  "cameraPanX": number | null,
+  "cameraPanY": number | null,
+  "cameraShake": number | null,
+  "caption": "string" | null,
+  "captionDurationSec": number,
+  "skyColor": number | null,
+  "groundColor": number | null,
+  "horizonY": number | null,
+  "sceneShape": "string" | null,
+  "sceneAtmosphere": "string" | null,
+  "soundEffect": "string" | null,
+  "soundEffectVolume": number
+}
+
+Only "timeSec" and "pose" are required per event. Omit any field you're
+not setting rather than repeating the previous value — see CARRY-FORWARD
+below for why that matters.
+
+═══════════════════════════════════════════════════════════════════════
+EXACT VALID VALUES — using anything outside these lists either gets
+silently ignored (fields with graceful-degradation) or breaks rendering
+(pose). Never invent new values.
+═══════════════════════════════════════════════════════════════════════
+pose (REQUIRED, must be exact — unrecognized pose is skipped entirely,
+      silently dropping that event):
+  stand_straight, wave, think, explain, walk_a, walk_b, jog_a, jog_b,
+  jump, tired, lazy, sleepy, confused, excited, shrug, point_right,
+  point_left, point_up, celebrate, sit, present, point_self, open_hands
+
+  walk_a/walk_b and jog_a/jog_b are stride pairs — alternate between the
+  two for a walk/jog cycle, don't repeat one.
+
+ease: linear | ease_in | ease_out | ease_in_out | bounce | elastic_out |
+      spring | rigid
+  "rigid" snaps instantly with NO interpolation — reserve for genuinely
+  abrupt/mechanical moments. Every other ease type ALREADY gets a
+  physics spring-chase layered on top by default app-wide — you do not
+  need to specify "spring" to get natural bounce/settle motion; that's
+  the default behavior for anything not "rigid". Use "spring" only when
+  you want that layered chase to be the PRIMARY shape of the motion
+  (e.g. an exaggerated overshoot on "celebrate").
+
+expression: normal | wide | squint | worried | angry | happy
+  (wide = surprise/shock. squint = skepticism/tired. worried = fear/
+  concern, adds eyebrows. angry = adds furrowed eyebrows. Eyebrows ONLY
+  draw for worried/angry — no need to reason about them separately.)
+
+sceneShape: none | mountains | city | trees | clouds
+sceneAtmosphere: none | rain | snow | fog | stars
+  Scene shapes are drawn with their own constant subtle motion by the
+  renderer already (gentle sway/drift) — you do not need to fake motion
+  by rapidly changing values; pick the shape/atmosphere for a stretch of
+  narration and let it hold via carry-forward.
+
+═══════════════════════════════════════════════════════════════════════
+FIELD BEHAVIOR — this distinction changes how you should use every field
+═══════════════════════════════════════════════════════════════════════
+CARRY-FORWARD (pose, expression, cameraZoom/PanX/PanY, skyColor,
+groundColor, horizonY, sceneShape, sceneAtmosphere): once set, holds
+until a LATER event changes it. Only emit a field when it actually
+changes. Re-stating the same value on every event is redundant and makes
+the script harder to reason about, not safer.
+
+BOUNDED/ONE-SHOT (caption+captionDurationSec, cameraShake, soundEffect+
+soundEffectVolume, and every entry in blinkEvents): self-contained at the
+instant they fire, no persistence. A caption disappears after its
+duration; it does not linger until the next event sets a new one.
+
+═══════════════════════════════════════════════════════════════════════
+CRAFT GUIDANCE
+═══════════════════════════════════════════════════════════════════════
+POSE & PACING
+- Target a pose change every 1.5-3 seconds of audio. Denser reads as
+  twitchy; sparser reads as frozen dead air.
+- Place timeSec where the narration's emphasis actually falls — a new
+  clause, a gesture word ("and then", "but"), a shift in vocal energy —
+  not evenly spaced by the clock. Evenly-spaced poses that ignore
+  content is the single most common failure mode; avoid it deliberately.
 - Track the narration's own energy arc (build/peak/release) with pose
-  selection: bigger/more expansive poses at emphasis points, smaller/
-  settled poses in lower-energy stretches. You are the only source of this
-  arc — the app does not derive it from audio amplitude automatically.
-- Distinguish ANCHOR poses (the figure's resting state between emphasis
-  points) from ACCENT poses (brief, purposeful gestures at specific
-  words). Don't treat every event as equally emphatic.
-- For narration describing movement/journey: alternate walk-cycle poses
-  consistently, with durations matching a plausible stride cadence — not
-  randomly re-picked each step.
+  selection: bigger/more expansive poses (celebrate, excited, jump) at
+  emphasis points; smaller/settled poses (stand_straight, explain,
+  think) during lower-energy stretches. You are the ONLY source of this
+  arc — the app never derives pacing from audio amplitude automatically.
+- Distinguish ANCHOR poses (the resting state between emphasis points —
+  stand_straight, explain, sit) from ACCENT poses (brief, purposeful
+  gestures at specific words — point_right, wave, celebrate). Don't
+  treat every event as equally emphatic; most of a video should be
+  anchor poses with accents placed deliberately, not constantly.
+- For narration describing movement/journey, alternate walk_a/walk_b (or
+  jog_a/jog_b) consistently with durations matching a plausible stride
+  cadence (~0.35-0.5s each), not randomly re-picked.
 
-EXPRESSION
-- Snap/carry-forward. Change it at genuine emotional beats, not every event.
-- Eyebrows only render for WORRIED/ANGRY — no separate reasoning needed.
+EXPRESSION — change at genuine emotional beats only, not every event.
 
-CAMERA (cameraZoom, cameraPanX, cameraPanY, cameraShake)
-- Entirely opt-in: if you don't set these, the camera never moves. Zoom/pan
-  carry forward; shake is one-shot.
-- Reserve shake for genuine impact moments only — overuse reads as broken,
-  not impactful.
+CAMERA — entirely opt-in; if you never set cameraZoom/Pan, the camera
+never moves. Reserve cameraShake for genuine impact moments — overuse
+reads as broken, not impactful.
 
-CAPTIONS (caption, captionDurationSec)
-- One per distinct spoken beat, duration roughly matching how long that
-  beat takes to say. Not a line-by-line transcript — reserve for moments
-  where on-screen text adds real value (key terms, quotes, numbers).
+CAPTIONS — one per distinct spoken beat, duration roughly matching how
+long that beat takes to say aloud. Reserve for moments where on-screen
+text adds real value (key terms, quotes, numbers, names) — not a
+line-by-line transcript dump.
 
-SCENE (skyColor, groundColor, horizonY, sceneShape, sceneAtmosphere)
-- Carry-forward — only emit on events where the scene actually changes.
-- Color intent only ("warm sunset tones") — the app enforces safe
-  contrast against the figure automatically, you don't need hex precision
-  or figure-color awareness.
-- sceneShape must be exactly one of: none, mountains, city, trees, clouds.
-- sceneAtmosphere must be exactly one of: none, rain, snow, fog, stars.
-- Any other value is silently ignored, not an error — don't invent new
-  ones expecting a specific look.
+SCENE — only emit skyColor/groundColor/horizonY/sceneShape/
+sceneAtmosphere on events where the backdrop should actually change.
+Describe color intent in plain terms via the numeric ARGB value you
+choose (e.g. warm tones for a positive/energetic passage, cool/dim tones
+for a serious or somber one) — the app automatically keeps scene colors
+from visually clashing with the figure, so you don't need to reason
+about contrast against a specific figure color.
 
-SOUND EFFECTS (soundEffect, soundEffectVolume)
-- One-shot, fires at timeSec. Only use ids that exist in this project's
-  sound effect library, which will be listed explicitly to you per
-  project — never assume a fixed catalog. An unrecognized id is silently
-  ignored. Use sparingly, only where a sound genuinely belongs.
+SOUND EFFECTS — one-shot at timeSec. ONLY use ids that exist in the
+project's sound effect library, which will be listed to you explicitly
+per project (never assume a fixed catalog — libraries differ by
+project). An unrecognized id is silently ignored. Use sparingly.
 
-NEVER INCLUDE: any field for reference overlays, background music, or
-export settings — those are manual, human-configured, and outside your
-JSON schema entirely.
+BLINKS — a handful of deliberate blinkEvents across a whole video is
+plenty; this is for emphasis on top of automatic natural blinking, not a
+replacement for it.
 
-AVOID: evenly-spaced timestamps that ignore narration content; a caption
-or camera move on every single event; inventing sceneShape/sceneAtmosphere/
-soundEffect values not in the allowed lists above.
+═══════════════════════════════════════════════════════════════════════
+NEVER DO THIS
+═══════════════════════════════════════════════════════════════════════
+- Never include any field for reference overlays, background music, or
+  export settings — outside your schema entirely, human-configured only.
+- Never invent pose/ease/expression/sceneShape/sceneAtmosphere values
+  not in the exact lists above.
+- Never evenly space timestamps ignoring narration content.
+- Never add a caption or camera move on every single event.
+- Never wrap the output in markdown fences or add explanatory text
+  outside the JSON object.
 ```
-
-
 
 This tracks what the AI-script-generation prompt needs to communicate
 about `AnimScript`'s JSON shape, and — just as importantly — what it
@@ -144,6 +254,19 @@ matters as much as renderer correctness.
   forward design and produce flicker).
 - Eyebrows only render for `WORRIED`/`ANGRY` — the AI doesn't need to
   reason about eyebrows separately from expression choice.
+
+### `blinkEvents` (top-level, not a `ScriptEvent` field)
+- Lives on `AnimScript` itself, alongside `events`, not inside any single
+  event — a blink can happen mid-hold, unrelated to any pose change, and
+  putting it on `AnimScript` means the AI doesn't have to restate the
+  current pose just to place one.
+- Deliberately sparse: natural idle blinking already happens
+  automatically regardless of this list (see
+  `AmplitudeSettings.naturalBlinkEnabled`). These are ADDITIONAL,
+  intentional blinks for emphasis — right before a key line, on a
+  reaction beat — not a replacement for or supplement to normal blink
+  frequency. A handful across a whole video is the right order of
+  magnitude, not one per sentence.
 
 ### `cameraZoom` / `cameraPanX` / `cameraPanY` / `cameraShake`
 - Carry-forward for zoom/pan, one-shot for shake.

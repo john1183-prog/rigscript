@@ -3,7 +3,8 @@ package com.example.data
 /**
  * One entry in the app's bundled starter sound-effect library — a curated
  * subset of Kenney's CC0 "Interface Sounds" pack, shipped as Android assets
- * (`assets/sfx/*.wav`; see `assets/sfx/LICENSE.txt` for provenance).
+ * under `assets/sfx/` (one .wav file per clip; see `assets/sfx/LICENSE.txt`
+ * for provenance).
  *
  * This is distinct from [SoundEffectClip]: a [BuiltInSoundEffect] lives in
  * the APK and isn't tied to any project. Adding one to a project copies it

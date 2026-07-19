@@ -8,8 +8,12 @@ import kotlinx.serialization.Serializable
  * [aspectRatio] "9:16" (portrait/Reels) or "16:9" (landscape/presentations).
  *               Ignored when [dualAspectExport] is true — see that field's
  *               doc comment.
- * [resolution]  "720p" or "1080p" — height is the named dimension; width is derived
- *               from the aspect ratio.
+ * [resolution]  "360p", "720p", or "1080p" — height is the named dimension;
+ *               width is derived from the aspect ratio. "360p" exists
+ *               primarily for [com.example.viewmodel.MainViewModel.exportPreview]'s
+ *               quick low-res preview render, not as a normal export choice —
+ *               though nothing stops a person from picking it directly if a
+ *               genuinely small file is what they actually want.
  * [fps]         24 | 30 | 60
  * [bitrateMbps] Target video bitrate in Mbit/s.
  * [embedAudio]  When true, the source audio file is muxed into the output MP4.
@@ -42,7 +46,11 @@ data class ExportSettings(
 ) {
     /** Resolved pixel dimensions for the export canvas, for a given [aspect] (defaults to this settings' own [aspectRatio]). */
     fun dimensions(aspect: String = aspectRatio): Pair<Int, Int> {
-        val height = if (resolution == "720p") 720 else 1080
+        val height = when (resolution) {
+            "360p" -> 360
+            "720p" -> 720
+            else   -> 1080
+        }
         val width = when (aspect) {
             "9:16"  -> (height * 9) / 16
             "16:9"  -> (height * 16) / 9

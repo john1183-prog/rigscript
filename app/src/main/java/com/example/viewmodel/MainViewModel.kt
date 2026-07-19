@@ -659,5 +659,73 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _exportEtaSec.value   = null
     }
 
+    /**
+     * Quick low-res sanity-check render before committing to a full export —
+     * the "on the horizon" queue item this implements. Deliberately reuses
+     * [exportVideo]'s exact pipeline ([VideoExporter.export] itself, not a
+     * parallel simplified path) against a preview-tuned [ProjectDef] copy:
+     * 360p, a low bitrate, fps capped at 24, and dual-aspect forced off
+     * (a preview only needs to match ONE aspect ratio — whichever is
+     * currently selected — not produce both).
+     *
+     * Sharing [exportJob]/[_exportProgress]/[_exportEtaSec] with [exportVideo]
+     * is deliberate, not an oversight: it means a preview and a real export
+     * can never run concurrently (starting one while the other is active is
+     * simply not possible, since both check/set the same job reference), and
+     * [cancelExport] already correctly cancels whichever of the two is
+     * actually running without needing its own separate cancel path.
+     *
+     * Audio (verbatim narration copy, or the background-music/sound-effect
+     * mix) is NOT specially fast-pathed for preview — it's the same audio
+     * work either way, since [AudioMixer]'s cost is bounded by audio
+     * duration, not video resolution/fps. A project with background music
+     * configured won't see as dramatic a preview speedup as one without;
+     * that's an accepted tradeoff for reusing one correct audio pipeline
+     * rather than building a second, faster-but-approximate one.
+     */
+    fun exportPreview(context: Context) {
+        val project = _activeProject.value ?: return
+        if (exportJob != null) return   // a preview or a real export is already running
+        val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:PreviewExport")
+        val previewProject = project.copy(
+            projectName = project.projectName + "_PREVIEW",
+            exportSettings = project.exportSettings.copy(
+                resolution = "360p",
+                bitrateMbps = 2,
+                fps = minOf(project.exportSettings.fps, 24),
+                dualAspectExport = false
+            )
+        )
+        exportJob = viewModelScope.launch {
+            wakeLock.acquire(30 * 60 * 1000L)   // 30 min ceiling — a preview should never legitimately take that long
+            _exportProgress.value = 0f
+            _exportEtaSec.value   = null
+            _exportedFile.value   = emptyList()
+            try {
+                val compiled = compileTimeline(project.script)
+                val results = VideoExporter.export(
+                    context           = context,
+                    project           = previewProject,
+                    keyframes         = compiled,
+                    amplitudeSettings = _amplitudeSettings.value,
+                    onProgress        = { progress, eta -> _exportProgress.value = progress; _exportEtaSec.value = eta }
+                )
+                _exportedFile.value = results.map { it.copy(aspectLabel = "Preview (360p)") }
+                _message.emit("Preview render complete")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _message.emit("Preview cancelled")
+                throw e
+            } catch (e: Exception) {
+                _message.emit("Preview failed: ${e.message}")
+            } finally {
+                _exportProgress.value = null
+                _exportEtaSec.value   = null
+                exportJob = null
+                if (wakeLock.isHeld) wakeLock.release()
+            }
+        }
+    }
+
     companion object { private const val PREF_AMPLITUDE = "amplitude_settings_json" }
 }

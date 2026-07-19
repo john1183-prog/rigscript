@@ -196,6 +196,20 @@ fun EditorScreen(
         else storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
+    // Same permission gate, for the low-res preview render — a separate
+    // launcher/trigger rather than reusing triggerExport()'s, since the two
+    // need to call different ViewModel functions (exportPreview vs exportVideo).
+    val previewStoragePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) vm.exportPreview(context)
+        else scope.launch { snackState.showSnackbar("Storage permission is needed to save the preview") }
+    }
+    fun triggerExportPreview() {
+        if (Build.VERSION.SDK_INT >= 29) vm.exportPreview(context)
+        else previewStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
+
     fun openExport(uri: Uri) {
         runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW).apply {
@@ -463,6 +477,7 @@ fun EditorScreen(
                     exportedFile = exportedFile,
                     onChange     = { vm.updateExportSettings(it) },
                     onExport     = { triggerExport() },
+                    onExportPreview = { triggerExportPreview() },
                     onOpen       = { openExport(it) },
                     onShare      = { shareExport(it) },
                     modifier     = Modifier.fillMaxSize()
@@ -933,6 +948,7 @@ private fun ExportPanel(
     exportedFile: List<ExportResult>,
     onChange: (ExportSettings) -> Unit,
     onExport: () -> Unit,
+    onExportPreview: () -> Unit,
     onOpen: (Uri) -> Unit,
     onShare: (Uri) -> Unit,
     modifier: Modifier = Modifier
@@ -998,6 +1014,16 @@ private fun ExportPanel(
         }
 
         Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onExportPreview, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Visibility, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Quick Preview (360p)", fontSize = 13.sp)
+        }
+        Text("A fast low-res render to sanity-check poses/captions/scene before a full export.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+
+        Spacer(Modifier.height(4.dp))
         Button(onClick = onExport, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.Movie, null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))

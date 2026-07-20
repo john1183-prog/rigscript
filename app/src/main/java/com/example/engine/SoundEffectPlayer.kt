@@ -45,6 +45,26 @@ class SoundEffectPlayer {
     private var loaded: Map<String, Pair<Int, Float>> = emptyMap()
     private var loadedForClips: List<SoundEffectClip> = emptyList()
 
+    // Real bug this fixes: SoundPool.load() is ASYNCHRONOUS — the returned
+    // soundId is a handle for a sample that may not have finished decoding
+    // yet. Calling play() on it before it's ready is a SILENT no-op (no
+    // exception, no log) per SoundPool's documented behavior. Unlike
+    // AudioPlayer/BackgroundMusicPlayer's pendingPlay fix, a one-shot sound
+    // effect can't just be deferred to "whenever it's ready" — that would
+    // play it late, out of sync with the video it was supposed to punctuate.
+    // So the fix here is different: track which sample ids have actually
+    // finished loading, and skip (with a log line, so it's at least
+    // diagnosable) a trigger that fires before its clip is ready, rather
+    // than silently calling play() on something that can't play yet.
+    private val readySoundIds = mutableSetOf<Int>()
+
+    init {
+        soundPool.setOnLoadCompleteListener { _, sampleId, status ->
+            if (status == 0) readySoundIds += sampleId
+            else Log.e(TAG, "SoundPool failed to load sample id $sampleId (status $status)")
+        }
+    }
+
     /**
      * (Re)loads the project's sound-effect library into the pool. Cheap to
      * call redundantly — no-ops if [clips] is reference-equal to what's
@@ -64,10 +84,14 @@ class SoundEffectPlayer {
         loadedForClips = clips
     }
 
-    /** Fires [cues] (as returned by [PlaybackEngine.pollTriggeredSoundEffects]) — a no-op for any id not in the currently loaded library. */
+    /** Fires [cues] (as returned by [PlaybackEngine.pollTriggeredSoundEffects]) — a no-op for any id not in the currently loaded library, or whose clip hasn't finished loading yet (see [readySoundIds]'s doc comment above). */
     fun playTriggered(cues: List<SoundEffectCue>) {
         for (cue in cues) {
             val (soundId, clipVolume) = loaded[cue.clipId] ?: continue
+            if (soundId !in readySoundIds) {
+                Log.w(TAG, "Sound effect '${cue.clipId}' triggered before its clip finished loading — skipped.")
+                continue
+            }
             val v = (clipVolume * cue.volumeMultiplier).coerceIn(0f, 1f)
             runCatching { soundPool.play(soundId, v, v, 0, 0, 1f) }
         }
@@ -77,6 +101,7 @@ class SoundEffectPlayer {
         soundPool.release()
         loaded = emptyMap()
         loadedForClips = emptyList()
+        readySoundIds.clear()
     }
 
     companion object {

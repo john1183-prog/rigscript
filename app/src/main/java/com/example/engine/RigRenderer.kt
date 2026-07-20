@@ -35,16 +35,6 @@ class RigRenderer {
     private val eyebrowPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val groundPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val backgroundPaint = Paint().apply { style = Paint.Style.FILL }
-    // V2 — figure outline. Reconfigured per-use (STROKE for bones, FILL for
-    // the head circle) rather than two separate Paints, same reuse pattern
-    // already used for backgroundPaint above.
-    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    // V2 — figure glow. BlurMaskFilter is immutable once created, so it's
-    // only rebuilt when the radius actually changes rather than every frame —
-    // same "don't allocate in the hot path" reasoning as the gradient Shader
-    // caching mentioned in this class's other doc comments.
-    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var cachedGlowRadiusPx = -1f
 
     // V2 — scene shapes / atmosphere / caption / reference overlay
     private val sceneShapePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -186,27 +176,6 @@ class RigRenderer {
         val jointR               = appearance.jointRadiusNormalized * minDim
         val showJoints           = if (forExport) appearance.showJointsOnExport else appearance.showJoints
 
-        // V2 — outline. Width is in the same normalized-to-minDim units as
-        // bonePaint's own stroke width, so it scales consistently with the
-        // rest of the figure across canvas sizes/resolutions.
-        val outlineEnabled = appearance.outlineEnabled
-        val outlineWidth   = appearance.outlineWidthNormalized * minDim
-        if (outlineEnabled) {
-            outlinePaint.color = appearance.outlineColor.toInt()
-        }
-
-        // V2 — glow. Drawn BEHIND outline (which is itself behind the normal
-        // fill), so layering front-to-back is: normal fill -> outline -> glow.
-        val glowEnabled = appearance.glowEnabled
-        if (glowEnabled) {
-            val glowRadiusPx = (appearance.glowRadiusNormalized * minDim).coerceAtLeast(1f)
-            if (glowRadiusPx != cachedGlowRadiusPx) {
-                glowPaint.maskFilter = BlurMaskFilter(glowRadiusPx, BlurMaskFilter.Blur.NORMAL)
-                cachedGlowRadiusPx = glowRadiusPx
-            }
-            glowPaint.color = appearance.glowColor.toInt()
-        }
-
         // ── FK pass ───────────────────────────────────────────────────────────
         for (i in 0 until n) {
             val bone   = bones[i]
@@ -242,39 +211,14 @@ class RigRenderer {
                 // visible. Previously it was drawn at startX/startY (the
                 // origin), where rotation has no effect on position.
                 val r = bone.headNormalizedRadius * scale * appearance.headScaleMultiplier
-                if (glowEnabled) {
-                    glowPaint.style = Paint.Style.FILL
-                    canvas.drawCircle(endX, endY, r, glowPaint)
-                }
-                if (outlineEnabled) {
-                    // A slightly bigger solid circle drawn first, in the
-                    // outline color, reads as an outline once the normal
-                    // (smaller) head circle is drawn on top of it — avoids
-                    // any stroke-centering math for what's otherwise a filled
-                    // shape.
-                    outlinePaint.style = Paint.Style.FILL
-                    canvas.drawCircle(endX, endY, r + outlineWidth, outlinePaint)
-                }
                 canvas.drawCircle(endX, endY, r, headPaint)
                 if (appearance.showMouth) {
                     drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression, appearance.headScaleMultiplier)
                 }
                 if (appearance.showEyes) {
-                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, appearance.headScaleMultiplier)
+                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, appearance.headScaleMultiplier, appearance)
                 }
             } else {
-                if (glowEnabled) {
-                    glowPaint.style = Paint.Style.STROKE
-                    glowPaint.strokeCap = Paint.Cap.ROUND
-                    glowPaint.strokeWidth = bonePaint.strokeWidth
-                    canvas.drawLine(startX, startY, endX, endY, glowPaint)
-                }
-                if (outlineEnabled) {
-                    outlinePaint.style = Paint.Style.STROKE
-                    outlinePaint.strokeCap = Paint.Cap.ROUND
-                    outlinePaint.strokeWidth = bonePaint.strokeWidth + outlineWidth * 2f
-                    canvas.drawLine(startX, startY, endX, endY, outlinePaint)
-                }
                 canvas.drawLine(startX, startY, endX, endY, bonePaint)
             }
 
@@ -635,13 +579,14 @@ class RigRenderer {
         r: Float,
         openness: Float,
         expression: Int,
-        headScaleMultiplier: Float
+        headScaleMultiplier: Float,
+        appearance: AppearanceSettings
     ) {
         // Toward-neck interpolation, same technique as drawMouth but a smaller
         // fraction — eyes sit higher on the face than the mouth's 0.42f.
         // See drawMouth's doc comment for why headScaleMultiplier is applied here.
-        val cx = hx + (nx - hx) * 0.12f * headScaleMultiplier
-        val cy = hy + (ny - hy) * 0.12f * headScaleMultiplier
+        val cx = hx + (nx - hx) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
+        val cy = hy + (ny - hy) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
 
         // Perpendicular to the head-neck axis, normalised — gives left/right
         // eye separation that automatically follows head TILT, not just
@@ -654,7 +599,7 @@ class RigRenderer {
         val upX = -perpY
         val upY = perpX
 
-        val eyeSpacing = 0.34f * r
+        val eyeSpacing = appearance.eyeSpacingNormalized * r
         val baseEyeRadius = when (expression) {
             Expression.WIDE, Expression.HAPPY -> 0.20f * r
             Expression.SQUINT                  -> 0.11f * r
@@ -662,8 +607,12 @@ class RigRenderer {
         }
         // Blink flattens toward a thin closed line rather than vanishing to
         // zero height — same reasoning as MouthShape.CLOSED using a thin oval.
+        // eyeAspectRatio is applied ON TOP of the blink flattening (not
+        // instead of it) — at full openness this is the actual resting shape
+        // (oval if eyeAspectRatio != 1.0); mid-blink it flattens further from
+        // whatever that resting height is, same as before this setting existed.
         val openFactor = openness.coerceIn(0f, 1f)
-        val eyeRadiusY = baseEyeRadius * (0.12f + 0.88f * openFactor)
+        val eyeRadiusY = baseEyeRadius * appearance.eyeAspectRatio * (0.12f + 0.88f * openFactor)
 
         val leftX  = cx - perpX * eyeSpacing
         val leftY  = cy - perpY * eyeSpacing

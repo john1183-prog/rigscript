@@ -20,7 +20,7 @@ data class AppearanceSettings(
 
     // ── Stroke & size ─────────────────────────────────────────────────────────
     /** Bone stroke width as a fraction of min(canvasW, canvasH). */
-    val boneStrokeNormalized: Float = 0.012f,
+    val boneStrokeNormalized: Float = 0.2f,
     /** Joint circle radius as a fraction of min(canvasW, canvasH). */
     val jointRadiusNormalized: Float = 0.010f,
     /** Whether to draw joint dots at all. */
@@ -63,23 +63,17 @@ data class AppearanceSettings(
     /** Overall character scale multiplier (1.0 = default). */
     val characterScale: Float = 1.0f,
     /** Head circle radius multiplier, independent of [characterScale] — lets a stylised bigger/smaller head ratio without rescaling the whole body. 1.0 = default (headNormalizedRadius as authored on the bone). */
-    val headScaleMultiplier: Float = 1.0f,
+    val headScaleMultiplier: Float = 1.5f,
     /** Root anchor as fraction of canvas width (0..1). */
     val rootAnchorX: Float = 0.50f,
     /** Root anchor as fraction of canvas height (0..1). */
     val rootAnchorY: Float = 0.52f,
 
-    // ── Outline (V2) ──────────────────────────────────────────────────────────
-    /** Draws an outline around the figure's silhouette (limbs + head) — a wider stroke of [outlineColor] drawn behind the normal fill/stroke. Off by default (matches the figure's existing flat-color look unchanged). */
-    val outlineEnabled: Boolean = false,
-    val outlineColor: Long = 0xFF000000L,
-    /** Outline thickness as a fraction of min(canvasW, canvasH), same normalization convention as [boneStrokeNormalized]. */
-    val outlineWidthNormalized: Float = 0.006f,
-
-    // ── Glow (V2) ─────────────────────────────────────────────────────────────
-    /** Soft blurred halo behind the figure's silhouette (limbs + head), via BlurMaskFilter — off by default. Independent of [outlineEnabled]; the two can be combined (glow behind, outline on the edge, normal fill on top). */
-    val glowEnabled: Boolean = false,
-    val glowColor: Long = 0xFF00AAFFL,
-    /** Blur radius as a fraction of min(canvasW, canvasH). Larger = softer/wider halo. */
-    val glowRadiusNormalized: Float = 0.025f
+    // ── Eyes — position & shape (V2) ─────────────────────────────────────────
+    /** How far apart the two eyes sit, as a fraction of the head radius. Was a fixed 0.34, which read as too close together for a bigger/thicker head style. */
+    val eyeSpacingNormalized: Float = 0.34f,
+    /** How far the eyes sit from the head's center toward the neck, as a fraction of the head radius (same head-tip/neck-axis technique the mouth also uses). */
+    val eyeVerticalOffsetNormalized: Float = 0.12f,
+    /** Eye height-to-width ratio at full openness (blinking still flattens toward a thin line regardless of this setting). 1.0 = perfectly round. The reference look this was built toward has genuinely oval eyes, but exactly how oval is a matter of taste — hence adjustable rather than hardcoded. */
+    val eyeAspectRatio: Float = 1.2f
 )

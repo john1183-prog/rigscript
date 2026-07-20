@@ -273,13 +273,22 @@ fun EditorScreen(
         }
     ) { padding ->
 
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
 
             // ── Animation canvas ───────────────────────────────────────────────
+            // Shrunk (not hidden — still useful to confirm which project/pose
+            // you're looking at) specifically on the Script tab: that's a text-
+            // editing tab, not a watch-the-animation tab, and it's the one tab
+            // where the on-screen keyboard is in play. Combined with imePadding
+            // above, this is what actually fixes "I can't see what I'm editing" —
+            // previously the canvas claimed a fixed 38% of height regardless of
+            // keyboard state, squeezing the script editor into whatever sliver
+            // was left once the keyboard appeared, to the point of being fully
+            // covered rather than just cramped.
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.38f)
+                    .fillMaxHeight(if (selectedTab == 0) 0.14f else 0.38f)
                     .background(Color(project?.appearance?.previewBgColor?.toInt() ?: 0xFF1A1A2E.toInt()))
             ) {
                 AndroidView(
@@ -539,9 +548,17 @@ private fun ScriptPanel(
     modifier: Modifier = Modifier
 ) {
     Column(modifier.padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Script JSON", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
+        Text("Script JSON", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        // Fixed screen-width real estate for 3 buttons was compressing/
+        // clipping the rightmost one on narrower phones. horizontalScroll is
+        // a safety net (should rarely actually need to scroll now that
+        // labels are shorter), not the primary fix — the primary fix is
+        // giving these their own row instead of sharing one with the title.
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             // V2 — copies the full AI script-generation prompt (+ this
             // project's live sound-effect id list) to the clipboard, ready
             // to paste as a system prompt wherever the person generates the
@@ -549,20 +566,18 @@ private fun ScriptPanel(
             OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.height(32.dp)) {
                 Icon(Icons.Default.ContentCopy, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Copy AI Prompt", fontSize = 12.sp)
+                Text("Prompt", fontSize = 12.sp)
             }
-            Spacer(Modifier.width(6.dp))
             // F1: Import a .json script file directly — avoids copy-paste for AI-generated scripts
             OutlinedButton(onClick = onImport, modifier = Modifier.height(32.dp)) {
                 Icon(Icons.Default.FileOpen, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Import", fontSize = 12.sp)
             }
-            Spacer(Modifier.width(6.dp))
             OutlinedButton(onClick = onInsertPose, modifier = Modifier.height(32.dp)) {
                 Icon(Icons.Default.Add, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Insert Pose", fontSize = 12.sp)
+                Text("Pose", fontSize = 12.sp)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -655,7 +670,7 @@ private fun AppearancePanel(
         LabeledSlider("Scale", appearance.characterScale, 0.5f..2.0f) {
             onAppearance(appearance.copy(characterScale = it))
         }
-        LabeledSlider("Stroke width", appearance.boneStrokeNormalized, 0.005f..0.03f) {
+        LabeledSlider("Stroke width", appearance.boneStrokeNormalized, 0.005f..0.3f) {
             onAppearance(appearance.copy(boneStrokeNormalized = it))
         }
         LabeledSlider("Joint radius", appearance.jointRadiusNormalized, 0.005f..0.03f) {
@@ -675,29 +690,6 @@ private fun AppearancePanel(
             onAppearance(appearance.copy(showJointsOnExport = it))
         }
 
-        LabeledSwitch("Outline", appearance.outlineEnabled) {
-            onAppearance(appearance.copy(outlineEnabled = it))
-        }
-        if (appearance.outlineEnabled) {
-            ColorPickerRow("Outline color", appearance.outlineColor) { newColor ->
-                onAppearance(appearance.copy(outlineColor = newColor))
-            }
-            LabeledSlider("Outline width", appearance.outlineWidthNormalized, 0.002f..0.02f) {
-                onAppearance(appearance.copy(outlineWidthNormalized = it))
-            }
-        }
-
-        LabeledSwitch("Glow", appearance.glowEnabled) {
-            onAppearance(appearance.copy(glowEnabled = it))
-        }
-        if (appearance.glowEnabled) {
-            ColorPickerRow("Glow color", appearance.glowColor) { newColor ->
-                onAppearance(appearance.copy(glowColor = newColor))
-            }
-            LabeledSlider("Glow radius", appearance.glowRadiusNormalized, 0.005f..0.06f) {
-                onAppearance(appearance.copy(glowRadiusNormalized = it))
-            }
-        }
         LabeledSwitch("Show grid (preview only)", appearance.showGrid) {
             onAppearance(appearance.copy(showGrid = it))
         }
@@ -715,6 +707,15 @@ private fun AppearancePanel(
         }
         ColorPickerRow("Eye color", appearance.eyeColor) { newColor ->
             onAppearance(appearance.copy(eyeColor = newColor))
+        }
+        LabeledSlider("Eye spacing", appearance.eyeSpacingNormalized, 0.15f..0.6f) {
+            onAppearance(appearance.copy(eyeSpacingNormalized = it))
+        }
+        LabeledSlider("Eye vertical position", appearance.eyeVerticalOffsetNormalized, 0.0f..0.3f) {
+            onAppearance(appearance.copy(eyeVerticalOffsetNormalized = it))
+        }
+        LabeledSlider("Eye shape (round \u2194 oval)", appearance.eyeAspectRatio, 0.5f..2.0f) {
+            onAppearance(appearance.copy(eyeAspectRatio = it))
         }
         ColorPickerRow("Eyebrow color", appearance.eyebrowColor) { newColor ->
             onAppearance(appearance.copy(eyebrowColor = newColor))

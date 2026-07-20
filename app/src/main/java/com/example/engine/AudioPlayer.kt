@@ -29,6 +29,15 @@ class AudioPlayer private constructor() {
         private set
 
     @Volatile private var isReady: Boolean = false
+    // Real bug this fixes: previously, play() called before prepare()
+    // finished was a SILENT no-op with no retry — the UI would flip to
+    // "playing" state regardless, since nothing here told it otherwise, and
+    // audio simply never started for that attempt. This is very plausibly
+    // why audio sometimes doesn't sound: opening a project and immediately
+    // tapping Play is an entirely normal thing to do, and prepare() takes a
+    // real (if usually short) amount of time. Now play() called too early
+    // just remembers the intent and honors it the moment prepare() finishes.
+    @Volatile private var pendingPlay: Boolean = false
 
     val isLoaded: Boolean get() = player != null
     val isPlaying: Boolean get() = player?.isPlaying == true
@@ -60,6 +69,10 @@ class AudioPlayer private constructor() {
                     prepare()   // blocking — must not run on Main
                     isReady = true
                 }
+                if (pendingPlay) {
+                    pendingPlay = false
+                    runCatching { player?.start() }
+                }
             }.onFailure { Log.e(TAG, "Failed to load audio: $filePath", it) }
         }
     }
@@ -70,12 +83,19 @@ class AudioPlayer private constructor() {
         currentAmplitude  = 0f
         currentMouthShape = MouthShape.CLOSED
         isReady           = false
+        pendingPlay        = false
     }
 
     // ── Playback controls ─────────────────────────────────────────────────────
 
-    fun play()  { if (isReady) runCatching { player?.start() } }
-    fun pause() { runCatching { player?.pause() } }
+    fun play() {
+        if (isReady) runCatching { player?.start() }
+        else pendingPlay = true
+    }
+    fun pause() {
+        pendingPlay = false
+        runCatching { player?.pause() }
+    }
 
     fun seekTo(ms: Int) {
         runCatching { player?.seekTo(ms.coerceAtLeast(0)) }

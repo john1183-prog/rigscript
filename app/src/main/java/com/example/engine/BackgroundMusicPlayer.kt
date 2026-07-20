@@ -28,6 +28,10 @@ class BackgroundMusicPlayer private constructor() {
 
     private var player: MediaPlayer? = null
     @Volatile private var isReady: Boolean = false
+    // Same real bug/fix as AudioPlayer.pendingPlay — see that class's doc
+    // comment. This class mirrored AudioPlayer's isReady pattern without
+    // also carrying over this fix originally; same race, same fix.
+    @Volatile private var pendingPlay: Boolean = false
 
     val isLoaded: Boolean get() = player != null
 
@@ -46,6 +50,10 @@ class BackgroundMusicPlayer private constructor() {
                     prepare() // blocking — must not run on Main
                     isReady = true
                 }
+                if (pendingPlay) {
+                    pendingPlay = false
+                    runCatching { player?.start() }
+                }
             }.onFailure { Log.e(TAG, "Failed to load background music: $filePath", it) }
         }
     }
@@ -58,14 +66,21 @@ class BackgroundMusicPlayer private constructor() {
         runCatching { player?.isLooping = loop }
     }
 
-    fun play()  { if (isReady) runCatching { player?.start() } }
-    fun pause() { runCatching { player?.pause() } }
+    fun play() {
+        if (isReady) runCatching { player?.start() }
+        else pendingPlay = true
+    }
+    fun pause() {
+        pendingPlay = false
+        runCatching { player?.pause() }
+    }
     fun seekTo(ms: Int) { runCatching { player?.seekTo(ms.coerceAtLeast(0)) } }
 
     fun release() {
         runCatching { player?.release() }
-        player  = null
-        isReady = false
+        player      = null
+        isReady     = false
+        pendingPlay = false
     }
 
     companion object {

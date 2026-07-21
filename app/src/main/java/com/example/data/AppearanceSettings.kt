@@ -20,7 +20,7 @@ data class AppearanceSettings(
 
     // ── Stroke & size ─────────────────────────────────────────────────────────
     /** Bone stroke width as a fraction of min(canvasW, canvasH). */
-    val boneStrokeNormalized: Float = 0.2f,
+    val boneStrokeNormalized: Float = 0.06f,
     /** Joint circle radius as a fraction of min(canvasW, canvasH). */
     val jointRadiusNormalized: Float = 0.010f,
     /** Whether to draw joint dots at all. */

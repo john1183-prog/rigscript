@@ -16,7 +16,7 @@ data class AmplitudeSettings(
 
     // ── Idle breathing (always on when enabled, audio-independent) ────────────
     /** Torso rotation amplitude for the idle breathing cycle, in degrees. */
-    val idleBreathAmplitude: Float = 2.5f,
+    val idleBreathAmplitude: Float = 1.4f,
     /** Frequency of the breathing oscillation in Hz. */
     val breathFreqHz: Float = 0.35f,
 

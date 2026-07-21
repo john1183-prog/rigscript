@@ -420,6 +420,23 @@ fun EditorScreen(
                 )
             }
 
+            // Motion-graphics overlay layers — same tap-only strip as
+            // EventTimelineStrip above, same rationale (see that composable's
+            // doc comment). Shows each layer's [startSec, endSec) span rather
+            // than a single point, since a layer's whole window — not just
+            // its start — is usually what you're trying to see at a glance.
+            val overlayLayersList = project?.script?.overlayLayers ?: emptyList()
+            if (overlayLayersList.isNotEmpty() && totalDuration > 0f) {
+                OverlayTimelineStrip(
+                    layers        = overlayLayersList,
+                    totalDuration = totalDuration,
+                    onSeek        = seekPlayback,
+                    modifier      = Modifier.fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
+
             // F3: Playback scrubber — seek to any time; updates every 100ms while playing
             Slider(
                 value         = scrubberPos.coerceIn(0f, totalDuration),
@@ -450,6 +467,8 @@ fun EditorScreen(
                     scriptWarnings = scriptWarnings,
                     onTextChange = { vm.onScriptTextChanged(it) },
                     onInsertPose = onOpenPoseLibrary,
+                    onInsertOverlay = { vm.insertOverlayLayer(it) },
+                    currentTimeSec = scrubberPos,
                     onImport     = { scriptPicker.launch(arrayOf("application/json", "*/*")) },
                     onCopyPrompt = {
                         scope.launch {
@@ -544,6 +563,8 @@ private fun ScriptPanel(
     scriptWarnings: List<String>,
     onTextChange: (String) -> Unit,
     onInsertPose: () -> Unit,
+    onInsertOverlay: (com.example.data.OverlayLayer) -> Unit,
+    currentTimeSec: Float,
     onImport: () -> Unit,
     onCopyPrompt: () -> Unit,
     modifier: Modifier = Modifier
@@ -579,6 +600,45 @@ private fun ScriptPanel(
                 Icon(Icons.Default.Add, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Pose", fontSize = 12.sp)
+            }
+            // Motion-graphics overlay layers — inserts a ready-made default
+            // at the current playhead time, same "tap only, JSON text is
+            // the real edit surface" philosophy as the strip above and
+            // "Pose" here: a Compose DropdownMenu (a standard, well-tested
+            // built-in widget, not custom gesture code) rather than any
+            // drag-based layer placement.
+            var showOverlayMenu by remember { mutableStateOf(false) }
+            Box {
+                OutlinedButton(onClick = { showOverlayMenu = true }, modifier = Modifier.height(32.dp)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Overlay", fontSize = 12.sp)
+                }
+                DropdownMenu(expanded = showOverlayMenu, onDismissRequest = { showOverlayMenu = false }) {
+                    val t = currentTimeSec
+                    DropdownMenuItem(text = { Text("Text burst") }, onClick = {
+                        showOverlayMenu = false
+                        onInsertOverlay(com.example.data.OverlayLayer(
+                            id = "text_%.1f".format(t), type = "text", text = "TEXT",
+                            startSec = t, endSec = t + 2f, slot = "upper",
+                            enterStyle = "pop", enterEase = "back"
+                        ))
+                    })
+                    DropdownMenuItem(text = { Text("Shape") }, onClick = {
+                        showOverlayMenu = false
+                        onInsertOverlay(com.example.data.OverlayLayer(
+                            id = "shape_%.1f".format(t), type = "shape", shape = "rect",
+                            startSec = t, endSec = t + 2f, width = 0.3f, height = 0.05f
+                        ))
+                    })
+                    DropdownMenuItem(text = { Text("Particle burst") }, onClick = {
+                        showOverlayMenu = false
+                        onInsertOverlay(com.example.data.OverlayLayer(
+                            id = "burst_%.1f".format(t), type = "particles",
+                            startSec = t, endSec = t + 1.2f, particleCount = 20
+                        ))
+                    })
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -1138,6 +1198,64 @@ private fun EventTimelineStrip(
                     start       = Offset(x, size.height * 0.15f),
                     end         = Offset(x, size.height),
                     strokeWidth = 3f
+                )
+            }
+        }
+        nearestLabel?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = labelColor) }
+    }
+}
+
+/**
+ * Same tap-only pattern as [EventTimelineStrip] (see that composable's doc
+ * comment for why drag/long-press was deliberately never attempted here
+ * either) — a visual overview of [OverlayLayer] windows, not an editor.
+ * Tapping seeks to the nearest layer's [OverlayLayer.startSec] and shows a
+ * one-line label; the JSON script text remains the actual edit mechanism,
+ * same as it is for poses.
+ *
+ * Draws each layer as a SPAN (a thin bar from startSec to endSec) rather
+ * than a single tick — unlike a pose event, a layer's whole visible window
+ * is usually the thing you're trying to see at a glance (e.g. "does this
+ * text burst overlap that shape's window"), not just its start instant.
+ */
+@Composable
+private fun OverlayTimelineStrip(
+    layers: List<com.example.data.OverlayLayer>,
+    totalDuration: Float,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.colorScheme.tertiary
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    var nearestLabel by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier) {
+        androidx.compose.foundation.Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(16.dp)
+                .pointerInput(layers, totalDuration) {
+                    detectTapGestures { offset ->
+                        if (layers.isEmpty() || totalDuration <= 0f) return@detectTapGestures
+                        val tapSec = (offset.x / size.width).coerceIn(0f, 1f) * totalDuration
+                        val nearest = layers.minByOrNull { kotlin.math.abs(it.startSec - tapSec) }
+                        if (nearest != null) {
+                            onSeek(nearest.startSec)
+                            val label = nearest.id.ifBlank { nearest.type }
+                            nearestLabel = "$label  %.1fs\u2013%.1fs".format(nearest.startSec, nearest.endSec)
+                        }
+                    }
+                }
+        ) {
+            if (totalDuration <= 0f) return@Canvas
+            layers.forEach { layer ->
+                val x0 = (layer.startSec / totalDuration).coerceIn(0f, 1f) * size.width
+                val x1 = (layer.endSec / totalDuration).coerceIn(0f, 1f) * size.width
+                drawLine(
+                    color       = accent.copy(alpha = 0.8f),
+                    start       = Offset(x0, size.height * 0.5f),
+                    end         = Offset(kotlin.math.max(x1, x0 + 2f), size.height * 0.5f),
+                    strokeWidth = size.height * 0.7f
                 )
             }
         }

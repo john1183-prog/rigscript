@@ -397,6 +397,40 @@ pushed.
   fixed-constant "back" overshoot from Phase 1). None of Phase 2's other
   pieces depend on these.
 
+**Motion graphics overlay layers, Phase 3 (in-app editor)**
+- Scoped DOWN from the original roadmap description ("full in-app editor
+  UI mirroring the reference tool — timeline scrubber, layers panel,
+  properties panel"), on discovering a real precedent this project had
+  already set for the POSE timeline: `ScriptEvent`s have NO structured
+  properties panel at all — poses are edited purely as JSON text, with
+  `EventTimelineStrip` as tap-to-seek navigation only and an "Insert
+  pose" button that opens the pose library. Building a full slider/field
+  properties panel just for overlay layers would give them MORE editing
+  surface than poses get, breaking that consistency for no real reason —
+  the JSON script text is the one edit mechanism for the whole script,
+  poses and overlay layers alike.
+- What actually shipped: `OverlayTimelineStrip`, a tap-only visual
+  overview mirroring `EventTimelineStrip` exactly (same
+  `detectTapGestures`-only pattern, same rationale — see that
+  composable's doc comment, which applies here verbatim) but drawing
+  each layer as a START-TO-END SPAN rather than a single tick, since a
+  layer's whole window (not just its start) is usually the thing you're
+  checking at a glance. Tapping seeks to the nearest layer's `startSec`.
+- Plus an "Overlay" button (Compose `DropdownMenu`, a standard built-in
+  widget, not custom gesture code) offering three presets — text burst,
+  shape, particle burst — that insert a ready-made `OverlayLayer` at the
+  current playhead time via `MainViewModel.insertOverlayLayer`, which is
+  a direct copy of `insertScriptEvent`'s existing parse-modify-reserialize
+  pattern: mutate the parsed `AnimScript`, re-encode to the script text,
+  save. No new persistence mechanism, no raw text splicing.
+- Deliberately NOT built: drag-to-move a layer, drag-to-resize a
+  timeline span, long-press-to-delete, or any canvas-based visual
+  placement — all for the exact reason `EventTimelineStrip`'s deferral
+  note gives for poses: no way to compile-check or visually test Compose
+  gesture code in this environment, so untested drag/long-press handling
+  risks shipping something that looks correct in source but has a real
+  on-device bug that only surfaces on an actual build.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -410,11 +444,6 @@ zoom in."
 
 ## On the horizon (not yet started)
 
-- Motion graphics overlay layers, Phase 3: full in-app editor UI mirroring
-  the reference tool (timeline scrubber, layers panel, properties panel,
-  script examples) — NOTE: the existing "Full visual timeline editor"
-  deferral below (drag/long-press cut for lack of on-device gesture
-  testing) applies here too and should be re-read before starting this.
 - Low-res preview before full export
 - Amplitude-reactive background motion (separate from the purely
   JSON-driven scene system above — this would be an opt-in additional

@@ -311,6 +311,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         saveActiveProject()
     }
 
+    /**
+     * Inserts a ready-made [OverlayLayer] (from one of the Script tab's
+     * "Overlay" preset buttons) into the active project's script. Same
+     * parse-modify-reserialize pattern as [insertScriptEvent] — the JSON
+     * script text remains the one source of truth either way, this just
+     * saves typing out a whole layer object by hand for the common case.
+     */
+    fun insertOverlayLayer(layer: com.example.data.OverlayLayer) {
+        val project = _activeProject.value ?: return
+        val newScript = project.script.copy(
+            overlayLayers = (project.script.overlayLayers + layer)
+                .sortedBy { it.startSec }
+        )
+        compileJob?.cancel()
+        updateActive { it.copy(script = newScript) }
+        _scriptText.value  = json.encodeToString(newScript)
+        _scriptError.value = null
+        saveActiveProject()
+    }
+
     // ── Appearance / Export ───────────────────────────────────────────────────
 
     fun updateAppearance(appearance: AppearanceSettings) {

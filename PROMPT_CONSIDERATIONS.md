@@ -125,6 +125,25 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "exitDuration": number,          // seconds. Default 0.35.
   "exitEase": "string",            // Default "ease_in".
   "opacity": number                // ceiling alpha 0..1 once fully "in". Default 1.
+
+  // ── Phase 2 (all optional — omit anything you're not using) ──────────
+  "parentBone": "string" | null,   // attach to a stick-figure bone tip (see PARENTBONE VALUES). x/y become an OFFSET from the bone.
+  "parentLayer": "string" | null,  // attach to another layer's "id" instead (full transform inheritance). Ignored if parentBone is also set.
+  "physics": "string",             // "none" | "projectile" | "bounce". Default "none". When set, REPLACES x/y as the resting position.
+  "physicsVx": number,             // horizontal velocity, fraction of canvas width/sec. Default 0.
+  "physicsVy": number,             // initial vertical velocity, fraction of canvas height/sec. Negative = upward. Default 0.
+  "physicsGravity": number,        // downward accel, fraction of canvas height/sec^2. Default 1.2.
+  "physicsFloorY": number,         // only used by "bounce": fraction of canvas height it bounces off. Default 0.9.
+  "physicsBounceDamping": number,  // fraction of speed kept after each bounce (0..1). Default 0.55.
+  "trail": boolean,                // fading motion trail behind a physics-driven layer. Default false.
+  "trailLengthSec": number,        // how far back the trail samples. Default 0.4.
+  "particleCount": number,         // only used when type=="particles": how many particles in the burst. Default 20.
+  "particleShape": "string",       // "circle" | "rect". Default "circle".
+  "particleSpeed": number,         // max initial outward speed, fraction of canvas min-dimension/sec. Default 0.3.
+  "particleGravity": number,       // optional downward accel on particles. 0 = straight drift (sparks), >0 = arc and fall (confetti). Default 0.
+  "particleLifetimeSec": number,   // how long each particle lives before fading. Default 1.0.
+  "particleSizeMin": number,       // per-particle radius range, fraction of canvas min-dimension. Default 0.006.
+  "particleSizeMax": number        // Default 0.016.
 }
 
 ═══════════════════════════════════════════════════════════════════════
@@ -163,8 +182,8 @@ sceneAtmosphere: none | rain | snow | fog | stars
   by rapidly changing values; pick the shape/atmosphere for a stretch of
   narration and let it hold via carry-forward.
 
-overlayLayers[].type: text | shape
-overlayLayers[].shape: rect | circle | line
+overlayLayers[].type: text | shape | particles
+overlayLayers[].shape: rect | circle | line | arrow
 overlayLayers[].slot: upper | center | lower
 overlayLayers[].enterStyle / exitStyle: fade | pop | zoom | slideup |
   slidedown | none
@@ -172,6 +191,12 @@ overlayLayers[].enterEase / exitEase: linear | ease_in | ease_out |
   ease_in_out | bounce | elastic_out | spring | back
   ("back" is ONLY valid here, not for a ScriptEvent's "ease" field — it's
   an overshoot-then-settle curve, pairs especially well with "pop".)
+overlayLayers[].parentBone: torso | head | upper_arm_r | lower_arm_r |
+  upper_arm_l | lower_arm_l | upper_leg_r | lower_leg_r | upper_leg_l |
+  lower_leg_l (same ids as a ScriptEvent's implicit bone rig — right/left
+  are the FIGURE's right/left, mirrored from the viewer's perspective)
+overlayLayers[].physics: none | projectile | bounce
+overlayLayers[].particleShape: circle | rect (only read when type=="particles")
 
 ═══════════════════════════════════════════════════════════════════════
 FIELD BEHAVIOR — this distinction changes how you should use every field
@@ -261,6 +286,33 @@ overshoot); "fade" is the safe default for anything you're not sure about.
 Don't caption AND overlay-text the same line redundantly — pick whichever
 better serves that specific moment.
 
+PARENTBONE / PARENTLAYER — reach for parentBone when something should
+visibly travel WITH the figure (a sparkle at a raised hand, an accent
+mark near the head during a key line) rather than trying to guess the
+figure's screen position yourself frame by frame; x/y become a small
+offset from that bone, not an absolute position. Use parentLayer to move
+several layers together as a unit (e.g. a shape plus its own label).
+Don't set both on the same layer. Don't create long parentLayer chains —
+a couple of levels is normal, anything deeper gets hard to reason about
+and the app caps/warns on very deep or circular chains anyway.
+
+PHYSICS — reach for "projectile" or "bounce" for something that should
+visibly fly/fall/bounce (a tossed object, a dropped item) rather than
+faking motion with enterStyle="slideup"/"slidedown", which are for
+static UI-style entrances, not real physical motion. When physics is set,
+x/y become the STARTING position, not the resting position — physicsVx/
+physicsVy set the initial launch. Pair "bounce" with trail:true sparingly,
+only when the motion itself is a meaningful visual beat, not on every
+physics layer by default.
+
+PARTICLES — a "particles" layer is a single BURST (all particles spawn
+at startSec, no continuous stream), good for a short confetti/spark
+moment tied to one beat (a celebration, a reveal), not a sustained
+background effect running for the whole video. particleGravity=0 reads
+as an outward spark/energy burst; a nonzero value reads as confetti
+falling. Keep particleCount modest (10-30) — this is an accent, not the
+focus of the frame.
+
 ═══════════════════════════════════════════════════════════════════════
 NEVER DO THIS
 ═══════════════════════════════════════════════════════════════════════
@@ -269,9 +321,11 @@ NEVER DO THIS
 - Never invent pose/ease/expression/sceneShape/sceneAtmosphere values
   not in the exact lists above.
 - Never invent overlayLayers type/shape/slot/enterStyle/exitStyle/
-  enterEase/exitEase values not in the exact lists above.
+  enterEase/exitEase/parentBone/physics/particleShape values not in the
+  exact lists above.
 - Never omit startSec or endSec on an overlayLayers entry, and never set
   endSec <= startSec.
+- Never set both parentBone and parentLayer on the same overlayLayers entry.
 - Never evenly space timestamps ignoring narration content.
 - Never add a caption or camera move on every single event.
 - Never wrap the output in markdown fences or add explanatory text
@@ -429,6 +483,33 @@ matters as much as renderer correctness.
   subtitles; overlay layers pan/zoom/shake with the camera, same as the
   figure. The prompt should nudge the AI to pick whichever fits the
   moment rather than duplicating the same line in both.
+- `parentBone`/`parentLayer` (Phase 2): the prompt should present
+  `parentBone` as the answer to "I want this to visibly follow the
+  figure" rather than the AI trying to compute the figure's screen
+  position itself from pose/camera state — it can't, and shouldn't be
+  asked to. `parentBone` is deliberately POSITION-ONLY (doesn't inherit
+  the bone's rotation) so an attached label can't flip upside down as a
+  limb rotates past vertical; `parentLayer` DOES inherit rotation/scale/
+  opacity, the more conventional "group" behavior, since two
+  AI-authored layers grouped together don't have that failure mode.
+  Setting both on one layer is a mistake the prompt should warn against
+  directly (parentBone silently wins; `ScriptValidator` also flags it).
+- `physics` (Phase 2) exists so the AI reaches for real motion instead of
+  faking it with `enterStyle: "slideup"`/`"slidedown"` — those are for a
+  static UI element arriving on screen, not for something that should
+  read as actually flying, falling, or bouncing. Closed-form under the
+  hood (not frame-simulated) for the same reason everything else here
+  is: `PlaybackEngine` needs to seek to an arbitrary timestamp with
+  nothing to replay, so the prompt doesn't need to warn the AI about
+  anything usage-wise here beyond "x/y become the start position, not
+  the resting one" — the mechanics are invisible to script-writing.
+- `type: "particles"` (Phase 2) is scoped in the prompt as a single short
+  BURST tied to one beat, not a sustained ambient effect — matches the
+  actual implementation (all particles spawn at `startSec`, no
+  continuous stream), so setting the prompt's expectations to match
+  avoids the AI asking for something the schema can't do (e.g. "confetti
+  falling continuously for 10 seconds" would need many short bursts,
+  not one particles layer with a long window).
 
 ## Explicit exclusions — never prompt for these
 

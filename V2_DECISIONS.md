@@ -329,6 +329,74 @@ pushed.
   part of this feature, same category as the background-music PCM mixing
   pipeline was when it first shipped.
 
+**Motion graphics overlay layers, Phase 2 (physics/particles/groups)**
+- The one real architectural change from Phase 1: overlay resolution
+  split into TWO phases instead of one, because Phase 2's headline
+  feature — attaching a layer to a stick-figure bone (`parentBone`) —
+  depends on that bone's actual PIXEL position, which only exists inside
+  `RigRenderer`'s own FK pass (canvas-size-dependent), while Phase 1's
+  `currentOverlays` was resolved once by `PlaybackEngine` and shared
+  across dual-aspect export's two differently-SIZED targets. Those two
+  facts are in tension for a bone-attached layer specifically (dual-aspect
+  targets have different `canvasW`/`canvasH`, so a bone's fractional
+  position isn't necessarily identical between them). Resolved by
+  splitting `OverlayResolver` into `resolveTimeBased` (physics, particle
+  expansion, easing — still canvas-independent, still resolved once per
+  frame and shared across targets) and `applyParenting` (bone/group
+  compounding — canvas-dependent, now runs per-target INSIDE
+  `RigRenderer.draw`, using that target's own bone anchors captured
+  during its FK pass). The expensive part stays shared; only the cheap
+  part (small list, addition/rotation math) repeats per target.
+- `parentBone` attachment is POSITION-ONLY — does not inherit the bone's
+  rotation. Tried rotation inheritance first and reverted it: an attached
+  text/shape layer would flip upside down as an arm rotated past
+  vertical, which reads as broken rather than "attached." `parentLayer`
+  (layer-to-layer grouping), in contrast, DOES compound rotation/scale/
+  opacity — the conventional meaning of "group," ported faithfully from
+  the reference tool for that case since there's no equivalent "would
+  look upside down" problem between two overlay layers the AI placed
+  deliberately.
+- Cycle handling: a `parentLayer` chain is walked with a visited-set +
+  depth-8 cap in both `OverlayResolver.resolveWorld` (silently falls back
+  to unparented rather than infinite-looping or stack-overflowing) and
+  `ScriptValidator` (surfaces the same situation as a warning). Depth 8 is
+  a deliberately generous cap — no real script should nest groups anywhere
+  near that deep, so hitting it in practice means something's wrong, not
+  a legitimate deep hierarchy being truncated.
+- Physics (`physics: "projectile"|"bounce"`) is closed-form, not
+  frame-simulated — required by the same constraint that shaped
+  `OverlayResolver` from the start: `PlaybackEngine` can seek to an
+  arbitrary timestamp with no history to replay. "bounce" specifically
+  still counts as closed-form despite needing a small per-call loop: each
+  flight segment between bounces is solved analytically (standard
+  projectile kinematics via the quadratic formula), and the loop just
+  finds which segment a given `t` falls into — it does not integrate
+  position forward frame by frame. Capped at 40 bounce segments; a
+  pathological gravity/damping combination that somehow exhausts this
+  just rests the layer at the floor rather than erroring.
+- Particles are BURST-ONLY for this phase — every particle in a
+  `type: "particles"` layer spawns at `startSec`, not a continuous
+  emission stream. Determinism (required so scrubbing to any timestamp
+  reproduces the identical burst) comes from giving each particle index
+  its OWN fresh `kotlin.random.Random(seed)` rather than pulling from one
+  shared generator across a frame loop — a fresh seeded generator per
+  index is trivially reproducible regardless of call order or how many
+  times a frame gets re-resolved, without needing to port the reference
+  tool's actual PRNG (mulberry32) to get the same guarantee.
+- "arrow" (a `shape` value) points along a physics-driven layer's actual
+  velocity direction (via central-difference sampling of its own
+  trajectory function) rather than a static `rotationDeg` — a fixed angle
+  would fight the motion and look wrong the instant the trajectory curves.
+- Trails are sampled from the SAME closed-form trajectory function at
+  several past instants, not accumulated per-frame history — consistent
+  with everything else in this feature being a pure function of time, and
+  it means a trail is correct immediately after a seek with no warm-up.
+- Scope cuts made explicitly for this phase, not rejected outright:
+  continuous (non-burst) particle emission, particle-on-particle physics/
+  collisions, and a general cubic-bezier easing curve (still just the
+  fixed-constant "back" overshoot from Phase 1). None of Phase 2's other
+  pieces depend on these.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -342,9 +410,6 @@ zoom in."
 
 ## On the horizon (not yet started)
 
-- Motion graphics overlay layers, Phase 2: physics (analytic
-  gravity/bounce solver), deterministic particles, groups/parenting with
-  compounded transforms, trails/arrows.
 - Motion graphics overlay layers, Phase 3: full in-app editor UI mirroring
   the reference tool (timeline scrubber, layers panel, properties panel,
   script examples) — NOTE: the existing "Full visual timeline editor"

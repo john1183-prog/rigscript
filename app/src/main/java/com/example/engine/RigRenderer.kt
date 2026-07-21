@@ -80,12 +80,18 @@ class RigRenderer {
         // V2 — manual reference overlay + its pre-decoded bitmap (image variant only)
         referenceOverlay: ReferenceOverlay? = null,
         referenceOverlayBitmap: Bitmap? = null,
-        // V2 — motion-graphics overlay layers, resolved per-frame by
-        // PlaybackEngine.currentOverlays. Drawn INSIDE the camera transform
+        // V2 — motion-graphics overlay layers. TIME-RESOLVED only (not yet
+        // parented) — this function itself does the parenting step, via
+        // OverlayResolver.applyParenting, using bone anchor positions
+        // captured during ITS OWN FK pass below. See OverlayResolver's doc
+        // comment for why parenting can't be hoisted out to PlaybackEngine
+        // the way the rest of this resolution is (bone positions are
+        // canvas-size-dependent, and dual-aspect export's two targets have
+        // different canvas sizes). Drawn INSIDE the camera transform
         // (before canvas.restore() below) — unlike captionText/atmosphere,
         // which are deliberately screen-space, these are meant to pan/zoom/
         // shake along with the figure, per V2_DECISIONS.md.
-        overlays: List<ResolvedOverlay> = emptyList()
+        overlays: List<TimeResolvedOverlay> = emptyList()
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
         val scale   = minDim * appearance.characterScale
@@ -206,6 +212,16 @@ class RigRenderer {
         }
 
         // ── Draw pass ─────────────────────────────────────────────────────────
+        // Captures each bone's tip position (fraction of canvas width/
+        // height) as it's computed below, for OverlayResolver.applyParenting
+        // to use — same coordinate space overlay layers already use
+        // (w * x, h * y), since this whole FK pass runs inside the same
+        // camera-transformed canvas region. Only built when there's
+        // something that might need it — most frames have no overlay
+        // layers at all, and this loop already runs unconditionally.
+        val boneAnchors: MutableMap<String, Pair<Float, Float>>? =
+            if (overlays.isNotEmpty()) HashMap(n) else null
+
         for (i in 0 until n) {
             val bone   = bones[i]
             val length = bone.normalizedLength * scale
@@ -216,6 +232,8 @@ class RigRenderer {
 
             val startX = pts[0]; val startY = pts[1]   // neck / joint end
             val endX   = pts[2]; val endY   = pts[3]   // head position
+
+            boneAnchors?.put(bone.id, (endX / canvasW) to (endY / canvasH))
 
             if (bone.isHeadBone) {
                 // Draw head circle at the bone's TIP (endX, endY).
@@ -245,7 +263,11 @@ class RigRenderer {
         }
 
         if (overlays.isNotEmpty()) {
-            for (layer in overlays) drawGmsOverlay(canvas, canvasW, canvasH, layer)
+            val resolved = OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
+            for (layer in resolved) {
+                if (layer.trailPoints.size >= 2) drawGmsTrail(canvas, canvasW, canvasH, layer)
+                drawGmsOverlay(canvas, canvasW, canvasH, layer)
+            }
         }
 
         canvas.restore()
@@ -461,6 +483,34 @@ class RigRenderer {
     }
 
     /**
+     * Fading motion trail for a physics-driven layer with [OverlayLayer.trail]
+     * set — [layer.trailPoints] are already-resolved world-fraction points,
+     * oldest first, drawn as progressively more transparent line segments
+     * ending at the current position. Called BEFORE [drawGmsOverlay] for
+     * the same layer so the trail sits visually behind it.
+     */
+    private fun drawGmsTrail(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
+        val pts = layer.trailPoints
+        val baseColor = layer.color.toInt()
+        val n = pts.size
+        for (i in 0 until n - 1) {
+            val (x0, y0) = pts[i]
+            val (x1, y1) = pts[i + 1]
+            // Oldest segment most transparent, newest (closest to current
+            // position) most opaque, capped below the layer's own opacity.
+            val segProgress = (i + 1).toFloat() / (n - 1).toFloat()
+            gmsShapePaint.shader = null
+            gmsShapePaint.color = baseColor
+            gmsShapePaint.alpha = combinedAlpha(baseColor, layer.opacity * segProgress * 0.6f)
+            gmsShapePaint.style = Paint.Style.STROKE
+            gmsShapePaint.strokeCap = Paint.Cap.ROUND
+            gmsShapePaint.strokeWidth = (layer.radius ?: (layer.height ?: 0.015f)) * min(w, h) * 0.6f
+            canvas.drawLine(x0 * w, y0 * h, x1 * w, y1 * h, gmsShapePaint)
+        }
+        gmsShapePaint.style = Paint.Style.FILL
+    }
+
+    /**
      * Draws one resolved motion-graphics overlay layer (text or shape).
      * Called once per active [ResolvedOverlay], inside the camera transform
      * — see the call site in [draw] for why these pan/zoom/shake with the
@@ -533,6 +583,28 @@ class RigRenderer {
                 paint.strokeWidth = (layer.height ?: 0.01f) * h
                 val halfLen = (layer.width ?: 0.2f) * w / 2f
                 canvas.drawLine(-halfLen, 0f, halfLen, 0f, paint)
+                paint.style = prevStyle
+            }
+            "arrow" -> {
+                // Points along +X in local space -- RigRenderer.drawGmsOverlay
+                // already rotated the canvas to rotationDeg (velocity
+                // direction, for a physics-driven arrow) before calling here.
+                val prevStyle = paint.style
+                val strokeW = (layer.height ?: 0.012f) * h
+                val halfLen = (layer.width ?: 0.2f) * w / 2f
+                val headLen = strokeW * 3f
+                val headHalfW = strokeW * 2f
+                paint.style = Paint.Style.STROKE
+                paint.strokeCap = Paint.Cap.ROUND
+                paint.strokeWidth = strokeW
+                canvas.drawLine(-halfLen, 0f, halfLen - headLen, 0f, paint)
+                paint.style = Paint.Style.FILL
+                val head = android.graphics.Path()
+                head.moveTo(halfLen, 0f)
+                head.lineTo(halfLen - headLen, -headHalfW)
+                head.lineTo(halfLen - headLen, headHalfW)
+                head.close()
+                canvas.drawPath(head, paint)
                 paint.style = prevStyle
             }
             else -> { // "rect"

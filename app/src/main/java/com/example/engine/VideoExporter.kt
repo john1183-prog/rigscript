@@ -333,7 +333,11 @@ object VideoExporter {
                 // computed property (re-walks every layer on each read), so
                 // reading it once and reusing across targets avoids doing
                 // that walk twice for dual-aspect export.
-                val resolvedOverlays = engine.currentOverlays
+                // TIME-RESOLVED only, shared across every dual-aspect
+                // target below — parenting (bone/group attachment) is
+                // canvas-size-dependent and happens per-target inside
+                // RigRenderer.draw itself. See OverlayResolver's doc comment.
+                val timeResolvedOverlays = engine.currentOverlays
 
                 for (t in targets) {
                     renderer.draw(t.canvas, engine.currentAngles, appearance, t.width, t.height,
@@ -355,7 +359,7 @@ object VideoExporter {
                         captionText            = engine.currentCaption,
                         referenceOverlay       = overlay,
                         referenceOverlayBitmap = overlayBitmap,
-                        overlays               = resolvedOverlays)
+                        overlays               = timeResolvedOverlays)
 
                     t.bitmap.getPixels(t.pixels, 0, t.width, 0, 0, t.width, t.height)
                     argbToNV12(t.pixels, t.width, t.height, t.nv12)

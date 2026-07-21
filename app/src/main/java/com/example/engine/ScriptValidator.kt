@@ -33,8 +33,10 @@ object ScriptValidator {
     private val VALID_SCENE_SHAPE = setOf("none", "mountains", "city", "trees", "clouds")
     private val VALID_ATMOSPHERE  = setOf("none", "rain", "snow", "fog", "stars")
 
-    private val VALID_OVERLAY_TYPE  = setOf("text", "shape")
-    private val VALID_OVERLAY_SHAPE = setOf("rect", "circle", "line")
+    private val VALID_OVERLAY_TYPE  = setOf("text", "shape", "particles")
+    private val VALID_OVERLAY_SHAPE = setOf("rect", "circle", "line", "arrow")
+    private val VALID_PARTICLE_SHAPE = setOf("circle", "rect")
+    private val VALID_PHYSICS = setOf("none", "projectile", "bounce")
     private val VALID_OVERLAY_STYLE = setOf("fade", "pop", "zoom", "slideup", "slidedown", "none")
     private val VALID_OVERLAY_SLOT  = setOf("upper", "center", "lower")
     // Ease values valid for enterEase/exitEase — same set VALID_EASE covers
@@ -139,6 +141,47 @@ object ScriptValidator {
             .takeIf { it.isNotEmpty() }
             ?.let { warnings += "Unknown overlay slot value(s), ignored (falls back to explicit x/y): ${it.joinToString()}" }
 
+        unknownValues(layers.filter { it.type == "particles" }.map { it.particleShape }, VALID_PARTICLE_SHAPE)
+            .takeIf { it.isNotEmpty() }
+            ?.let { warnings += "Unknown overlay particleShape value(s), treated as circle: ${it.joinToString()}" }
+
+        unknownValues(layers.map { it.physics }, VALID_PHYSICS)
+            .takeIf { it.isNotEmpty() }
+            ?.let { warnings += "Unknown overlay physics value(s), treated as none: ${it.joinToString()}" }
+
+        val knownBoneIds = StickFigureRig.BONE_INDEX.keys
+        layers.filter { layer ->
+            val pb = layer.parentBone
+            pb != null && pb !in knownBoneIds
+        }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "Unknown overlay parentBone value(s), attachment ignored: ${bad.mapNotNull { it.parentBone }.distinct().joinToString()}"
+            }
+
+        layers.filter { it.parentBone != null && it.parentLayer != null }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "Overlay layer(s) with BOTH parentBone and parentLayer set — parentBone wins, parentLayer is ignored: ${bad.joinToString { it.id.ifBlank { "@${it.startSec}s" } }}"
+            }
+
+        val idToLayer = layers.filter { it.id.isNotBlank() }.associateBy { it.id }
+        layers.filter { layer ->
+            val pl = layer.parentLayer
+            layer.parentBone == null && !pl.isNullOrBlank() && pl !in idToLayer
+        }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "Overlay layer(s) with a parentLayer id that doesn't match any layer's id, treated as unparented: ${bad.joinToString { "'${it.parentLayer}'" }}"
+            }
+
+        for (layer in layers) {
+            if (layer.parentBone != null || layer.parentLayer.isNullOrBlank() || layer.id.isBlank()) continue
+            if (hasParentCycle(layer, idToLayer)) {
+                warnings += "Overlay layer '${layer.id}' has a parentLayer cycle (directly or through a chain) — treated as unparented to avoid an infinite loop."
+            }
+        }
+
         layers.filter { it.endSec <= it.startSec }
             .takeIf { it.isNotEmpty() }
             ?.let { bad ->
@@ -147,10 +190,15 @@ object ScriptValidator {
 
         // Clash detection — O(n^2) over layer count, fine since a project
         // realistically has a handful to a few dozen overlay layers, same
-        // scale assumption as the cue-list linear scans elsewhere.
+        // scale assumption as the cue-list linear scans elsewhere. Skipped
+        // for physics-driven layers on EITHER side: their x/y is only a
+        // launch point, not a resting position, so comparing raw x/y
+        // between two moving layers doesn't mean anything about whether
+        // they'll actually collide on screen.
         for (i in layers.indices) {
             for (j in i + 1 until layers.size) {
                 val a = layers[i]; val b = layers[j]
+                if (a.physics != "none" || b.physics != "none") continue
                 val windowsOverlap = a.startSec < b.endSec && b.startSec < a.endSec
                 if (!windowsOverlap) continue
                 val sameSlot = a.slot != null && a.slot == b.slot
@@ -165,6 +213,21 @@ object ScriptValidator {
         }
 
         return warnings
+    }
+
+    /** Walks a parentLayer chain looking for a cycle back to [start], capped at depth 8 to match [OverlayResolver]'s own guard. */
+    private fun hasParentCycle(start: com.example.data.OverlayLayer, idToLayer: Map<String, com.example.data.OverlayLayer>): Boolean {
+        var current: com.example.data.OverlayLayer? = start
+        val visited = mutableSetOf<String>()
+        for (depth in 0 until 8) {
+            val parentId = current?.parentLayer
+            if (parentId.isNullOrBlank()) return false
+            if (parentId == start.id) return true
+            if (parentId in visited) return true
+            visited += parentId
+            current = idToLayer[parentId] ?: return false
+        }
+        return false
     }
 
     private fun unknownValues(values: List<String>, allowed: Set<String>, caseInsensitive: Boolean = false): List<String> {

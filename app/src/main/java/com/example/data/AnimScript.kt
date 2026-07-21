@@ -188,6 +188,38 @@ data class AnimScript(
                     fontSize = 0.11f, color = 0xFFFFEB3BL, bold = true,
                     enterStyle = "zoom", enterEase = "elastic_out", enterDuration = 0.5f,
                     exitStyle = "fade", exitDuration = 0.4f
+                ),
+                // Phase 2 — bone attachment: a small glow that follows the
+                // right hand through the wave pose, exercising parentBone.
+                OverlayLayer(
+                    id = "hand_sparkle", type = "shape", shape = "circle",
+                    startSec = 1.5f, endSec = 3.4f,
+                    parentBone = "lower_arm_r", x = 0f, y = 0f,
+                    radius = 0.018f, color = 0xFFFFF59DL,
+                    glow = true, glowRadius = 0.03f,
+                    enterStyle = "fade", exitStyle = "fade"
+                ),
+                // Phase 2 — physics: a small ball bouncing across the lower
+                // third of the frame with a fading trail, exercising both
+                // the bounce solver and trail sampling.
+                OverlayLayer(
+                    id = "bouncing_ball", type = "shape", shape = "circle",
+                    startSec = 6.2f, endSec = 8.4f,
+                    x = 0.15f, y = 0.4f, radius = 0.02f, color = 0xFF4FC3F7L,
+                    physics = "bounce", physicsVx = 0.35f, physicsVy = -0.4f,
+                    physicsGravity = 1.4f, physicsFloorY = 0.82f, physicsBounceDamping = 0.55f,
+                    trail = true, trailLengthSec = 0.3f,
+                    enterStyle = "none", exitStyle = "fade"
+                ),
+                // Phase 2 — particles: a confetti-style burst on the
+                // celebrate beat, exercising the deterministic emitter.
+                OverlayLayer(
+                    id = "celebrate_burst", type = "particles", particleShape = "rect",
+                    startSec = 21.5f, endSec = 22.8f,
+                    x = 0.5f, y = 0.35f,
+                    particleCount = 24, particleSpeed = 0.4f, particleGravity = 0.9f,
+                    particleLifetimeSec = 1.1f, particleSizeMin = 0.008f, particleSizeMax = 0.018f,
+                    color = 0xFFFF7043L, gradientColor = 0xFFFFEE58L
                 )
             )
         )

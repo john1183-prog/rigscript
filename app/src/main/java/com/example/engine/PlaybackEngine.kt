@@ -82,12 +82,15 @@ class PlaybackEngine {
     }
 
     /**
-     * Resolved motion-graphics overlay layers active at [currentTimeSec] —
-     * see [OverlayResolver] for the enter/hold/exit math. Unlike
-     * [currentCaption] (a single string, first match wins), MULTIPLE
-     * overlay layers can be simultaneously active, so this returns a list.
+     * TIME-RESOLVED motion-graphics overlay layers active at
+     * [currentTimeSec] — see [OverlayResolver]'s doc comment for why the
+     * PARENTING step (bone/group attachment) intentionally does NOT
+     * happen here, unlike [currentCaption]/[currentAngles] which are
+     * fully resolved by this point. [RigRenderer.draw] finishes the job
+     * with [OverlayResolver.applyParenting], once it has this specific
+     * canvas's own bone positions.
      */
-    val currentOverlays: List<ResolvedOverlay> get() = OverlayResolver.resolve(overlayLayers, currentTimeSec)
+    val currentOverlays: List<TimeResolvedOverlay> get() = OverlayResolver.resolveTimeBased(overlayLayers, currentTimeSec)
     @Volatile private var overlayLayers: List<com.example.data.OverlayLayer> = emptyList()
 
     /** Loads the project's overlay layers — call whenever the active script changes. */

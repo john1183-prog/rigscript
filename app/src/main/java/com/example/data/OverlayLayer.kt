@@ -31,9 +31,18 @@ import kotlinx.serialization.Serializable
  *
  * [id]             Optional human-readable label, purely for
  *                  [com.example.engine.ScriptValidator]'s warning messages
- *                  — never read by the renderer.
- * [type]           "text" | "shape". See [com.example.engine.OverlayResolver].
- * [shape]          Only used when [type] == "shape": "rect" | "circle" | "line".
+ *                  and as a [parentLayer] target — never otherwise read by
+ *                  the renderer.
+ * [type]           "text" | "shape" | "particles". See
+ *                  [com.example.engine.OverlayResolver]. A "particles"
+ *                  layer expands into many individual shape particles at
+ *                  resolve time — see the Phase 2 particles section below.
+ * [shape]          Only used when [type] == "shape": "rect" | "circle" |
+ *                  "line" | "arrow". "arrow" draws a line with a
+ *                  triangular head pointing along [rotationDeg] — or,
+ *                  for a [physics]-driven layer, along its current
+ *                  velocity direction instead (a static [rotationDeg]
+ *                  would fight the motion and look wrong).
  * [startSec]       When this layer's enter animation begins.
  * [endSec]         When this layer is fully gone. Must be > [startSec].
  * [x]/[y]          Center position, fraction of canvas width/height.
@@ -70,6 +79,89 @@ import kotlinx.serialization.Serializable
  * [opacity]        Ceiling alpha (0..1) once fully "in" — lets a layer be
  *                  deliberately translucent throughout, independent of the
  *                  enter/exit fade multiplier.
+ *
+ * ── Phase 2: groups/parenting ───────────────────────────────────────────
+ * [parentBone]     Attaches this layer to a stick-figure bone's tip —
+ *                  one of "torso" | "head" | "upper_arm_r" | "lower_arm_r"
+ *                  | "upper_arm_l" | "lower_arm_l" | "upper_leg_r" |
+ *                  "lower_leg_r" | "upper_leg_l" | "lower_leg_l" (see
+ *                  [StickFigureRig.BONES]). When set, [x]/[y] become an
+ *                  OFFSET from the bone's current position instead of an
+ *                  absolute canvas position — e.g. a small glow layer with
+ *                  parentBone="lower_arm_r" and x=0/y=0 sits exactly on
+ *                  the figure's right hand and follows it through every
+ *                  pose. Position-only: this layer does NOT inherit the
+ *                  bone's rotation (see [OverlayResolver]'s doc comment
+ *                  for why — mainly so attached text doesn't go upside
+ *                  down when an arm rotates past vertical).
+ * [parentLayer]    Attaches this layer to another overlay layer's [id]
+ *                  instead of a bone — full transform compounding
+ *                  (position, rotation, scale, opacity all inherit from
+ *                  the parent), unlike [parentBone]'s position-only
+ *                  attachment. If both [parentBone] and [parentLayer] are
+ *                  set, [parentBone] wins and [parentLayer] is ignored —
+ *                  [com.example.engine.ScriptValidator] warns about this.
+ *                  A cycle (a layer parenting itself, directly or through
+ *                  a chain) is also warned about and safely broken at
+ *                  render time rather than hanging.
+ *
+ * ── Phase 2: physics ─────────────────────────────────────────────────────
+ * Closed-form (not frame-by-frame simulated) motion, computed fresh from
+ * elapsed time on every call — same reasoning as everything else in this
+ * schema: [com.example.engine.PlaybackEngine] needs to be able to seek to
+ * an arbitrary timestamp without replaying history, so "simulate forward
+ * from frame 0" was never an option. See [OverlayResolver] for the actual
+ * math (including how repeated bounces are handled without iterating
+ * frame-by-frame).
+ * [physics]        "none" | "projectile" | "bounce". When not "none",
+ *                  this REPLACES [x]/[y] as the resting position (measured
+ *                  from [startSec]) — [enterStyle]/[exitStyle] still apply
+ *                  their opacity/scale animation on top, just not their
+ *                  position offset (slideup/slidedown make no sense
+ *                  layered on top of real motion).
+ * [physicsVx]      Horizontal velocity, fraction of canvas width per second.
+ * [physicsVy]      Initial vertical velocity, fraction of canvas height per
+ *                  second. Negative = launched upward.
+ * [physicsGravity] Downward acceleration, fraction of canvas height per
+ *                  second squared. Default tuned to read as "natural" at
+ *                  typical [physicsVy] magnitudes, not a real-world value.
+ * [physicsFloorY]  Only used when [physics] == "bounce": fraction of
+ *                  canvas height the layer bounces off.
+ * [physicsBounceDamping] Fraction of vertical speed retained after each
+ *                  bounce (0..1). Bounces are capped once speed decays
+ *                  below a small threshold, after which the layer just
+ *                  rests at [physicsFloorY] rather than bouncing forever.
+ * [trail]          When true, draws a fading motion trail behind a
+ *                  physics-driven layer, sampled from the SAME closed-form
+ *                  trajectory function at several past instants (not
+ *                  accumulated per-frame history) — same "pure function of
+ *                  time" reasoning as the rest of this feature. No-op for
+ *                  non-physics layers.
+ * [trailLengthSec] How far back in time the trail samples from.
+ *
+ * ── Phase 2: particles ───────────────────────────────────────────────────
+ * A `type == "particles"` layer expands into [particleCount] independent
+ * burst-emitted particles, ALL spawned at [startSec] (a single burst, not
+ * a continuous stream — see [OverlayResolver] for why that scope cut was
+ * made). Each particle gets its own deterministic pseudo-random angle/
+ * speed/size — same particle index always produces the same result no
+ * matter when it's resolved, which is what makes this scrub-safe; see
+ * [OverlayResolver]'s particle section for exactly how.
+ * [particleCount]      How many particles in the burst.
+ * [particleShape]      "circle" | "rect", drawn per-particle.
+ * [particleSpeed]      Max initial outward speed, fraction of canvas
+ *                      min-dimension per second — each particle gets a
+ *                      random speed up to this, not all the same.
+ * [particleGravity]    Optional downward acceleration on particles,
+ *                      fraction of canvas height per second squared (0 =
+ *                      particles drift outward in straight lines, e.g. a
+ *                      spark burst; >0 = they arc and fall, e.g. confetti).
+ * [particleLifetimeSec] How long each particle lives before fading out —
+ *                      same for every particle in the burst; stagger comes
+ *                      from their randomized spawn angle/speed, not from
+ *                      randomized lifetime.
+ * [particleSizeMin]/[particleSizeMax] Per-particle radius range, fraction
+ *                      of canvas min-dimension.
  */
 @Serializable
 data class OverlayLayer(
@@ -101,5 +193,25 @@ data class OverlayLayer(
     val exitStyle: String = "fade",
     val exitDuration: Float = 0.35f,
     val exitEase: String = "ease_in",
-    val opacity: Float = 1f
+    val opacity: Float = 1f,
+    // Phase 2 — groups/parenting
+    val parentBone: String? = null,
+    val parentLayer: String? = null,
+    // Phase 2 — physics
+    val physics: String = "none",
+    val physicsVx: Float = 0f,
+    val physicsVy: Float = 0f,
+    val physicsGravity: Float = 1.2f,
+    val physicsFloorY: Float = 0.9f,
+    val physicsBounceDamping: Float = 0.55f,
+    val trail: Boolean = false,
+    val trailLengthSec: Float = 0.4f,
+    // Phase 2 — particles (only used when type == "particles")
+    val particleCount: Int = 20,
+    val particleShape: String = "circle",
+    val particleSpeed: Float = 0.3f,
+    val particleGravity: Float = 0f,
+    val particleLifetimeSec: Float = 1.0f,
+    val particleSizeMin: Float = 0.006f,
+    val particleSizeMax: Float = 0.016f
 )

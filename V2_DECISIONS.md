@@ -251,6 +251,84 @@ pushed.
   so nothing about single-target export's behavior changed, just its
   return shape. `MainViewModel`/`EditorScreen` updated accordingly.
 
+**Motion graphics overlay layers (Phase 1: text + shape)**
+- Ported from a standalone web reference tool ("GMS" — a JS canvas motion
+  graphics DSL with its own parser/interpreter/editor). The CONCEPTS were
+  ported (text bursts, shapes, gradients, glow, enter/exit animation), not
+  the DSL itself — `OverlayLayer` is new JSON fields on the EXISTING
+  script schema, not a second parser/text format. Deliberate: the whole
+  pipeline (Copy AI Prompt, semantic validation, the AI generator) is
+  built around the AI writing ONE JSON format; a second syntax would mean
+  context-switching between two languages in a single script, working
+  against "script in, video out" with zero manual per-video work.
+- Every layer is BOUNDED-WINDOW ONLY — `startSec` AND `endSec` are both
+  required, with no carry-forward mode at all (unlike `ScriptEvent`'s
+  pose/expression/camera/scene fields). This directly fixes a real bug
+  found in the reference tool: a persistent text layer with no exit
+  keyframe stayed on screen forever, so a later layer placed at the same
+  screen position visually collided with it. Requiring both ends up front
+  makes that bug class structurally impossible here, not just something
+  the prompt has to remember to avoid — same "no prompt-only safety"
+  philosophy as `constrainSceneColor()`. `ScriptValidator` additionally
+  warns (doesn't block) when two layers' windows overlap AND land in the
+  same slot/near-same position, catching the "deliberately placed wrong"
+  version of the same mistake.
+- All position/size fields are FRACTIONAL (0..1 of canvas width/height or
+  min-dimension), never absolute pixels — same convention `RigRenderer`
+  already uses everywhere (camera pan, scene shapes, root anchor). This is
+  what makes these layers portable across dual-aspect export's two
+  differently-sized targets for free, the same reason dual-aspect export
+  itself needed no new composition logic. `fontSize` is specifically a
+  fraction of canvas HEIGHT (not width, not a fixed sp value) so text
+  reads at a consistent relative size on both a 9:16 and a 16:9 render of
+  the same script — the concrete answer to "text shouldn't look tiny on
+  one aspect ratio and huge on the other."
+- Drawn INSIDE the camera transform (before `RigRenderer`'s
+  `canvas.restore()`), not after it like captions/atmosphere — a
+  deliberate difference from those two screen-space layers. Captions are
+  meant to read like fixed subtitles the camera can't pan away from;
+  these overlay layers are meant to feel like part of the composed scene,
+  panning/zooming/shaking along with the figure when the camera moves.
+  One shared camera drives both, per the same reasoning that put
+  `cameraZoom`/`cameraPanX`/`cameraPanY` on `ScriptEvent` in the first
+  place — a second independent camera for overlay layers was considered
+  and rejected as unnecessary complexity for what a single camera already
+  handles.
+- `OverlayResolver` is a stateless pure function of (layer, timeSec), same
+  spirit as `EasingMath` — there's no carry-forward state to bake into an
+  intermediate compiled form the way `TimelineCompiler.compile()` needs
+  for pose/camera/scene, so `TimelineCompiler.extractOverlayLayers()` only
+  sorts, it doesn't thread any running state through the list the way the
+  keyframe-baking loop does.
+- Each layer's enter and exit phases reuse the SAME style-to-animation
+  mapping (`OverlayResolver.animate()`), just played with progress running
+  in opposite directions — an exit is the mirror image of an enter, not a
+  separately-coded animation. `enterStyle`/`exitStyle` can still differ
+  per layer (e.g. pop in, fade out) since each phase independently picks
+  which style function to run.
+- Export-time resolution is hoisted OUTSIDE the per-target loop in
+  `VideoExporter` (`val resolvedOverlays = engine.currentOverlays` computed
+  once, reused for every dual-aspect target) — `currentOverlays` is a
+  computed property that re-walks every layer on each read, unlike
+  `currentAngles`/etc. which are plain stored fields, so reading it inside
+  the target loop would silently redo that walk once per target. Same
+  "resolve once per frame regardless of target count" principle dual-aspect
+  export already established for pose/camera/scene.
+- Phase-1 scope cuts, deliberate: no physics, no particles, no
+  groups/parenting, no per-property color keyframing beyond the static
+  enter/exit opacity fade, no custom-cubic-bezier easing (the reference
+  tool's `back` easing was ported as a fixed-constant formula, not a
+  general bezier solver). These are candidates for a later phase, not
+  rejected outright — see "On the horizon" below.
+- `Paint.setShadowLayer`/`BlurMaskFilter`-based glow reasoned through as
+  safe on both render paths (`VideoExporter`'s plain `Canvas(Bitmap)` and
+  `AnimationSurfaceView`'s default `SurfaceHolder.lockCanvas()`, neither of
+  which is the hardware-accelerated `lockHardwareCanvas()` path where
+  these APIs are known to misbehave) — but this reasoning has NOT been
+  confirmed on an actual device yet. Flagged as the highest-risk unverified
+  part of this feature, same category as the background-music PCM mixing
+  pipeline was when it first shipped.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -264,6 +342,14 @@ zoom in."
 
 ## On the horizon (not yet started)
 
+- Motion graphics overlay layers, Phase 2: physics (analytic
+  gravity/bounce solver), deterministic particles, groups/parenting with
+  compounded transforms, trails/arrows.
+- Motion graphics overlay layers, Phase 3: full in-app editor UI mirroring
+  the reference tool (timeline scrubber, layers panel, properties panel,
+  script examples) — NOTE: the existing "Full visual timeline editor"
+  deferral below (drag/long-press cut for lack of on-device gesture
+  testing) applies here too and should be re-read before starting this.
 - Low-res preview before full export
 - Amplitude-reactive background motion (separate from the purely
   JSON-driven scene system above — this would be an opt-in additional

@@ -57,7 +57,12 @@ object only.
                        or on a reaction beat. Separate from natural idle
                        blinking, which happens automatically and needs no
                        entry here. Use sparingly — a handful across a
-                       whole video, not one per event. */ ]
+                       whole video, not one per event. */ ],
+  "overlayLayers": [ /* array of overlay layer objects — on-screen text
+                         bursts/wordmarks and simple shapes composited on
+                         top of the figure. See the OVERLAY LAYER shape
+                         below. Optional — omit entirely or leave empty if
+                         the video doesn't need any. */ ]
 }
 
 Each object in "events":
@@ -87,6 +92,40 @@ Each object in "events":
 Only "timeSec" and "pose" are required per event. Omit any field you're
 not setting rather than repeating the previous value — see CARRY-FORWARD
 below for why that matters.
+
+Each object in "overlayLayers" (all fields except "type"/"startSec"/
+"endSec" have defaults — omit anything you're not customizing):
+{
+  "id": "string",                 // optional label, for your own reference only
+  "type": "string",               // REQUIRED. "text" | "shape"
+  "shape": "string",              // only used when type=="shape": "rect" | "circle" | "line". Default "rect".
+  "startSec": number,             // REQUIRED. When this layer's enter animation begins.
+  "endSec": number,               // REQUIRED. When this layer is fully gone. Must be > startSec.
+  "x": number,                    // center X, fraction of canvas width (0..1). Default 0.5.
+  "y": number,                    // center Y, fraction of canvas height (0..1). Default 0.5. Ignored if "slot" is set.
+  "slot": "string" | null,        // shorthand for y: "upper" | "center" | "lower". Overrides y when set.
+  "width": number | null,         // shape width, fraction of canvas width (rect)
+  "height": number | null,        // shape height, fraction of canvas height (rect)
+  "radius": number | null,        // shape radius, fraction of min(canvasWidth, canvasHeight) (circle)
+  "rotationDeg": number,          // static rotation in degrees. Default 0.
+  "scale": number,                // static scale multiplier. Default 1.
+  "text": "string" | null,        // REQUIRED when type=="text"
+  "fontSize": number,             // fraction of canvas HEIGHT (not width). Default 0.08.
+  "bold": boolean,                // Default true.
+  "align": "string",              // "left" | "center" | "right". Default "center".
+  "color": number,                 // ARGB, same convention as skyColor/groundColor. Default opaque white.
+  "gradientColor": number | null,  // if set, top-to-bottom gradient from color to this instead of a flat fill
+  "glow": boolean,                 // Default false.
+  "glowColor": number | null,      // defaults to color when null
+  "glowRadius": number,            // fraction of min(canvasWidth, canvasHeight). Default 0.02.
+  "enterStyle": "string",          // "fade" | "pop" | "zoom" | "slideup" | "slidedown" | "none". Default "fade".
+  "enterDuration": number,         // seconds. Default 0.35.
+  "enterEase": "string",           // one of the exact ease ids below (plus "back"). Default "ease_out".
+  "exitStyle": "string",           // same vocabulary as enterStyle. Default "fade".
+  "exitDuration": number,          // seconds. Default 0.35.
+  "exitEase": "string",            // Default "ease_in".
+  "opacity": number                // ceiling alpha 0..1 once fully "in". Default 1.
+}
 
 ═══════════════════════════════════════════════════════════════════════
 EXACT VALID VALUES — using anything outside these lists either gets
@@ -124,6 +163,16 @@ sceneAtmosphere: none | rain | snow | fog | stars
   by rapidly changing values; pick the shape/atmosphere for a stretch of
   narration and let it hold via carry-forward.
 
+overlayLayers[].type: text | shape
+overlayLayers[].shape: rect | circle | line
+overlayLayers[].slot: upper | center | lower
+overlayLayers[].enterStyle / exitStyle: fade | pop | zoom | slideup |
+  slidedown | none
+overlayLayers[].enterEase / exitEase: linear | ease_in | ease_out |
+  ease_in_out | bounce | elastic_out | spring | back
+  ("back" is ONLY valid here, not for a ScriptEvent's "ease" field — it's
+  an overshoot-then-settle curve, pairs especially well with "pop".)
+
 ═══════════════════════════════════════════════════════════════════════
 FIELD BEHAVIOR — this distinction changes how you should use every field
 ═══════════════════════════════════════════════════════════════════════
@@ -137,6 +186,14 @@ BOUNDED/ONE-SHOT (caption+captionDurationSec, cameraShake, soundEffect+
 soundEffectVolume, and every entry in blinkEvents): self-contained at the
 instant they fire, no persistence. A caption disappears after its
 duration; it does not linger until the next event sets a new one.
+
+BOUNDED-BOTH-ENDS (every object in overlayLayers): requires BOTH
+startSec AND endSec explicitly on every layer — there is no
+carry-forward mode and no one-shot-instant mode for these. A layer is
+simply invisible before its startSec and after its endSec, no exception.
+This is different from captions (which only need a duration, not an
+explicit end) specifically so you can never accidentally leave a text/
+shape layer on screen indefinitely.
 
 ═══════════════════════════════════════════════════════════════════════
 CRAFT GUIDANCE
@@ -190,6 +247,20 @@ BLINKS — a handful of deliberate blinkEvents across a whole video is
 plenty; this is for emphasis on top of automatic natural blinking, not a
 replacement for it.
 
+OVERLAY LAYERS — use for on-screen wordmarks, emphasis text bursts, and
+simple shapes (underlines, accent rects/circles) that complement the
+figure and captions, not replace them. Every layer needs BOTH startSec
+and endSec — pick an endSec that actually ends the layer's on-screen life,
+never leave one open-ended. Keep bursts short (a couple seconds) unless
+it's meant to be a persistent title/wordmark for a whole segment. Avoid
+placing two layers with overlapping time windows at the same slot or
+near-identical x/y unless you deliberately want them layered together —
+the app will warn about this, but don't rely on the warning as your
+design process. "pop" reads best paired with enterEase "back" (a slight
+overshoot); "fade" is the safe default for anything you're not sure about.
+Don't caption AND overlay-text the same line redundantly — pick whichever
+better serves that specific moment.
+
 ═══════════════════════════════════════════════════════════════════════
 NEVER DO THIS
 ═══════════════════════════════════════════════════════════════════════
@@ -197,6 +268,10 @@ NEVER DO THIS
   export settings — outside your schema entirely, human-configured only.
 - Never invent pose/ease/expression/sceneShape/sceneAtmosphere values
   not in the exact lists above.
+- Never invent overlayLayers type/shape/slot/enterStyle/exitStyle/
+  enterEase/exitEase values not in the exact lists above.
+- Never omit startSec or endSec on an overlayLayers entry, and never set
+  endSec <= startSec.
 - Never evenly space timestamps ignoring narration content.
 - Never add a caption or camera move on every single event.
 - Never wrap the output in markdown fences or add explanatory text
@@ -322,6 +397,39 @@ matters as much as renderer correctness.
   worth mentioning in the prompt so a typo'd id is understood as a
   no-op, not a guaranteed failure the AI would get feedback on.
 
+### `overlayLayers`
+- The one field in this whole schema that is BOUNDED-BOTH-ENDS rather
+  than carry-forward or one-shot: every layer requires an explicit
+  `startSec` AND `endSec`, with no "holds until changed" mode at all. This
+  is a deliberate structural fix, not just a style choice — the reference
+  motion-graphics tool this feature was ported from had a real bug where
+  a persistent text layer with no exit keyframe stayed on screen forever,
+  so a later layer placed at the same position visually collided with it.
+  Making both ends required means the AI literally cannot omit an end the
+  way it could accidentally leave, say, a `sceneShape` carrying forward
+  too long.
+- Fractional `x`/`y`/`width`/`height`/`radius`/`fontSize` — same
+  convention as `cameraPanX`/`cameraPanY`, chosen so these layers
+  reframe correctly across dual-aspect export's two resolutions with no
+  extra reasoning needed. `fontSize` specifically is a fraction of canvas
+  HEIGHT so text reads at a consistent relative size on both aspect
+  ratios instead of looking tiny on one and oversized on the other.
+- The AI should reach for `slot` (upper/center/lower) over raw `y` in the
+  common case — it's shorthand for the same handful of vertical positions
+  a wordmark/caption-adjacent burst usually wants, and it's also what
+  `ScriptValidator`'s clash check keys off (two overlapping-time layers
+  in the same slot get flagged; two with matching raw `x`/`y` but no
+  slot also get flagged, but slot is the more legible signal for the AI
+  to reason about while writing the script).
+- `enterStyle`/`exitStyle` are independent per layer (an emphasis burst
+  can pop in and fade out, rather than mirroring the same style both
+  ways) — the prompt tells the AI "pop" pairs well with `enterEase:
+  "back"` since that's the one ease value that actually overshoots.
+- Not a replacement for `caption` — captions are screen-space fixed
+  subtitles; overlay layers pan/zoom/shake with the camera, same as the
+  figure. The prompt should nudge the AI to pick whichever fits the
+  moment rather than duplicating the same line in both.
+
 ## Explicit exclusions — never prompt for these
 
 - **Reference overlay** (`ReferenceOverlay`) is manual and
@@ -343,6 +451,12 @@ matters as much as renderer correctness.
   should ask for meaningfully distinct timestamps, and the app-side
   validation (Script tab's error display) is the backstop, not a
   substitute for good prompt guidance.
+- **Overlay layer clashes**: two `overlayLayers` entries with overlapping
+  `[startSec, endSec)` windows in the same `slot` (or near-identical raw
+  `x`/`y`) will visually collide — `ScriptValidator` warns about this,
+  but same as timeline conflicts above, the warning is a backstop, not a
+  substitute for the prompt telling the AI to space overlay layers out
+  both in time and position unless deliberate layering is intended.
 - **Pose descriptions drifting from shipped angles**: `StickFigureRig.kt`
   pose definitions get retuned over time (e.g. the `think`/`point_self`
   angle fix, verified via the Python FK proxy renderer). Any prompt text

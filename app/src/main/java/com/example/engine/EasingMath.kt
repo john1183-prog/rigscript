@@ -19,6 +19,7 @@ object EasingMath {
         "bounce"       -> bounce(t)
         "elastic_out"  -> elasticOut(t)
         "spring"       -> springAnalytical(t)
+        "back"         -> backOut(t)
         else           -> t
     }
 
@@ -41,6 +42,20 @@ object EasingMath {
             x < 2.5f / 2.75f -> { x -= 2.25f / 2.75f; n * x * x + 0.9375f }
             else -> { x -= 2.625f / 2.75f; n * x * x + 0.984375f }
         }
+    }
+
+    /**
+     * Standard "back" overshoot ease — rises past 1.0 then settles back,
+     * used by [OverlayResolver]'s "pop" enter style so a scale-in overshoots
+     * slightly before landing, instead of just growing monotonically.
+     * c1 = 1.70158 is the conventional constant for this curve (produces a
+     * ~10% overshoot), same value used across easing-function libraries.
+     */
+    private fun backOut(t: Float): Float {
+        val c1 = 1.70158f
+        val c3 = c1 + 1f
+        val x = t - 1f
+        return 1f + c3 * x * x * x + c1 * x * x
     }
 
     private fun elasticOut(t: Float): Float {

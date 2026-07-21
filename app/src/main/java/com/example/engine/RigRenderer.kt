@@ -46,6 +46,13 @@ class RigRenderer {
     private val overlayImageSrcRect = Rect()
     private val overlayImageDstRect = RectF()
 
+    // Motion-graphics overlay layers (V2 — text/shape, see OverlayResolver).
+    // Named distinctly from the referenceOverlay* paints above (which are
+    // for the manually-configured reference image, a different feature).
+    private val gmsShapePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val gmsTextPaint  = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private val gmsGlowPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
     fun draw(
         canvas: Canvas,
         angles: FloatArray,
@@ -72,7 +79,13 @@ class RigRenderer {
         captionText: String? = null,
         // V2 — manual reference overlay + its pre-decoded bitmap (image variant only)
         referenceOverlay: ReferenceOverlay? = null,
-        referenceOverlayBitmap: Bitmap? = null
+        referenceOverlayBitmap: Bitmap? = null,
+        // V2 — motion-graphics overlay layers, resolved per-frame by
+        // PlaybackEngine.currentOverlays. Drawn INSIDE the camera transform
+        // (before canvas.restore() below) — unlike captionText/atmosphere,
+        // which are deliberately screen-space, these are meant to pan/zoom/
+        // shake along with the figure, per V2_DECISIONS.md.
+        overlays: List<ResolvedOverlay> = emptyList()
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
         val scale   = minDim * appearance.characterScale
@@ -229,6 +242,10 @@ class RigRenderer {
 
         if (overlayVisible && referenceOverlay != null && referenceOverlay.inFrontOfFigure) {
             drawReferenceOverlay(canvas, canvasW, canvasH, referenceOverlay, referenceOverlayBitmap)
+        }
+
+        if (overlays.isNotEmpty()) {
+            for (layer in overlays) drawGmsOverlay(canvas, canvasW, canvasH, layer)
         }
 
         canvas.restore()
@@ -441,6 +458,126 @@ class RigRenderer {
         canvas.translate((w - maxWidth) / 2f, boxTop + padding)
         layout.draw(canvas)
         canvas.restore()
+    }
+
+    /**
+     * Draws one resolved motion-graphics overlay layer (text or shape).
+     * Called once per active [ResolvedOverlay], inside the camera transform
+     * — see the call site in [draw] for why these pan/zoom/shake with the
+     * figure rather than staying screen-space like captions.
+     *
+     * [Paint.setShadowLayer]/[android.graphics.BlurMaskFilter]-based glow
+     * draws correctly on a plain software `Canvas(Bitmap)` (what
+     * [com.example.engine.VideoExporter] uses) and on [android.view.SurfaceView]'s
+     * default `lockCanvas()` (what the live preview uses) — hardware
+     * acceleration, where these APIs are unsupported, only applies to
+     * `lockHardwareCanvas()`/View-layer rendering, neither of which is in
+     * use here. Still flagged as NOT yet visually confirmed on-device —
+     * same "believe the device over the reasoning" discipline as this
+     * file's eyebrow-tilt note above.
+     */
+    private fun drawGmsOverlay(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
+        if (layer.opacity <= 0.001f) return
+        val minDim = min(w, h).toFloat()
+
+        canvas.save()
+        canvas.translate(w * layer.x, h * layer.y)
+        if (layer.rotationDeg != 0f) canvas.rotate(layer.rotationDeg)
+        if (layer.scale != 1f) canvas.scale(layer.scale, layer.scale)
+
+        when (layer.type) {
+            "shape" -> drawGmsShape(canvas, w, h, minDim, layer)
+            "text"  -> drawGmsText(canvas, h, layer)
+        }
+
+        canvas.restore()
+    }
+
+    private fun combinedAlpha(baseColor: Int, opacity: Float): Int =
+        (Color.alpha(baseColor) * opacity).toInt().coerceIn(0, 255)
+
+    private fun drawGmsShape(canvas: Canvas, w: Int, h: Int, minDim: Float, layer: ResolvedOverlay) {
+        val baseColor = layer.color.toInt()
+
+        if (layer.glow) {
+            gmsGlowPaint.color = layer.glowColor.toInt()
+            gmsGlowPaint.alpha = combinedAlpha(layer.glowColor.toInt(), layer.opacity * 0.6f)
+            gmsGlowPaint.maskFilter = android.graphics.BlurMaskFilter(
+                (layer.glowRadius * minDim).coerceAtLeast(1f), android.graphics.BlurMaskFilter.Blur.NORMAL
+            )
+            drawShapeGeometry(canvas, w, h, minDim, layer, gmsGlowPaint)
+            gmsGlowPaint.maskFilter = null
+        }
+
+        gmsShapePaint.shader = if (layer.gradientColor != null) {
+            val halfSpan = when (layer.shape) {
+                "circle" -> (layer.radius ?: 0.1f) * minDim
+                else     -> (layer.height ?: 0.15f) * h / 2f
+            }
+            LinearGradient(0f, -halfSpan, 0f, halfSpan, baseColor, layer.gradientColor.toInt(), Shader.TileMode.CLAMP)
+        } else null
+        gmsShapePaint.color = baseColor
+        gmsShapePaint.alpha = combinedAlpha(baseColor, layer.opacity)
+        drawShapeGeometry(canvas, w, h, minDim, layer, gmsShapePaint)
+    }
+
+    private fun drawShapeGeometry(canvas: Canvas, w: Int, h: Int, minDim: Float, layer: ResolvedOverlay, paint: Paint) {
+        when (layer.shape) {
+            "circle" -> {
+                canvas.drawCircle(0f, 0f, (layer.radius ?: 0.1f) * minDim, paint)
+            }
+            "line" -> {
+                val prevStyle = paint.style
+                paint.style = Paint.Style.STROKE
+                paint.strokeCap = Paint.Cap.ROUND
+                paint.strokeWidth = (layer.height ?: 0.01f) * h
+                val halfLen = (layer.width ?: 0.2f) * w / 2f
+                canvas.drawLine(-halfLen, 0f, halfLen, 0f, paint)
+                paint.style = prevStyle
+            }
+            else -> { // "rect"
+                val halfW = (layer.width ?: 0.3f) * w / 2f
+                val halfH = (layer.height ?: 0.15f) * h / 2f
+                canvas.drawRect(-halfW, -halfH, halfW, halfH, paint)
+            }
+        }
+    }
+
+    private fun drawGmsText(canvas: Canvas, h: Int, layer: ResolvedOverlay) {
+        val text = layer.text
+        if (text.isNullOrBlank()) return
+        val baseColor = layer.color.toInt()
+
+        gmsTextPaint.isFakeBoldText = layer.bold
+        gmsTextPaint.textSize = h * layer.fontSize
+        gmsTextPaint.textAlign = when (layer.align) {
+            "left"  -> Paint.Align.LEFT
+            "right" -> Paint.Align.RIGHT
+            else    -> Paint.Align.CENTER
+        }
+        gmsTextPaint.shader = if (layer.gradientColor != null) {
+            val halfH = h * layer.fontSize / 2f
+            LinearGradient(0f, -halfH, 0f, halfH, baseColor, layer.gradientColor.toInt(), Shader.TileMode.CLAMP)
+        } else null
+        gmsTextPaint.color = baseColor
+        gmsTextPaint.alpha = combinedAlpha(baseColor, layer.opacity)
+
+        if (layer.glow) {
+            gmsTextPaint.setShadowLayer(
+                (layer.glowRadius * h).coerceAtLeast(1f), 0f, 0f,
+                Color.argb(combinedAlpha(layer.glowColor.toInt(), layer.opacity * 0.8f),
+                    Color.red(layer.glowColor.toInt()), Color.green(layer.glowColor.toInt()), Color.blue(layer.glowColor.toInt()))
+            )
+        } else {
+            gmsTextPaint.clearShadowLayer()
+        }
+
+        // drawText anchors at the baseline, not the visual vertical center —
+        // offset so (0,0) (the layer's translated anchor point) reads as the
+        // text's visual center, same reasoning as drawCaption's box math.
+        val metrics = gmsTextPaint.fontMetrics
+        val baselineOffset = -(metrics.ascent + metrics.descent) / 2f
+        canvas.drawText(text, 0f, baselineOffset, gmsTextPaint)
     }
 
     /**

@@ -310,7 +310,8 @@ fun EditorScreen(
                                 durationSec     = project?.audioDurationSec ?: 0f,
                                 fidgetEnvelope  = envelopeArray,
                                 captionCues     = project?.script?.let { com.example.engine.TimelineCompiler.extractCaptions(it) } ?: emptyList(),
-                                soundEffectCues = project?.script?.let { com.example.engine.TimelineCompiler.extractSoundEffectCues(it) } ?: emptyList()
+                                soundEffectCues = project?.script?.let { com.example.engine.TimelineCompiler.extractSoundEffectCues(it) } ?: emptyList(),
+                                overlayLayers   = project?.script?.let { com.example.engine.TimelineCompiler.extractOverlayLayers(it) } ?: emptyList()
                             )
                             lastLoadedKeyframes = keyframes
                         }

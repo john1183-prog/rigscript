@@ -114,12 +114,18 @@ data class ScriptEvent(
  * blinking happens automatically regardless of this list; these are ADDITIONAL,
  * deliberate, AI-placed blinks for emotional emphasis (e.g. right before a key
  * line, or on a reaction beat).
+ * [overlayLayers] Motion-graphics overlay layers — text bursts, wordmarks,
+ * and simple shapes composited on top of the figure. Kept as its own
+ * top-level list rather than fields on [ScriptEvent] because these are
+ * self-contained bounded-window elements (explicit start AND end), not
+ * carry-forward pose-timeline state — see [OverlayLayer]'s doc comment.
  */
 @Serializable
 data class AnimScript(
     val version: String = "1.0",
     val events: List<ScriptEvent> = emptyList(),
-    val blinkEvents: List<Float> = emptyList()
+    val blinkEvents: List<Float> = emptyList(),
+    val overlayLayers: List<OverlayLayer> = emptyList()
 ) {
     companion object {
         /** Canonical blank script shown when a project is created. */
@@ -129,7 +135,16 @@ data class AnimScript(
             )
         )
 
-        /** Demo script — exercises poses plus the V2 expression/camera/rigid/blink features. */
+        /**
+         * Demo script — exercises poses plus the V2 expression/camera/
+         * rigid/blink features, plus overlayLayers (motion-graphics text/
+         * shape). The two text layers are deliberately staggered in BOTH
+         * time and slot (upper vs center) — exercising the non-clashing
+         * case ScriptValidator's overlap check is meant to allow, as
+         * opposed to the same-slot/overlapping-time case it's meant to
+         * flag. See V2_DECISIONS.md's "Motion graphics overlay layers"
+         * section.
+         */
         val DEMO = AnimScript(
             events = listOf(
                 ScriptEvent(0.0f,  "stand_straight", 0.4f, "ease_out"),
@@ -151,7 +166,30 @@ data class AnimScript(
                 ScriptEvent(24.0f, "stand_straight", 0.8f, "ease_in_out", expression = "normal",
                     cameraZoom = 1f)
             ),
-            blinkEvents = listOf(1.3f, 14.7f, 21.4f)
+            blinkEvents = listOf(1.3f, 14.7f, 21.4f),
+            overlayLayers = listOf(
+                OverlayLayer(
+                    id = "wordmark_intro", type = "text", text = "HELLO!",
+                    startSec = 0.2f, endSec = 3.0f, slot = "upper",
+                    fontSize = 0.09f, color = 0xFFFFFFFFL,
+                    enterStyle = "pop", enterEase = "back", enterDuration = 0.4f,
+                    exitStyle = "fade", exitDuration = 0.3f
+                ),
+                OverlayLayer(
+                    id = "accent_underline", type = "shape", shape = "rect",
+                    startSec = 15.0f, endSec = 16.8f, slot = "lower",
+                    width = 0.35f, height = 0.02f, color = 0xFFFFD54FL,
+                    glow = true, glowRadius = 0.015f,
+                    enterStyle = "slideup", exitStyle = "fade"
+                ),
+                OverlayLayer(
+                    id = "wordmark_celebrate", type = "text", text = "AMAZING!",
+                    startSec = 21.6f, endSec = 24.0f, slot = "center",
+                    fontSize = 0.11f, color = 0xFFFFEB3BL, bold = true,
+                    enterStyle = "zoom", enterEase = "elastic_out", enterDuration = 0.5f,
+                    exitStyle = "fade", exitDuration = 0.4f
+                )
+            )
         )
     }
 }

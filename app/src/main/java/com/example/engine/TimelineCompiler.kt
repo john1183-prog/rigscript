@@ -225,4 +225,15 @@ object TimelineCompiler {
             .filter { !it.soundEffect.isNullOrBlank() }
             .sortedBy { it.timeSec }
             .map { SoundEffectCue(it.timeSec, it.soundEffect!!, it.soundEffectVolume) }
+
+    /**
+     * Extracts the motion-graphics overlay layers, sorted by [com.example.data.OverlayLayer.startSec].
+     * Unlike [compile]'s keyframe loop, there's no carry-forward state to
+     * thread through here — each [com.example.data.OverlayLayer] is already
+     * fully self-contained (explicit start AND end), so sorting is the only
+     * "compilation" needed. Per-frame resolution happens later, in
+     * [OverlayResolver.resolve].
+     */
+    fun extractOverlayLayers(script: AnimScript): List<com.example.data.OverlayLayer> =
+        script.overlayLayers.sortedBy { it.startSec }
 }

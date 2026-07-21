@@ -100,7 +100,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
         durationSec: Float = 0f,
         fidgetEnvelope: FloatArray = FloatArray(0),
         captionCues: List<CaptionCue> = emptyList(),
-        soundEffectCues: List<SoundEffectCue> = emptyList()
+        soundEffectCues: List<SoundEffectCue> = emptyList(),
+        overlayLayers: List<com.example.data.OverlayLayer> = emptyList()
     ) {
         val snap = !isPlaying
         renderHandler.post {
@@ -109,6 +110,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
             engine.loadFidgetSchedule(fidgetEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
             engine.loadCaptions(captionCues)
             engine.loadSoundEffectCues(soundEffectCues)
+            engine.loadOverlayLayers(overlayLayers)
         }
     }
 
@@ -210,7 +212,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
                 currentTimeSec         = engine.currentTimeSec,
                 captionText            = engine.currentCaption,
                 referenceOverlay       = referenceOverlay,
-                referenceOverlayBitmap = referenceOverlayBitmap)
+                referenceOverlayBitmap = referenceOverlayBitmap,
+                overlays               = engine.currentOverlays)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 

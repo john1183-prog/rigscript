@@ -149,6 +149,7 @@ object VideoExporter {
             it.loadBlinkSchedule(project.script.blinkEvents, totalSec)
             it.loadFidgetSchedule(envelope, envFps)
             it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
+            it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
         }
         // One shared renderer instance across all targets — safe because targets
         // are drawn sequentially within a single thread here, not concurrently.
@@ -327,6 +328,12 @@ object VideoExporter {
                 engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
                 val presentationTimeUs = frameIdx.toLong() * 1_000_000L / fps
                 val isEos = frameIdx == totalFrames - 1
+                // Resolved ONCE per frame, same reasoning as everything else
+                // this comment block already covers — currentOverlays is a
+                // computed property (re-walks every layer on each read), so
+                // reading it once and reusing across targets avoids doing
+                // that walk twice for dual-aspect export.
+                val resolvedOverlays = engine.currentOverlays
 
                 for (t in targets) {
                     renderer.draw(t.canvas, engine.currentAngles, appearance, t.width, t.height,
@@ -347,7 +354,8 @@ object VideoExporter {
                         currentTimeSec         = timeSec,
                         captionText            = engine.currentCaption,
                         referenceOverlay       = overlay,
-                        referenceOverlayBitmap = overlayBitmap)
+                        referenceOverlayBitmap = overlayBitmap,
+                        overlays               = resolvedOverlays)
 
                     t.bitmap.getPixels(t.pixels, 0, t.width, 0, 0, t.width, t.height)
                     argbToNV12(t.pixels, t.width, t.height, t.nv12)

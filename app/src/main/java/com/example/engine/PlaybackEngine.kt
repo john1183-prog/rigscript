@@ -81,6 +81,20 @@ class PlaybackEngine {
         return captionCues.firstOrNull { timeSec >= it.startSec && timeSec <= it.endSec }?.text
     }
 
+    /**
+     * Resolved motion-graphics overlay layers active at [currentTimeSec] —
+     * see [OverlayResolver] for the enter/hold/exit math. Unlike
+     * [currentCaption] (a single string, first match wins), MULTIPLE
+     * overlay layers can be simultaneously active, so this returns a list.
+     */
+    val currentOverlays: List<ResolvedOverlay> get() = OverlayResolver.resolve(overlayLayers, currentTimeSec)
+    @Volatile private var overlayLayers: List<com.example.data.OverlayLayer> = emptyList()
+
+    /** Loads the project's overlay layers — call whenever the active script changes. */
+    fun loadOverlayLayers(layers: List<com.example.data.OverlayLayer>) {
+        overlayLayers = layers
+    }
+
     // ── Sound effects (V2) — one-shot, edge-triggered, preview-only ─────────────
     // Unlike captions (a pull-based "what's active right now" query), a
     // one-shot trigger needs edge detection: fire exactly once when the

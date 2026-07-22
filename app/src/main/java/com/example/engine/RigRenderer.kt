@@ -537,7 +537,7 @@ class RigRenderer {
 
         when (layer.type) {
             "shape" -> drawGmsShape(canvas, w, h, minDim, layer)
-            "text"  -> drawGmsText(canvas, h, layer)
+            "text"  -> drawGmsText(canvas, w, h, layer)
         }
 
         canvas.restore()
@@ -615,20 +615,40 @@ class RigRenderer {
         }
     }
 
-    private fun drawGmsText(canvas: Canvas, h: Int, layer: ResolvedOverlay) {
+    private fun drawGmsText(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
         val text = layer.text
         if (text.isNullOrBlank()) return
         val baseColor = layer.color.toInt()
 
         gmsTextPaint.isFakeBoldText = layer.bold
-        gmsTextPaint.textSize = h * layer.fontSize
         gmsTextPaint.textAlign = when (layer.align) {
             "left"  -> Paint.Align.LEFT
             "right" -> Paint.Align.RIGHT
             else    -> Paint.Align.CENTER
         }
+
+        // fontSize is a fraction of canvas HEIGHT (see OverlayLayer's doc
+        // comment — deliberate, so text reads at a consistent relative
+        // size across dual-aspect export's two resolutions). But height
+        // alone doesn't bound WIDTH: the same height-fraction is a much
+        // bigger fraction of a narrow portrait canvas's width than of a
+        // wide landscape one, so a long word sized purely off height can
+        // overflow portrait's edges even though it fits landscape fine —
+        // confirmed on-device for "AMAZING!" specifically. Measure at the
+        // height-driven size first, then shrink proportionally (never
+        // enlarge) if it would exceed a safe margin of the actual canvas
+        // width, so it never overflows on EITHER aspect ratio.
+        var textSize = h * layer.fontSize
+        gmsTextPaint.textSize = textSize
+        val measuredWidth = gmsTextPaint.measureText(text)
+        val maxWidth = w * 0.92f
+        if (measuredWidth > maxWidth && measuredWidth > 0f) {
+            textSize *= maxWidth / measuredWidth
+            gmsTextPaint.textSize = textSize
+        }
+
         gmsTextPaint.shader = if (layer.gradientColor != null) {
-            val halfH = h * layer.fontSize / 2f
+            val halfH = textSize / 2f
             LinearGradient(0f, -halfH, 0f, halfH, baseColor, layer.gradientColor.toInt(), Shader.TileMode.CLAMP)
         } else null
         gmsTextPaint.color = baseColor

@@ -188,6 +188,21 @@ pushed.
   the first code path exercising MediaCodec's audio decode/encode side at
   all (everything before it only used MediaCodec for video), and none of
   it has run against a real device/compiler yet.
+- **Confirmed bug, on-device**: scrubbing/tapping the timeline while music
+  was loaded caused it to cut off, loop wrong, or go silent. Root cause
+  wasn't the PCM mixing math (`AudioMixer.mix()`'s modulo-based looping
+  and clipping were correct on inspection) — it was `EditorScreen`'s
+  `seekPlayback` calling `BackgroundMusicPlayer.seekTo()` with the raw
+  FULL-TIMELINE position, un-adjusted for the music track's own (usually
+  shorter) length. `MediaPlayer.seekTo()` takes whatever ms it's given
+  literally; seeking past a track's own end leaves it clamped/stalled
+  near EOS rather than wrapping. This only broke on an explicit seek —
+  normal forward playback never hit it, since `MediaPlayer.isLooping`
+  handles wraparound on its own once a track reaches its natural end.
+  Fixed with a `seekMusicForTimelinePos` helper: modulo the seek position
+  against `BackgroundMusicPlayer.durationMs` when looping, clamp/pause
+  when not. The export path's own mixing was independently re-verified
+  correct and didn't need a change.
 
 **Sound effects**
 - Per-project sound effect library (`SoundEffectClip`: `id`/`filePath`/

@@ -76,6 +76,18 @@ class BackgroundMusicPlayer private constructor() {
     }
     fun seekTo(ms: Int) { runCatching { player?.seekTo(ms.coerceAtLeast(0)) } }
 
+    /**
+     * The loaded track's own duration in ms, or 0 if nothing's loaded/ready
+     * yet. Needed by callers doing loop-aware seeking — see
+     * [com.example.ui.editor.EditorScreen]'s `seekPlayback`, which is what
+     * this was added for: [seekTo] takes whatever ms it's given literally,
+     * with no awareness of the loaded track's own length, so a caller
+     * seeking to the FULL TIMELINE's position (which can easily exceed a
+     * shorter music track's length when the whole point is that it loops)
+     * has to do that math itself.
+     */
+    val durationMs: Int get() = runCatching { player?.duration }.getOrNull() ?: 0
+
     fun release() {
         runCatching { player?.release() }
         player      = null

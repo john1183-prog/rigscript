@@ -400,7 +400,7 @@ fun EditorScreen(
                 surfaceView?.seekTo(pos)
                 if (isAudioPlaying) {
                     audioPlayer.seekTo((pos * 1000).toInt())
-                    musicPlayer.seekTo((pos * 1000).toInt())
+                    seekMusicForTimelinePos(musicPlayer, pos, project?.backgroundMusic?.loop == true)
                 }
             }
 
@@ -1162,6 +1162,34 @@ private fun SegmentedRow(label: String, options: List<String>, selected: String,
  * mechanism either way — this is a navigation/overview aid on top of it, not
  * a replacement for it.
  */
+/**
+ * Seeks [musicPlayer] to the position that corresponds to the FULL
+ * timeline's [timelineSec], NOT that value taken literally — the whole
+ * point of a looping background track is usually that it's SHORTER than
+ * the narration, so a literal seek past its own end either clamps to the
+ * last frame or leaves the player in a stalled state depending on the
+ * platform, which is what "music cuts off / loops wrong / goes silent
+ * after scrubbing" turned out to actually be: [BackgroundMusicPlayer.seekTo]
+ * takes whatever ms it's given with no awareness of the loaded track's own
+ * length, and the caller wasn't doing that math.
+ *
+ * During normal forward playback this was never an issue —
+ * [android.media.MediaPlayer.isLooping] handles wraparound on its own once
+ * a track reaches its natural end. It only broke on an explicit seek
+ * (scrubbing, tapping a timeline strip), which is exactly [seekPlayback]
+ * and every place that calls it.
+ */
+private fun seekMusicForTimelinePos(musicPlayer: com.example.engine.BackgroundMusicPlayer, timelineSec: Float, loop: Boolean) {
+    val musicDurMs = musicPlayer.durationMs
+    val rawMs = (timelineSec * 1000).toInt()
+    when {
+        musicDurMs <= 0  -> musicPlayer.seekTo(rawMs) // not loaded/ready yet — nothing to correct against
+        loop             -> musicPlayer.seekTo(rawMs % musicDurMs)
+        rawMs < musicDurMs -> musicPlayer.seekTo(rawMs)
+        else             -> musicPlayer.pause() // past the track's own end and not looping — correctly nothing to play here
+    }
+}
+
 @Composable
 private fun EventTimelineStrip(
     events: List<ScriptEvent>,

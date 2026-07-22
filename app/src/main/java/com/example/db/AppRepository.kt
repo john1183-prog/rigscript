@@ -78,4 +78,31 @@ class AppRepository(private val db: AppDatabase) {
     }
 
     suspend fun deleteCustomPose(id: String) = db.poseDao().deleteCustom(id)
+
+    // ── Appearance presets ───────────────────────────────────────────────────
+
+    fun observeAppearancePresets(): Flow<List<com.example.data.AppearancePreset>> =
+        db.appearancePresetDao().observeAll().map { list ->
+            list.mapNotNull { entity ->
+                runCatching {
+                    com.example.data.AppearancePreset(
+                        id = entity.id, name = entity.name, createdAtMs = entity.createdAtMs,
+                        appearance = json.decodeFromString(entity.appearanceJson)
+                    )
+                }.getOrNull()
+            }
+        }
+
+    suspend fun saveAppearancePreset(preset: com.example.data.AppearancePreset) {
+        db.appearancePresetDao().upsert(
+            AppearancePresetEntity(
+                id             = preset.id,
+                name           = preset.name,
+                createdAtMs    = preset.createdAtMs,
+                appearanceJson = json.encodeToString(preset.appearance)
+            )
+        )
+    }
+
+    suspend fun deleteAppearancePreset(id: String) = db.appearancePresetDao().deleteById(id)
 }

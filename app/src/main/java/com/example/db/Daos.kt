@@ -60,3 +60,19 @@ interface PoseDao {
     @Query("SELECT COUNT(*) FROM poses WHERE isBuiltIn = 1")
     suspend fun builtInCount(): Int
 }
+
+@Dao
+interface AppearancePresetDao {
+
+    @Query("SELECT * FROM appearance_presets ORDER BY createdAtMs DESC")
+    fun observeAll(): Flow<List<AppearancePresetEntity>>
+
+    @Query("SELECT * FROM appearance_presets WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): AppearancePresetEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AppearancePresetEntity)
+
+    @Query("DELETE FROM appearance_presets WHERE id = :id")
+    suspend fun deleteById(id: String)
+}

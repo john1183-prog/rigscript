@@ -511,6 +511,17 @@ matters as much as renderer correctness.
   falling continuously for 10 seconds" would need many short bursts,
   not one particles layer with a long window).
 
+## Workflow notes (not schema — just how to use what already exists)
+
+- **Highlight reels / recaps**: no special schema support needed and none
+  exists. A highlight reel is just a normal project whose audio happens to
+  be a pre-trimmed/spliced compilation of the best moments from a longer
+  source — trim that audio first (outside the app), start a new project
+  with it, and prompt the AI for a normal script exactly as you would for
+  any other video. Don't try to express "skip to the good parts" inside a
+  single script referencing the original full-length audio; the engine
+  plays one continuous audio file start to finish.
+
 ## Explicit exclusions — never prompt for these
 
 - **Reference overlay** (`ReferenceOverlay`) is manual and

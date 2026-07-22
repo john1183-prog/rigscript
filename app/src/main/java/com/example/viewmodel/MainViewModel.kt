@@ -71,6 +71,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val poses: StateFlow<List<PoseDef>> = repo.observePoses()
         .stateIn(viewModelScope, SharingStarted.Lazily, StickFigureRig.BUILT_IN_POSES)
 
+    // ── Appearance presets ───────────────────────────────────────────────────
+
+    val appearancePresets: StateFlow<List<com.example.data.AppearancePreset>> = repo.observeAppearancePresets()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
     // ── Global amplitude settings ─────────────────────────────────────────────
 
     private val _amplitudeSettings = MutableStateFlow(loadAmplitudeSettings())
@@ -622,6 +627,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteCustomPose(id: String) {
         viewModelScope.launch { repo.deleteCustomPose(id); _message.emit("Pose deleted") }
+    }
+
+    // ── Appearance presets ───────────────────────────────────────────────────
+
+    /** Saves the ACTIVE project's current appearance as a new named, reusable preset. */
+    fun saveCurrentAppearanceAsPreset(name: String) {
+        val appearance = _activeProject.value?.appearance ?: return
+        val preset = com.example.data.AppearancePreset(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name.ifBlank { "Untitled preset" },
+            createdAtMs = System.currentTimeMillis(),
+            appearance = appearance
+        )
+        viewModelScope.launch { repo.saveAppearancePreset(preset); _message.emit("Preset '${preset.name}' saved") }
+    }
+
+    /** Applies a saved preset's appearance to the ACTIVE project — same update path as any other appearance edit. */
+    fun applyAppearancePreset(preset: com.example.data.AppearancePreset) {
+        updateActive { it.copy(appearance = preset.appearance) }
+        saveActiveProject()
+        viewModelScope.launch { _message.emit("Applied '${preset.name}'") }
+    }
+
+    fun deleteAppearancePreset(id: String) {
+        viewModelScope.launch { repo.deleteAppearancePreset(id); _message.emit("Preset deleted") }
     }
 
     // ── Timeline compilation ──────────────────────────────────────────────────

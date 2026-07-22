@@ -62,6 +62,7 @@ fun EditorScreen(
     val scriptError  by vm.scriptError.collectAsStateWithLifecycle()
     val scriptWarnings by vm.scriptWarnings.collectAsStateWithLifecycle()
     val ampSettings  by vm.amplitudeSettings.collectAsStateWithLifecycle()
+    val appearancePresets by vm.appearancePresets.collectAsStateWithLifecycle()
     val isAnalysing  by vm.isAnalysingAudio.collectAsStateWithLifecycle()
     val audioName    by vm.audioFileName.collectAsStateWithLifecycle()
     val exportProg   by vm.exportProgress.collectAsStateWithLifecycle()
@@ -486,6 +487,7 @@ fun EditorScreen(
                     referenceOverlay  = project?.referenceOverlay ?: com.example.data.ReferenceOverlay(),
                     backgroundMusic   = project?.backgroundMusic ?: com.example.data.BackgroundMusicSettings(),
                     soundEffects      = project?.soundEffects ?: emptyList(),
+                    presets           = appearancePresets,
                     onAppearance      = { vm.updateAppearance(it) },
                     onAmplitude       = { vm.updateAmplitudeSettings(it) },
                     onReferenceOverlay = { vm.updateReferenceOverlay(it) },
@@ -499,6 +501,9 @@ fun EditorScreen(
                     onSoundEffectVolume = { id, v -> vm.updateSoundEffectVolume(id, v) },
                     onRenameSoundEffect = { oldId, newId -> vm.renameSoundEffect(oldId, newId) },
                     onPickBuiltInSoundEffect = { vm.importBuiltInSoundEffect(context, it) },
+                    onSavePreset      = { vm.saveCurrentAppearanceAsPreset(it) },
+                    onApplyPreset     = { vm.applyAppearancePreset(it) },
+                    onDeletePreset    = { vm.deleteAppearancePreset(it) },
                     modifier          = Modifier.fillMaxSize()
                 )
                 2 -> ExportPanel(
@@ -693,6 +698,7 @@ private fun AppearancePanel(
     referenceOverlay: com.example.data.ReferenceOverlay,
     backgroundMusic: com.example.data.BackgroundMusicSettings,
     soundEffects: List<com.example.data.SoundEffectClip>,
+    presets: List<com.example.data.AppearancePreset>,
     onAppearance: (AppearanceSettings) -> Unit,
     onAmplitude: (com.example.data.AmplitudeSettings) -> Unit,
     onReferenceOverlay: ((com.example.data.ReferenceOverlay) -> com.example.data.ReferenceOverlay) -> Unit,
@@ -706,10 +712,66 @@ private fun AppearancePanel(
     onSoundEffectVolume: (String, Float) -> Unit,
     onRenameSoundEffect: (String, String) -> Unit,
     onPickBuiltInSoundEffect: (com.example.data.BuiltInSoundEffect) -> Unit,
+    onSavePreset: (String) -> Unit,
+    onApplyPreset: (com.example.data.AppearancePreset) -> Unit,
+    onDeletePreset: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        // Switchable saved appearance presets — save the current look once,
+        // reuse it on any project. Tap-only (apply on tap, delete via a
+        // trailing IconButton), same interaction discipline as the overlay
+        // layer list — no drag-to-reorder, no long-press.
+        Text("Presets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        var showSaveDialog by remember { mutableStateOf(false) }
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            OutlinedButton(onClick = { showSaveDialog = true }, modifier = Modifier.height(32.dp)) {
+                Icon(Icons.Default.Add, null, Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Save current look", fontSize = 12.sp)
+            }
+            presets.forEach { preset ->
+                ElevatedCard(
+                    onClick = { onApplyPreset(preset) },
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 10.dp, end = 2.dp)
+                    ) {
+                        Text(preset.name, fontSize = 12.sp)
+                        IconButton(onClick = { onDeletePreset(preset.id) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, "Delete preset", Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
+        }
+        if (showSaveDialog) {
+            var presetName by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showSaveDialog = false },
+                title = { Text("Save current look as preset") },
+                text = {
+                    OutlinedTextField(
+                        value = presetName, onValueChange = { presetName = it },
+                        label = { Text("Preset name") }, singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (presetName.isNotBlank()) onSavePreset(presetName)
+                        showSaveDialog = false
+                    }) { Text("Save") }
+                },
+                dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } }
+            )
+        }
 
         Text("Colors", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         ColorPickerRow("Figure color", appearance.boneColor) { newColor ->

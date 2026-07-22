@@ -411,6 +411,12 @@ pushed.
   collisions, and a general cubic-bezier easing curve (still just the
   fixed-constant "back" overshoot from Phase 1). None of Phase 2's other
   pieces depend on these.
+- Retroactively subsumed a separate horizon item, "procedural animated
+  shapes with figure-shape interaction" — a `type: "shape"` overlay layer
+  with `parentBone` set (optionally with `physics` too) already IS that: a
+  procedural shape that follows and reacts to the figure. Removed from the
+  horizon list rather than kept as a separate future item once this made
+  it redundant.
 
 **Motion graphics overlay layers, Phase 3 (in-app editor)**
 - Scoped DOWN from the original roadmap description ("full in-app editor
@@ -446,6 +452,25 @@ pushed.
   risks shipping something that looks correct in source but has a real
   on-device bug that only surfaces on an actual build.
 
+**Switchable appearance presets**
+- The presets half of "character variants" (the multi-character-in-one-
+  project half is explicitly deferred — see "On the horizon" below).
+  Save the active project's current `AppearanceSettings` under a name,
+  browse/apply/delete a small library of them, reuse across any project.
+- Storage mirrors `PoseDef`/`PoseEntity` deliberately — same small-named-
+  reusable-library shape (`AppearancePreset`/`AppearancePresetEntity`),
+  same DAO pattern, same repository-method shape. Not a new pattern
+  invented for this.
+- Added `appearance_presets` as a THIRD Room table via a real `Migration(1,
+  2)`, not `.fallbackToDestructiveMigration()` — this app has real
+  projects and a real pose library on the developer's phone now, and
+  destructive fallback would silently wipe both the next time the app
+  opens post-update, just to add one new, unrelated table. The migration
+  itself is a single `CREATE TABLE IF NOT EXISTS`.
+- UI is tap-only (apply on tap, delete via a trailing `IconButton`, save
+  via a standard `AlertDialog` text prompt) — same interaction discipline
+  as the overlay-layer list and timeline strips, no new gesture surface.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -460,12 +485,18 @@ zoom in."
 ## On the horizon (not yet started)
 
 - Low-res preview before full export
-- Amplitude-reactive background motion (separate from the purely
-  JSON-driven scene system above — this would be an opt-in additional
-  layer, not a replacement)
-- Procedural animated shapes with figure-shape interaction
-- Auto-highlight reel generation
-- Character variants
+- Multiple characters within a single project (e.g. a dialogue scene) —
+  the other half of "character variants," deliberately scoped OUT of the
+  presets work above and treated as its own future project rather than
+  folded in here. Touches the core rig architecture directly (RigRenderer/
+  PlaybackEngine/ScriptEvent/StickFigureRig are all built around exactly
+  one figure — one FK rig, one appearance, one mouth-shape/blink system
+  tied to one audio file), unlike the presets feature or the overlay-layer
+  system, both of which were additive on top of the existing single-figure
+  pipeline. Needs its own dedicated scoping pass before any code: per-
+  character pose events, per-character appearance, and critically, a way
+  to know WHICH stretch of audio belongs to which speaker for mouth-shape
+  purposes — none of that exists today even in outline form.
 - A bundled built-in sound effect library — see the correction note
   below; this is more tractable than originally assessed and just hasn't
   been done yet, not blocked.
@@ -497,6 +528,21 @@ zoom in."
 - **Silhouette mode** — redundant with the existing figure-color picker;
   a silhouette is just a figure color with implicit uniform fill, which
   the color picker already achieves without a separate mode/flag.
+- **Amplitude-reactive background motion** — conflicts directly with "AI
+  drives the pipeline" above, which this rejection predates but the same
+  reasoning already covered: the app second-guessing narration loudness
+  to move the background itself is exactly the "loud parts should zoom
+  in" anti-pattern that section warns against. The AI can already produce
+  the same effect with zero new code, since it's given the narration
+  content directly and can write camera/scene changes into the JSON
+  wherever it judges a moment deserves emphasis.
+- **Auto-highlight reel as an app feature** — doesn't need to be one.
+  "Highlight reel" decomposes cleanly into the existing model: trim/splice
+  the best moments of the source narration into a new (shorter) audio
+  file, start a normal new project with that audio, let the AI write a
+  normal script for it. Every piece of that is already fully supported —
+  there's no missing engine capability, just a workflow the prompt docs
+  didn't call out explicitly until now (see PROMPT_CONSIDERATIONS.md).
 
 ## Key architectural facts
 

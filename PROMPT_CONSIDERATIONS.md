@@ -79,14 +79,14 @@ Each object in "events":
   "cameraPanY": number | null,
   "cameraShake": number | null,
   "caption": "string" | null,
-  "captionDurationSec": number,
-  "skyColor": number | null,
-  "groundColor": number | null,
+  "captionDurationSec": number, // how long the caption stays on screen once shown. Default 2.5.
+  "skyColor": number | null,     // ARGB as a decimal integer — see COLOR VALUES below
+  "groundColor": number | null,  // ARGB as a decimal integer — see COLOR VALUES below
   "horizonY": number | null,
   "sceneShape": "string" | null,
   "sceneAtmosphere": "string" | null,
   "soundEffect": "string" | null,
-  "soundEffectVolume": number
+  "soundEffectVolume": number   // playback volume multiplier for soundEffect. Default 1.0.
 }
 
 Only "timeSec" and "pose" are required per event. Omit any field you're
@@ -97,8 +97,8 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
 "endSec" have defaults — omit anything you're not customizing):
 {
   "id": "string",                 // optional label, for your own reference only
-  "type": "string",               // REQUIRED. "text" | "shape"
-  "shape": "string",              // only used when type=="shape": "rect" | "circle" | "line". Default "rect".
+  "type": "string",               // REQUIRED. "text" | "shape" | "particles"
+  "shape": "string",               // only used when type=="shape": "rect" | "circle" | "line" | "arrow". Default "rect".
   "startSec": number,             // REQUIRED. When this layer's enter animation begins.
   "endSec": number,               // REQUIRED. When this layer is fully gone. Must be > startSec.
   "x": number,                    // center X, fraction of canvas width (0..1). Default 0.5.
@@ -113,7 +113,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "fontSize": number,             // fraction of canvas HEIGHT (not width). Default 0.08.
   "bold": boolean,                // Default true.
   "align": "string",              // "left" | "center" | "right". Default "center".
-  "color": number,                 // ARGB, same convention as skyColor/groundColor. Default opaque white.
+  "color": number,                 // ARGB as a decimal integer — see COLOR VALUES below. Default opaque white.
   "gradientColor": number | null,  // if set, top-to-bottom gradient from color to this instead of a flat fill
   "glow": boolean,                 // Default false.
   "glowColor": number | null,      // defaults to color when null
@@ -124,7 +124,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "exitStyle": "string",           // same vocabulary as enterStyle. Default "fade".
   "exitDuration": number,          // seconds. Default 0.35.
   "exitEase": "string",            // Default "ease_in".
-  "opacity": number                // ceiling alpha 0..1 once fully "in". Default 1.
+  "opacity": number,               // ceiling alpha 0..1 once fully "in". Default 1.
 
   // ── Phase 2 (all optional — omit anything you're not using) ──────────
   "parentBone": "string" | null,   // attach to a stick-figure bone tip (see PARENTBONE VALUES). x/y become an OFFSET from the bone.
@@ -197,6 +197,22 @@ overlayLayers[].parentBone: torso | head | upper_arm_r | lower_arm_r |
   are the FIGURE's right/left, mirrored from the viewer's perspective)
 overlayLayers[].physics: none | projectile | bounce
 overlayLayers[].particleShape: circle | rect (only read when type=="particles")
+
+═══════════════════════════════════════════════════════════════════════
+COLOR VALUES (skyColor, groundColor, and every overlayLayers color field)
+═══════════════════════════════════════════════════════════════════════
+Every color is a single 32-bit ARGB value, written as a PLAIN DECIMAL
+INTEGER — NOT a hex literal, NOT a quoted hex string. Standard JSON has
+no hex-literal syntax at all, so writing something like 0xFF3B82F6 or
+"#3B82F6" is INVALID JSON and will fail to parse, breaking the entire
+script. Convert to decimal before writing it out.
+
+The bit layout is AARRGGBB: alpha (usually FF for fully opaque), then
+red, green, blue, each one byte. Worked example — opaque cornflower blue,
+hex FF6495ED, is the decimal integer 4284782061. Fully-opaque colors
+always decode to a positive number at or above 4278190080 (0xFF000000);
+if your conversion gives something smaller or negative, alpha most
+likely wasn't set to FF.
 
 ═══════════════════════════════════════════════════════════════════════
 FIELD BEHAVIOR — this distinction changes how you should use every field
@@ -294,16 +310,22 @@ offset from that bone, not an absolute position. Use parentLayer to move
 several layers together as a unit (e.g. a shape plus its own label).
 Don't set both on the same layer. Don't create long parentLayer chains —
 a couple of levels is normal, anything deeper gets hard to reason about
-and the app caps/warns on very deep or circular chains anyway.
+and the app caps/warns on very deep or circular chains anyway. slot is
+only meaningful for an UNPARENTED layer — on a parented one it still
+resolves to a y value, but that value becomes part of the OFFSET from
+the parent, not an absolute screen region, which rarely reads as
+intended. Use plain x/y on a parented layer instead of slot.
 
 PHYSICS — reach for "projectile" or "bounce" for something that should
 visibly fly/fall/bounce (a tossed object, a dropped item) rather than
 faking motion with enterStyle="slideup"/"slidedown", which are for
 static UI-style entrances, not real physical motion. When physics is set,
 x/y become the STARTING position, not the resting position — physicsVx/
-physicsVy set the initial launch. Pair "bounce" with trail:true sparingly,
-only when the motion itself is a meaningful visual beat, not on every
-physics layer by default.
+physicsVy set the initial launch, and slot is ignored entirely (physics
+owns the position outright, so don't set slot on a physics layer — it
+has no effect). Pair "bounce" with trail:true sparingly, only when the
+motion itself is a meaningful visual beat, not on every physics layer by
+default.
 
 PARTICLES — a "particles" layer is a single BURST (all particles spawn
 at startSec, no continuous stream), good for a short confetti/spark
@@ -451,6 +473,23 @@ matters as much as renderer correctness.
   worth mentioning in the prompt so a typo'd id is understood as a
   no-op, not a guaranteed failure the AI would get feedback on.
 
+### Color values (`skyColor`, `groundColor`, every `overlayLayers` color field)
+- Found during a full audit pass (checking the prompt's claims against
+  the actual Kotlin source rather than trusting earlier prompt text) that
+  this had NEVER been explicitly specified anywhere, despite being used
+  in five different fields across two different objects. The gap that
+  actually mattered: standard JSON has no hex-literal syntax, so an AI
+  writing `0xFF3B82F6` (a very natural thing to write for "ARGB") would
+  produce genuinely invalid JSON and fail to parse the whole script —
+  this wasn't a style nitpick, it was a real correctness risk that just
+  hadn't surfaced yet.
+- The prompt now states the requirement explicitly (plain decimal
+  integer, AARRGGBB byte layout) with one fully-verified worked example.
+  The worked example's decimal value was computed with Python during this
+  audit, not by hand — worth noting because the first hand-computed
+  attempt at the same example was simply wrong, which is exactly the
+  class of mistake a "trust but don't verify" pass would have shipped.
+
 ### `overlayLayers`
 - The one field in this whole schema that is BOUNDED-BOTH-ENDS rather
   than carry-forward or one-shot: every layer requires an explicit
@@ -510,6 +549,21 @@ matters as much as renderer correctness.
   avoids the AI asking for something the schema can't do (e.g. "confetti
   falling continuously for 10 seconds" would need many short bursts,
   not one particles layer with a long window).
+- Two silent interactions found during the audit pass by re-reading
+  `OverlayResolver.resolveOne`'s actual logic rather than trusting memory
+  of having written it: (1) `physics` bypasses the `slot`-lookup branch
+  entirely, so a physics layer with `slot` set just silently ignores it
+  — no warning anywhere, code or prompt, before this pass; (2) on a
+  parented layer (`parentBone`/`parentLayer` set, no physics), `slot`
+  STILL resolves to a y value, but `applyParenting` then treats that
+  value as an OFFSET from the parent rather than an absolute screen
+  position — technically "working" but almost certainly not what anyone
+  setting `slot` would expect. Both are now called out directly in the
+  PARENTBONE/PARENTLAYER and PHYSICS craft-guidance paragraphs. Neither
+  rose to a `ScriptValidator` warning (the checks would be cheap to add
+  — `physics != "none" && slot != null`, `(parentBone != null ||
+  parentLayer != null) && slot != null` — flagged here as a reasonable
+  follow-up, not done as part of this prompt-only audit pass).
 
 ## Workflow notes (not schema — just how to use what already exists)
 

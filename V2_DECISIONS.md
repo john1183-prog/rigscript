@@ -560,3 +560,22 @@ zoom in."
   `.toInt()` — Kotlin (unlike Java) does not implicitly widen an
   out-of-Int-range hex literal to fit; this caught several would-be
   compile errors during the scene/atmosphere rendering work.
+- **`app/debug.keystore` is committed to the repo deliberately.**
+  GitHub Actions runs on a fresh, stateless VM every build with no
+  pre-existing `~/.android/debug.keystore`. Left unconfigured, AGP's
+  default behavior is to auto-generate a brand new random debug keystore
+  whenever that file is missing — meaning every CI build was silently
+  signed with a DIFFERENT key, and Android correctly refuses to install
+  an update signed with a different certificate than what's already on
+  the phone (root cause of needing to uninstall before every single
+  install, since the very first CI build). `app/build.gradle.kts` now
+  explicitly points the `debug` signing config at this committed
+  keystore (conventional `androiddebugkey`/`android` alias+passwords, the
+  same values AGP's own auto-generated debug keystores always use) so
+  every future build, on any machine, signs identically. This is a
+  debug-only key never intended for Play Store distribution, so
+  committing it carries none of the risk a release-signing key would.
+  One-time consequence: the very next install after this fix still needs
+  the uninstall-first treatment one last time (moving off whichever
+  random key the last pre-fix CI build happened to generate onto this
+  new stable one) — every install after that one should update in place.

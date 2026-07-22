@@ -19,6 +19,27 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Fixes "must uninstall before installing the new APK every time":
+    // CI (GitHub Actions) runs on a fresh, stateless VM every build with no
+    // pre-existing ~/.android/debug.keystore. Left unconfigured, AGP's
+    // default behavior is to auto-generate a BRAND NEW random debug
+    // keystore whenever that file is missing -- so every single CI build
+    // was signed with a DIFFERENT key, and Android correctly refuses to
+    // install an update signed with a different certificate than what's
+    // already installed. app/debug.keystore is committed to the repo
+    // specifically so every future build (on any machine, including any
+    // future CI runner) signs with the SAME key. This is a debug-only key
+    // never intended for Play Store distribution, so committing it carries
+    // none of the risk a release-signing key committed to a repo would.
+    signingConfigs {
+        getByName("debug") {
+            storeFile     = file("debug.keystore")
+            storePassword = "android"
+            keyAlias      = "androiddebugkey"
+            keyPassword   = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

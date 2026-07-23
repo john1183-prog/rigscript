@@ -213,7 +213,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
                 captionText            = engine.currentCaption,
                 referenceOverlay       = referenceOverlay,
                 referenceOverlayBitmap = referenceOverlayBitmap,
-                overlays               = engine.currentOverlays)
+                overlays               = engine.currentOverlays,
+                overrides              = engine.currentFigureOverrides)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 

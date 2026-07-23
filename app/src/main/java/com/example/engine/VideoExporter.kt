@@ -338,6 +338,11 @@ object VideoExporter {
                 // canvas-size-dependent and happens per-target inside
                 // RigRenderer.draw itself. See OverlayResolver's doc comment.
                 val timeResolvedOverlays = engine.currentOverlays
+                // Also hoisted for the same reason as timeResolvedOverlays
+                // above — a plain stored-field read (like currentAngles),
+                // not per-target-dependent, so no reason to redo it per
+                // dual-aspect target.
+                val figureOverrides = engine.currentFigureOverrides
 
                 for (t in targets) {
                     renderer.draw(t.canvas, engine.currentAngles, appearance, t.width, t.height,
@@ -359,7 +364,8 @@ object VideoExporter {
                         captionText            = engine.currentCaption,
                         referenceOverlay       = overlay,
                         referenceOverlayBitmap = overlayBitmap,
-                        overlays               = timeResolvedOverlays)
+                        overlays               = timeResolvedOverlays,
+                        overrides              = figureOverrides)
 
                     t.bitmap.getPixels(t.pixels, 0, t.width, 0, 0, t.width, t.height)
                     argbToNV12(t.pixels, t.width, t.height, t.nv12)

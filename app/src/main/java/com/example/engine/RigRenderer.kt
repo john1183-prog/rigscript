@@ -91,12 +91,18 @@ class RigRenderer {
         // (before canvas.restore() below) — unlike captionText/atmosphere,
         // which are deliberately screen-space, these are meant to pan/zoom/
         // shake along with the figure, per V2_DECISIONS.md.
-        overlays: List<TimeResolvedOverlay> = emptyList()
+        overlays: List<TimeResolvedOverlay> = emptyList(),
+        // Per-frame script-driven overrides of otherwise-static AppearanceSettings
+        // fields (figure position/scale, figure/scene colors) — see
+        // FigureOverrides' doc comment. Defaulting to an all-null instance
+        // means a project with no scripted overrides renders exactly as it
+        // did before this feature existed.
+        overrides: FigureOverrides = FigureOverrides()
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
-        val scale   = minDim * appearance.characterScale
-        val rootX   = canvasW * appearance.rootAnchorX
-        val rootY   = canvasH * appearance.rootAnchorY
+        val scale   = minDim * (overrides.scale ?: appearance.characterScale)
+        val rootX   = canvasW * (overrides.x ?: appearance.rootAnchorX)
+        val rootY   = canvasH * (overrides.y ?: appearance.rootAnchorY)
 
         // ── Camera transform (V2, purely AI-JSON-driven — no automatic
         // behaviour derives this from amplitude). Wraps EVERYTHING below —
@@ -122,7 +128,8 @@ class RigRenderer {
         )
 
         // ── Background / scene ───────────────────────────────────────────────
-        val bgColor = if (forExport) appearance.exportBgColor else appearance.previewBgColor
+        val bgColor = overrides.bgColor ?: if (forExport) appearance.exportBgColor else appearance.previewBgColor
+        val groundLineYFraction = overrides.groundLineYFraction ?: appearance.groundLineYFraction
         // Oversized (3x canvas, centred) so a zoomed-in or panned camera never
         // exposes an edge — filling only the literal (0,0,w,h) rect would leave
         // gaps once the transform above is applied. A fully-transparent
@@ -136,13 +143,13 @@ class RigRenderer {
         if (skyColor != null || groundColor != null) {
             val sky    = (skyColor ?: bgColor).toInt()
             val ground = (groundColor ?: bgColor).toInt()
-            val hz     = canvasH * (horizonY ?: appearance.groundLineYFraction)
+            val hz     = canvasH * (horizonY ?: groundLineYFraction)
             backgroundPaint.shader = null
             backgroundPaint.color = sky
             canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, hz, backgroundPaint)
             backgroundPaint.color = ground
             canvas.drawRect(-canvasW.toFloat(), hz, canvasW * 2f, canvasH * 2f, backgroundPaint)
-        } else if (appearance.backgroundStyle == "gradient") {
+        } else if ((overrides.backgroundStyle ?: appearance.backgroundStyle) == "gradient") {
             // Bounded to the VISIBLE frame (0..canvasH), not the oversized
             // safety rect below — CLAMP already extends the start/end colours
             // flat across the oversized margin on its own. Spanning the
@@ -150,9 +157,10 @@ class RigRenderer {
             // visible viewport only ever shows the middle third of the
             // configured colour transition, which was a real bug caught on
             // review (reasoned through the maths, not seen rendered).
+            val gradientEnd = overrides.backgroundGradientColor ?: appearance.backgroundGradientColor
             backgroundPaint.shader = LinearGradient(
                 0f, 0f, 0f, canvasH.toFloat(),
-                bgColor.toInt(), appearance.backgroundGradientColor.toInt(),
+                bgColor.toInt(), gradientEnd.toInt(),
                 Shader.TileMode.CLAMP
             )
             canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, canvasH * 2f, backgroundPaint)
@@ -163,13 +171,13 @@ class RigRenderer {
         }
 
         if (sceneShape != SceneShape.NONE) {
-            drawSceneShape(canvas, canvasW, canvasH, horizonY ?: appearance.groundLineYFraction, sceneShape, appearance, currentTimeSec)
+            drawSceneShape(canvas, canvasW, canvasH, horizonY ?: groundLineYFraction, sceneShape, appearance, currentTimeSec, overrides)
         }
 
-        if (appearance.showGroundLine) {
-            groundPaint.color = appearance.groundLineColor.toInt()
+        if (overrides.showGroundLine ?: appearance.showGroundLine) {
+            groundPaint.color = (overrides.groundLineColor ?: appearance.groundLineColor).toInt()
             groundPaint.strokeWidth = 2f
-            val groundY = canvasH * appearance.groundLineYFraction
+            val groundY = canvasH * groundLineYFraction
             canvas.drawLine(-canvasW.toFloat(), groundY, canvasW * 2f, groundY, groundPaint)
         }
 
@@ -180,13 +188,13 @@ class RigRenderer {
             drawReferenceOverlay(canvas, canvasW, canvasH, referenceOverlay, referenceOverlayBitmap)
         }
 
-        bonePaint.color          = appearance.boneColor.toInt()
+        bonePaint.color          = (overrides.boneColor ?: appearance.boneColor).toInt()
         bonePaint.strokeWidth    = appearance.boneStrokeNormalized * minDim
-        headPaint.color          = appearance.headColor.toInt()
-        jointPaint.color         = appearance.jointColor.toInt()
-        mouthPaint.color         = appearance.mouthColor.toInt()
-        eyePaint.color           = appearance.eyeColor.toInt()
-        eyebrowPaint.color       = appearance.eyebrowColor.toInt()
+        headPaint.color          = (overrides.headColor ?: appearance.headColor).toInt()
+        jointPaint.color         = (overrides.jointColor ?: appearance.jointColor).toInt()
+        mouthPaint.color         = (overrides.mouthColor ?: appearance.mouthColor).toInt()
+        eyePaint.color           = (overrides.eyeColor ?: appearance.eyeColor).toInt()
+        eyebrowPaint.color       = (overrides.eyebrowColor ?: appearance.eyebrowColor).toInt()
         // strokeWidth is NOT set here — it needs to scale with the head's
         // current drawn size (headScaleMultiplier), so it's set per-draw
         // inside drawEyebrows() instead of once with a fixed absolute value.
@@ -194,6 +202,7 @@ class RigRenderer {
         // and disproportionately thin on an enlarged one.
         val jointR               = appearance.jointRadiusNormalized * minDim
         val showJoints           = if (forExport) appearance.showJointsOnExport else appearance.showJoints
+        val headScaleMultiplier  = overrides.headScale ?: appearance.headScaleMultiplier
 
         // ── FK pass ───────────────────────────────────────────────────────────
         for (i in 0 until n) {
@@ -241,13 +250,13 @@ class RigRenderer {
                 // around the neck — head nods and pose offsets are finally
                 // visible. Previously it was drawn at startX/startY (the
                 // origin), where rotation has no effect on position.
-                val r = bone.headNormalizedRadius * scale * appearance.headScaleMultiplier
+                val r = bone.headNormalizedRadius * scale * headScaleMultiplier
                 canvas.drawCircle(endX, endY, r, headPaint)
                 if (appearance.showMouth) {
-                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression, appearance.headScaleMultiplier)
+                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
                 }
                 if (appearance.showEyes) {
-                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, appearance.headScaleMultiplier, appearance)
+                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, headScaleMultiplier, appearance)
                 }
             } else {
                 canvas.drawLine(startX, startY, endX, endY, bonePaint)
@@ -312,9 +321,16 @@ class RigRenderer {
      * [wrapCoord] — drawn across an extended span so a cloud re-entering
      * from the opposite edge is never visible popping in.
      */
-    private fun drawSceneShape(canvas: Canvas, w: Int, h: Int, horizonYFraction: Float, shape: String, appearance: AppearanceSettings, timeSec: Float) {
+    private fun drawSceneShape(canvas: Canvas, w: Int, h: Int, horizonYFraction: Float, shape: String, appearance: AppearanceSettings, timeSec: Float, overrides: FigureOverrides) {
         val horizonPx = h * horizonYFraction
-        sceneShapePaint.color = constrainSceneColor(appearance.boneColor, appearance.boneColor, alpha = 0x66)
+        // Clash-avoidance clamps scene-shape color against the figure's
+        // CURRENT color, not the project's static default — otherwise, once
+        // boneColor becomes script-overridable, this check would keep
+        // constraining against a stale reference the moment an event
+        // changes the figure's actual color, silently defeating the safety
+        // clamp for the rest of the video.
+        val currentBoneColor = overrides.boneColor ?: appearance.boneColor
+        sceneShapePaint.color = constrainSceneColor(currentBoneColor, currentBoneColor, alpha = 0x66)
         when (shape) {
             SceneShape.MOUNTAINS -> {
                 val sway = kotlin.math.sin(timeSec * 0.05f) * w * 0.015f

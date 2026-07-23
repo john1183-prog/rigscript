@@ -47,6 +47,28 @@ object ScriptValidator {
         "linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic_out", "spring", "back"
     )
 
+    private val VALID_BACKGROUND_STYLE = setOf("solid", "gradient")
+
+    /**
+     * Rough, deliberately approximate estimate of how far the figure's limbs/
+     * head typically reach from its root anchor, as a fraction of canvas
+     * min-dimension at figureScale==1.0 — used ONLY to flag "this combination
+     * of figureX/figureY/figureScale probably crops the figure," not as a
+     * precise geometric bound. Getting this exactly right would mean walking
+     * the actual bone chain at render time; this is a cheap heuristic for the
+     * editor's warning list, not a hard constraint anywhere in the renderer.
+     *
+     * Chosen together with [OFF_SCREEN_MARGIN] so the safe range at
+     * figureScale==1.0 works out to roughly 15%-85% (the number actually
+     * quoted to the AI in the prompt's FIGURE TRANSFORM & COLORS guidance —
+     * verified numerically, not by hand, after an earlier pair of constants
+     * turned out to make the check mathematically impossible to satisfy at
+     * any figureScale above ~1.375, which would have made every combination
+     * above that scale warn regardless of position).
+     */
+    private const val APPROX_FIGURE_HALF_EXTENT = 0.25f
+    private const val OFF_SCREEN_MARGIN = 0.1f
+
     /**
      * @param soundEffectIds ids actually present in the active project's sound
      *   effect library — passed in rather than read from anywhere global,
@@ -81,6 +103,27 @@ object ScriptValidator {
                 else
                     "Sound effect id(s) not in this project's library, will not play: ${it.joinToString()}"
             }
+
+        unknownValues(script.events.mapNotNull { it.backgroundStyle }, VALID_BACKGROUND_STYLE)
+            .takeIf { it.isNotEmpty() }
+            ?.let { warnings += "Unknown backgroundStyle value(s), ignored: ${it.joinToString()}" }
+
+        // Off-screen risk — see APPROX_FIGURE_HALF_EXTENT's doc comment for
+        // why this is a heuristic, not exact geometry. Only checked on
+        // events that actually set figureX/figureY/figureScale, since a
+        // script that never touches these can't have introduced the risk.
+        for (event in script.events) {
+            if (event.figureX == null && event.figureY == null && event.figureScale == null) continue
+            val x = event.figureX ?: 0.5f
+            val y = event.figureY ?: 0.5f
+            val extent = APPROX_FIGURE_HALF_EXTENT * (event.figureScale ?: 1f)
+            val margin = OFF_SCREEN_MARGIN
+            val offScreenX = x - extent < -margin || x + extent > 1f + margin
+            val offScreenY = y - extent < -margin || y + extent > 1f + margin
+            if (offScreenX || offScreenY) {
+                warnings += "Event at ${event.timeSec}s: figureX/figureY/figureScale combination will likely crop the figure off-screen (approximate check, not exact)."
+            }
+        }
 
         val times = script.events.map { it.timeSec }.sorted()
         for (i in 1 until times.size) {

@@ -77,6 +77,42 @@ import kotlinx.serialization.Serializable
  * [soundEffectVolume] Multiplier (0..1 typical, not hard-clamped) applied on
  *                    top of the clip's own configured volume for this
  *                    specific trigger. Ignored if [soundEffect] is null.
+ *
+ * ── Figure transform & colors (script-driven [com.example.data.AppearanceSettings] overrides) ──
+ * Carry-forward, interpolated exactly like [cameraZoom]/[cameraPanX] — these
+ * are DISTINCT from the camera fields above: camera fields move a virtual
+ * viewpoint around a figure that stays put; these move/recolor the figure
+ * itself. Null means "no scripted override yet" — [RigRenderer] falls back
+ * to the project's own [com.example.data.AppearanceSettings] value, so a
+ * script that never sets any of these renders exactly as it did before this
+ * feature existed.
+ * [figureX]/[figureY]  Figure root position, fraction of canvas width/height
+ *                    — overrides [com.example.data.AppearanceSettings.rootAnchorX]/[rootAnchorY].
+ * [figureScale]      Overall character scale multiplier — overrides
+ *                    [com.example.data.AppearanceSettings.characterScale]. NOT the
+ *                    same as [cameraZoom]: this changes the figure's own
+ *                    size in the scene; [cameraZoom] changes how much of the
+ *                    whole scene is visible.
+ * [headScale]        Overrides [com.example.data.AppearanceSettings.headScaleMultiplier].
+ * [boneColor]/[headColor]/[jointColor]/[mouthColor]/[eyeColor]/[eyebrowColor]
+ *                    Override the matching [com.example.data.AppearanceSettings] color.
+ * [bgColor]          Overrides BOTH [com.example.data.AppearanceSettings.previewBgColor]
+ *                    AND [exportBgColor] uniformly — the preview/export split
+ *                    is a rendering-target implementation detail the script
+ *                    has no reason to know or care about.
+ * [backgroundGradientColor]/[backgroundStyle] Override the matching
+ *                    [com.example.data.AppearanceSettings] fields. [backgroundStyle] is
+ *                    snap (carry-forward, no interpolation) like [sceneShape],
+ *                    not interpolated like the colors — "solid"|"gradient".
+ *                    Setting [backgroundGradientColor] without also setting
+ *                    [backgroundStyle] to "gradient" (here or on an earlier
+ *                    event) has no visible effect.
+ * [groundLineColor]/[groundLineYFraction]/[showGroundLine] Override the
+ *                    matching [com.example.data.AppearanceSettings] fields.
+ *                    [showGroundLine] is snap like [backgroundStyle], not
+ *                    interpolated (a boolean can't meaningfully lerp).
+ *                    Setting [groundLineColor] without [showGroundLine] set
+ *                    to true (here or earlier) has no visible effect.
  */
 @Serializable
 data class ScriptEvent(
@@ -99,7 +135,25 @@ data class ScriptEvent(
     val sceneShape: String? = null,
     val sceneAtmosphere: String? = null,
     val soundEffect: String? = null,
-    val soundEffectVolume: Float = 1.0f
+    val soundEffectVolume: Float = 1.0f,
+    // Figure transform
+    val figureX: Float? = null,
+    val figureY: Float? = null,
+    val figureScale: Float? = null,
+    val headScale: Float? = null,
+    // Figure & scene colors
+    val boneColor: Long? = null,
+    val headColor: Long? = null,
+    val jointColor: Long? = null,
+    val bgColor: Long? = null,
+    val backgroundGradientColor: Long? = null,
+    val backgroundStyle: String? = null,
+    val groundLineColor: Long? = null,
+    val showGroundLine: Boolean? = null,
+    val groundLineYFraction: Float? = null,
+    val mouthColor: Long? = null,
+    val eyeColor: Long? = null,
+    val eyebrowColor: Long? = null
 )
 
 /**
@@ -150,7 +204,10 @@ data class AnimScript(
                 ScriptEvent(0.0f,  "stand_straight", 0.4f, "ease_out"),
                 ScriptEvent(1.5f,  "wave",           0.6f, "spring", expression = "happy"),
                 ScriptEvent(3.5f,  "explain",        0.7f, "ease_in_out"),
-                ScriptEvent(6.0f,  "present",        0.6f, "ease_out"),
+                ScriptEvent(6.0f,  "present",        0.6f, "ease_out",
+                    // Figure transform (V2) — shifts left and grows slightly,
+                    // distinct from camera zoom. Exercises figureX/figureScale.
+                    figureX = 0.4f, figureScale = 1.15f),
                 ScriptEvent(8.5f,  "point_self",     0.5f, "spring"),
                 ScriptEvent(10.5f, "open_hands",     0.5f, "ease_in_out"),
                 ScriptEvent(12.5f, "think",          0.8f, "ease_in_out", expression = "worried"),
@@ -162,9 +219,15 @@ data class AnimScript(
                 ScriptEvent(19.1f, "walk_a",         0.4f, "ease_in_out"),
                 ScriptEvent(19.9f, "stand_straight", 0.1f, "rigid"),
                 ScriptEvent(21.5f, "celebrate",      0.6f, "elastic_out", expression = "happy",
-                    cameraZoom = 1.18f, cameraShake = 0.4f),
+                    cameraZoom = 1.18f, cameraShake = 0.4f,
+                    // Figure/scene colors (V2) — a warm color shift on the
+                    // celebrate beat. Exercises boneColor + bgColor together.
+                    boneColor = 0xFFFF7043L, bgColor = 0xFF3E2723L),
                 ScriptEvent(24.0f, "stand_straight", 0.8f, "ease_in_out", expression = "normal",
-                    cameraZoom = 1f)
+                    cameraZoom = 1f,
+                    // Reset back to the project defaults for a clean loop —
+                    // matches how cameraZoom is reset to 1f right here too.
+                    figureX = 0.5f, figureScale = 1f, boneColor = 0xFF0000FFL, bgColor = 0xFF1A1A2EL)
             ),
             blinkEvents = listOf(1.3f, 14.7f, 21.4f),
             overlayLayers = listOf(

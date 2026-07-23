@@ -62,6 +62,57 @@ class PlaybackEngine {
     @Volatile var currentSceneAtmosphere: String = SceneAtmosphere.NONE
         private set
 
+    // ── Figure transform + figure/scene colors ──────────────────────────────
+    // Same null-means-no-override rule as the scene fields above — see
+    // FigureOverrides' doc comment for why the project's own
+    // AppearanceSettings, not a hardcoded default, is the fallback.
+    @Volatile var currentFigureX: Float? = null
+        private set
+    @Volatile var currentFigureY: Float? = null
+        private set
+    @Volatile var currentFigureScale: Float? = null
+        private set
+    @Volatile var currentHeadScale: Float? = null
+        private set
+    @Volatile var currentBoneColor: Long? = null
+        private set
+    @Volatile var currentHeadColor: Long? = null
+        private set
+    @Volatile var currentJointColor: Long? = null
+        private set
+    @Volatile var currentBgColor: Long? = null
+        private set
+    @Volatile var currentBackgroundGradientColor: Long? = null
+        private set
+    @Volatile var currentBackgroundStyle: String? = null
+        private set
+    @Volatile var currentGroundLineColor: Long? = null
+        private set
+    @Volatile var currentShowGroundLine: Boolean? = null
+        private set
+    @Volatile var currentGroundLineYFraction: Float? = null
+        private set
+    @Volatile var currentMouthColor: Long? = null
+        private set
+    @Volatile var currentEyeColor: Long? = null
+        private set
+    @Volatile var currentEyebrowColor: Long? = null
+        private set
+
+    /**
+     * Bundles all the figure/scene overrides above into one object for
+     * [RigRenderer.draw] — same reasoning as [FigureOverrides]' own doc
+     * comment: one param to thread through call sites instead of fifteen.
+     */
+    val currentFigureOverrides: FigureOverrides get() = FigureOverrides(
+        x = currentFigureX, y = currentFigureY, scale = currentFigureScale, headScale = currentHeadScale,
+        boneColor = currentBoneColor, headColor = currentHeadColor, jointColor = currentJointColor,
+        bgColor = currentBgColor, backgroundGradientColor = currentBackgroundGradientColor,
+        backgroundStyle = currentBackgroundStyle, groundLineColor = currentGroundLineColor,
+        showGroundLine = currentShowGroundLine, groundLineYFraction = currentGroundLineYFraction,
+        mouthColor = currentMouthColor, eyeColor = currentEyeColor, eyebrowColor = currentEyebrowColor
+    )
+
     /**
      * Caption text active at [currentTimeSec], or null if no caption cue's
      * bounded window currently covers it. See [com.example.data.ScriptEvent.caption]
@@ -383,6 +434,22 @@ class PlaybackEngine {
             currentHorizonY = null
             currentSceneShape = SceneShape.NONE
             currentSceneAtmosphere = SceneAtmosphere.NONE
+            currentFigureX = null
+            currentFigureY = null
+            currentFigureScale = null
+            currentHeadScale = null
+            currentBoneColor = null
+            currentHeadColor = null
+            currentJointColor = null
+            currentBgColor = null
+            currentBackgroundGradientColor = null
+            currentBackgroundStyle = null
+            currentGroundLineColor = null
+            currentShowGroundLine = null
+            currentGroundLineYFraction = null
+            currentMouthColor = null
+            currentEyeColor = null
+            currentEyebrowColor = null
             return
         }
 
@@ -439,6 +506,25 @@ class PlaybackEngine {
         currentHorizonY    = lerpNullableFloat(kf.fromHorizonY, kf.toHorizonY, easedT)
         currentSceneShape      = kf.sceneShape
         currentSceneAtmosphere = kf.sceneAtmosphere
+
+        // ── Figure transform + figure/scene colors, same active-keyframe/
+        // progress basis, reusing the exact same lerp helpers as scene above ──
+        currentFigureX     = lerpNullableFloat(kf.fromFigureX, kf.toFigureX, easedT)
+        currentFigureY     = lerpNullableFloat(kf.fromFigureY, kf.toFigureY, easedT)
+        currentFigureScale = lerpNullableFloat(kf.fromFigureScale, kf.toFigureScale, easedT)
+        currentHeadScale   = lerpNullableFloat(kf.fromHeadScale, kf.toHeadScale, easedT)
+        currentBoneColor   = lerpNullableColor(kf.fromBoneColor, kf.toBoneColor, easedT)
+        currentHeadColor   = lerpNullableColor(kf.fromHeadColor, kf.toHeadColor, easedT)
+        currentJointColor  = lerpNullableColor(kf.fromJointColor, kf.toJointColor, easedT)
+        currentBgColor     = lerpNullableColor(kf.fromBgColor, kf.toBgColor, easedT)
+        currentBackgroundGradientColor = lerpNullableColor(kf.fromBackgroundGradientColor, kf.toBackgroundGradientColor, easedT)
+        currentBackgroundStyle    = kf.backgroundStyle
+        currentGroundLineColor    = lerpNullableColor(kf.fromGroundLineColor, kf.toGroundLineColor, easedT)
+        currentShowGroundLine     = kf.showGroundLine
+        currentGroundLineYFraction = lerpNullableFloat(kf.fromGroundLineYFraction, kf.toGroundLineYFraction, easedT)
+        currentMouthColor  = lerpNullableColor(kf.fromMouthColor, kf.toMouthColor, easedT)
+        currentEyeColor    = lerpNullableColor(kf.fromEyeColor, kf.toEyeColor, easedT)
+        currentEyebrowColor = lerpNullableColor(kf.fromEyebrowColor, kf.toEyebrowColor, easedT)
     }
 
     /**

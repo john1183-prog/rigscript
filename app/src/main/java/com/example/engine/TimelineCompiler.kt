@@ -38,6 +38,25 @@ import com.example.data.PoseDef
  *                  same as [expression].
  * [sceneAtmosphere] Current foreground weather/atmosphere overlay — one of
  *                  [SceneAtmosphere]'s constants. Snap semantics, same as [expression].
+ * [fromFigureX]/[toFigureX], [fromFigureY]/[toFigureY],
+ * [fromFigureScale]/[toFigureScale], [fromHeadScale]/[toHeadScale]
+ *                  Figure position/scale, interpolated like camera zoom.
+ *                  Null-means-no-override, same rule as [fromSkyColor] —
+ *                  BUT unlike camera zoom's universal "1.0 = no-op" default,
+ *                  there's no single correct fallback value here (it depends
+ *                  on the project's own [com.example.data.AppearanceSettings]),
+ *                  which is exactly why these are nullable Float? rather than
+ *                  cameraZoom's non-nullable-with-hardcoded-default pattern.
+ * [fromBoneColor]/[toBoneColor] .. [fromEyebrowColor]/[toEyebrowColor]
+ *                  Figure/scene colors, interpolated like [fromSkyColor],
+ *                  same null-means-no-override rule.
+ * [backgroundStyle]/[showGroundLine] Snap semantics like [sceneShape] — a
+ *                  string/boolean can't meaningfully interpolate. Nullable
+ *                  (unlike [sceneShape]'s non-null NONE sentinel) because
+ *                  there's no natural "off" state distinct from "inherit
+ *                  the project's own setting" for either of these.
+ * [fromGroundLineYFraction]/[toGroundLineYFraction] Interpolated like
+ *                  [fromHorizonY], same null-means-no-override rule.
  */
 data class BakedKeyframe(
     val timeSec: Float,
@@ -62,7 +81,39 @@ data class BakedKeyframe(
     val fromHorizonY: Float?,
     val toHorizonY: Float?,
     val sceneShape: String,
-    val sceneAtmosphere: String
+    val sceneAtmosphere: String,
+    // Figure transform
+    val fromFigureX: Float?,
+    val toFigureX: Float?,
+    val fromFigureY: Float?,
+    val toFigureY: Float?,
+    val fromFigureScale: Float?,
+    val toFigureScale: Float?,
+    val fromHeadScale: Float?,
+    val toHeadScale: Float?,
+    // Figure & scene colors
+    val fromBoneColor: Long?,
+    val toBoneColor: Long?,
+    val fromHeadColor: Long?,
+    val toHeadColor: Long?,
+    val fromJointColor: Long?,
+    val toJointColor: Long?,
+    val fromBgColor: Long?,
+    val toBgColor: Long?,
+    val fromBackgroundGradientColor: Long?,
+    val toBackgroundGradientColor: Long?,
+    val backgroundStyle: String?,
+    val fromGroundLineColor: Long?,
+    val toGroundLineColor: Long?,
+    val showGroundLine: Boolean?,
+    val fromGroundLineYFraction: Float?,
+    val toGroundLineYFraction: Float?,
+    val fromMouthColor: Long?,
+    val toMouthColor: Long?,
+    val fromEyeColor: Long?,
+    val toEyeColor: Long?,
+    val fromEyebrowColor: Long?,
+    val toEyebrowColor: Long?
 )
 
 /**
@@ -142,6 +193,28 @@ object TimelineCompiler {
         var currentSceneShape      = SceneShape.NONE
         var currentSceneAtmosphere = SceneAtmosphere.NONE
 
+        // Figure transform + figure/scene colors — same nullable
+        // carry-forward pattern as sky/ground/horizon above, for the same
+        // reason (see BakedKeyframe's doc comment): no universal "no
+        // override" numeric default exists, since it depends on the
+        // project's own AppearanceSettings.
+        var prevFigureX: Float?      = null
+        var prevFigureY: Float?      = null
+        var prevFigureScale: Float?  = null
+        var prevHeadScale: Float?    = null
+        var prevBoneColor: Long?     = null
+        var prevHeadColor: Long?     = null
+        var prevJointColor: Long?    = null
+        var prevBgColor: Long?       = null
+        var prevBackgroundGradientColor: Long? = null
+        var currentBackgroundStyle: String?    = null
+        var prevGroundLineColor: Long?         = null
+        var currentShowGroundLine: Boolean?    = null
+        var prevGroundLineYFraction: Float?    = null
+        var prevMouthColor: Long?    = null
+        var prevEyeColor: Long?      = null
+        var prevEyebrowColor: Long?  = null
+
         for (event in sorted) {
             val pose = poseResolver(event.pose)
             if (pose == null) {
@@ -168,6 +241,23 @@ object TimelineCompiler {
             if (event.sceneShape != null) currentSceneShape = SceneShape.fromString(event.sceneShape)
             if (event.sceneAtmosphere != null) currentSceneAtmosphere = SceneAtmosphere.fromString(event.sceneAtmosphere)
 
+            val toFigureX     = event.figureX ?: prevFigureX
+            val toFigureY     = event.figureY ?: prevFigureY
+            val toFigureScale = event.figureScale ?: prevFigureScale
+            val toHeadScale   = event.headScale ?: prevHeadScale
+            val toBoneColor   = event.boneColor ?: prevBoneColor
+            val toHeadColor   = event.headColor ?: prevHeadColor
+            val toJointColor  = event.jointColor ?: prevJointColor
+            val toBgColor     = event.bgColor ?: prevBgColor
+            val toBackgroundGradientColor = event.backgroundGradientColor ?: prevBackgroundGradientColor
+            if (event.backgroundStyle != null) currentBackgroundStyle = event.backgroundStyle
+            val toGroundLineColor = event.groundLineColor ?: prevGroundLineColor
+            if (event.showGroundLine != null) currentShowGroundLine = event.showGroundLine
+            val toGroundLineYFraction = event.groundLineYFraction ?: prevGroundLineYFraction
+            val toMouthColor  = event.mouthColor ?: prevMouthColor
+            val toEyeColor    = event.eyeColor ?: prevEyeColor
+            val toEyebrowColor = event.eyebrowColor ?: prevEyebrowColor
+
             result += BakedKeyframe(
                 timeSec         = event.timeSec,
                 duration        = event.duration.coerceAtLeast(0.016f),
@@ -191,7 +281,37 @@ object TimelineCompiler {
                 fromHorizonY    = prevHorizonY,
                 toHorizonY      = toHorizonY,
                 sceneShape      = currentSceneShape,
-                sceneAtmosphere = currentSceneAtmosphere
+                sceneAtmosphere = currentSceneAtmosphere,
+                fromFigureX     = prevFigureX,
+                toFigureX       = toFigureX,
+                fromFigureY     = prevFigureY,
+                toFigureY       = toFigureY,
+                fromFigureScale = prevFigureScale,
+                toFigureScale   = toFigureScale,
+                fromHeadScale   = prevHeadScale,
+                toHeadScale     = toHeadScale,
+                fromBoneColor   = prevBoneColor,
+                toBoneColor     = toBoneColor,
+                fromHeadColor   = prevHeadColor,
+                toHeadColor     = toHeadColor,
+                fromJointColor  = prevJointColor,
+                toJointColor    = toJointColor,
+                fromBgColor     = prevBgColor,
+                toBgColor       = toBgColor,
+                fromBackgroundGradientColor = prevBackgroundGradientColor,
+                toBackgroundGradientColor   = toBackgroundGradientColor,
+                backgroundStyle = currentBackgroundStyle,
+                fromGroundLineColor = prevGroundLineColor,
+                toGroundLineColor   = toGroundLineColor,
+                showGroundLine  = currentShowGroundLine,
+                fromGroundLineYFraction = prevGroundLineYFraction,
+                toGroundLineYFraction   = toGroundLineYFraction,
+                fromMouthColor  = prevMouthColor,
+                toMouthColor    = toMouthColor,
+                fromEyeColor    = prevEyeColor,
+                toEyeColor      = toEyeColor,
+                fromEyebrowColor = prevEyebrowColor,
+                toEyebrowColor    = toEyebrowColor
             )
 
             prevAngles = toAngles.copyOf()
@@ -201,6 +321,20 @@ object TimelineCompiler {
             prevSkyColor = toSkyColor
             prevGroundColor = toGroundColor
             prevHorizonY = toHorizonY
+            prevFigureX = toFigureX
+            prevFigureY = toFigureY
+            prevFigureScale = toFigureScale
+            prevHeadScale = toHeadScale
+            prevBoneColor = toBoneColor
+            prevHeadColor = toHeadColor
+            prevJointColor = toJointColor
+            prevBgColor = toBgColor
+            prevBackgroundGradientColor = toBackgroundGradientColor
+            prevGroundLineColor = toGroundLineColor
+            prevGroundLineYFraction = toGroundLineYFraction
+            prevMouthColor = toMouthColor
+            prevEyeColor = toEyeColor
+            prevEyebrowColor = toEyebrowColor
         }
 
         return result

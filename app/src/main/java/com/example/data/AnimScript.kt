@@ -217,7 +217,12 @@ data class AnimScript(
                     cameraZoom = 1f),
                 ScriptEvent(18.3f, "walk_b",         0.4f, "ease_in_out"),
                 ScriptEvent(19.1f, "walk_a",         0.4f, "ease_in_out"),
-                ScriptEvent(19.9f, "stand_straight", 0.1f, "rigid"),
+                ScriptEvent(19.9f, "stand_straight", 0.1f, "rigid",
+                    // Snap back to center after the walk+shift from the
+                    // present event at 6.0s — before celebrate, so the
+                    // center-slot wordmark at 21.6s doesn't overlap the
+                    // figure (caught by ScriptValidator's new overlap check).
+                    figureX = 0.5f, figureScale = 1f),
                 ScriptEvent(21.5f, "celebrate",      0.6f, "elastic_out", expression = "happy",
                     cameraZoom = 1.18f, cameraShake = 0.4f,
                     // Figure/scene colors (V2) — a warm color shift on the
@@ -225,9 +230,10 @@ data class AnimScript(
                     boneColor = 0xFFFF7043L, bgColor = 0xFF3E2723L),
                 ScriptEvent(24.0f, "stand_straight", 0.8f, "ease_in_out", expression = "normal",
                     cameraZoom = 1f,
-                    // Reset back to the project defaults for a clean loop —
-                    // matches how cameraZoom is reset to 1f right here too.
-                    figureX = 0.5f, figureScale = 1f, boneColor = 0xFF0000FFL, bgColor = 0xFF1A1A2EL)
+                    // Reset colors back to the project defaults for a clean
+                    // loop — figureX/figureScale don't need restating, they
+                    // were already reset at 19.9f and haven't changed since.
+                    boneColor = 0xFF0000FFL, bgColor = 0xFF1A1A2EL)
             ),
             blinkEvents = listOf(1.3f, 14.7f, 21.4f),
             overlayLayers = listOf(

@@ -125,6 +125,42 @@ object ScriptValidator {
             }
         }
 
+        // Overlay-vs-figure overlap — approximate, same spirit as the
+        // off-screen check above. SHAPES only, deliberately — text
+        // overlapping the figure (emphasis text over the subject) is a
+        // common, often-intentional composition; a shape doing the same
+        // reads more like visual clutter, which is the actual mistake this
+        // is meant to catch. Also skips particles (scatter, hard to reason
+        // about statically), physics-driven layers (position is dynamic,
+        // not a fixed point), and parented layers (attachment to the
+        // figure IS the intent, overlap is expected). Resolves the
+        // figure's position/scale via a lightweight carry-forward lookup
+        // on the raw event list rather than a full TimelineCompiler pass —
+        // cheap, and consistent with the off-screen check just above,
+        // which makes the same simplification. Falls back to the
+        // UNIVERSAL default (0.5/0.5/1.0), not the project's actual
+        // AppearanceSettings default, since this validator has no access
+        // to per-project appearance settings — same limitation the
+        // off-screen check already accepts.
+        for (layer in script.overlayLayers) {
+            if (layer.type != "shape" || layer.physics != "none" ||
+                layer.parentBone != null || !layer.parentLayer.isNullOrBlank()) continue
+            if (layer.slot == "upper" || layer.slot == "lower") continue // clearly clear of a centered figure
+
+            val figX = lastCarryForwardValue(script.events, layer.startSec) { it.figureX } ?: 0.5f
+            val figY = lastCarryForwardValue(script.events, layer.startSec) { it.figureY } ?: 0.5f
+            val figScale = lastCarryForwardValue(script.events, layer.startSec) { it.figureScale } ?: 1f
+            val figExtent = APPROX_FIGURE_HALF_EXTENT * figScale
+
+            val layerY = if (layer.slot == "center") 0.5f else layer.y
+            val closeX = kotlin.math.abs(layer.x - figX) < figExtent + 0.08f
+            val closeY = kotlin.math.abs(layerY - figY) < figExtent + 0.08f
+            if (closeX && closeY) {
+                val label = layer.id.ifBlank { "@${layer.startSec}s" }
+                warnings += "Overlay layer '$label' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended."
+            }
+        }
+
         val times = script.events.map { it.timeSec }.sorted()
         for (i in 1 until times.size) {
             if (times[i] - times[i - 1] < 0.01f) {
@@ -272,6 +308,31 @@ object ScriptValidator {
         }
         return false
     }
+
+    /**
+     * Finds the most recent non-null value of some [ScriptEvent] field at or
+     * before [atOrBefore] — a lightweight carry-forward lookup on the RAW
+     * event list, used by the overlay-vs-figure overlap check so it doesn't
+     * need a full [TimelineCompiler.compile] pass just to approximate where
+     * the figure currently is. Doesn't require [events] to be pre-sorted.
+     */
+    private fun <T> lastCarryForwardValue(events: List<ScriptEvent>, atOrBefore: Float, selector: (ScriptEvent) -> T?): T? =
+        events.filter { it.timeSec <= atOrBefore && selector(it) != null }
+            .maxByOrNull { it.timeSec }
+            ?.let(selector)
+
+    /**
+     * Finds the value of a nullable [ScriptEvent] field as carried forward
+     * to [atOrBefore] — the LATEST event at or before that time whose
+     * [selector] returns non-null. Deliberately NOT a full
+     * [TimelineCompiler] pass: this is a cheap approximation for editor
+     * warnings, consistent with every other heuristic in this file, not a
+     * precise runtime resolution.
+     */
+    private fun <T> lastCarryForwardValue(events: List<com.example.data.ScriptEvent>, atOrBefore: Float, selector: (com.example.data.ScriptEvent) -> T?): T? =
+        events.filter { it.timeSec <= atOrBefore && selector(it) != null }
+            .maxByOrNull { it.timeSec }
+            ?.let(selector)
 
     private fun unknownValues(values: List<String>, allowed: Set<String>, caseInsensitive: Boolean = false): List<String> {
         val allowedNorm = if (caseInsensitive) allowed.map { it.lowercase() }.toSet() else allowed

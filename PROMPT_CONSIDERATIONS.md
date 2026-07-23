@@ -86,7 +86,28 @@ Each object in "events":
   "sceneShape": "string" | null,
   "sceneAtmosphere": "string" | null,
   "soundEffect": "string" | null,
-  "soundEffectVolume": number   // playback volume multiplier for soundEffect. Default 1.0.
+  "soundEffectVolume": number,  // playback volume multiplier for soundEffect. Default 1.0.
+
+  // ── Figure transform & colors (all optional, all carry-forward) ──────
+  // DISTINCT from cameraZoom/cameraPanX/cameraPanY above: those move a
+  // virtual viewpoint around a figure that stays put. These move/recolor
+  // the figure and scene themselves.
+  "figureX": number | null,       // figure root position, fraction of canvas width. Overrides the project's rootAnchorX.
+  "figureY": number | null,       // fraction of canvas height. Overrides rootAnchorY.
+  "figureScale": number | null,   // overall character size multiplier. Overrides characterScale. NOT the same as cameraZoom.
+  "headScale": number | null,     // overrides headScaleMultiplier.
+  "boneColor": number | null,     // ARGB as a decimal integer — see COLOR VALUES below.
+  "headColor": number | null,
+  "jointColor": number | null,
+  "bgColor": number | null,       // overrides BOTH preview and export background color uniformly.
+  "backgroundGradientColor": number | null,  // no visible effect unless backgroundStyle is (or becomes) "gradient".
+  "backgroundStyle": "string" | null,        // "solid" | "gradient". Snap (not interpolated).
+  "groundLineColor": number | null,          // no visible effect unless showGroundLine is (or becomes) true.
+  "showGroundLine": boolean | null,          // Snap (not interpolated).
+  "groundLineYFraction": number | null,      // fraction of canvas height.
+  "mouthColor": number | null,
+  "eyeColor": number | null,
+  "eyebrowColor": number | null
 }
 
 Only "timeSec" and "pose" are required per event. Omit any field you're
@@ -182,6 +203,8 @@ sceneAtmosphere: none | rain | snow | fog | stars
   by rapidly changing values; pick the shape/atmosphere for a stretch of
   narration and let it hold via carry-forward.
 
+backgroundStyle: solid | gradient
+
 overlayLayers[].type: text | shape | particles
 overlayLayers[].shape: rect | circle | line | arrow
 overlayLayers[].slot: upper | center | lower
@@ -199,7 +222,9 @@ overlayLayers[].physics: none | projectile | bounce
 overlayLayers[].particleShape: circle | rect (only read when type=="particles")
 
 ═══════════════════════════════════════════════════════════════════════
-COLOR VALUES (skyColor, groundColor, and every overlayLayers color field)
+COLOR VALUES (skyColor, groundColor, boneColor/headColor/jointColor/
+bgColor/backgroundGradientColor/groundLineColor/mouthColor/eyeColor/
+eyebrowColor, and every overlayLayers color field)
 ═══════════════════════════════════════════════════════════════════════
 Every color is a single 32-bit ARGB value, written as a PLAIN DECIMAL
 INTEGER — NOT a hex literal, NOT a quoted hex string. Standard JSON has
@@ -218,7 +243,10 @@ likely wasn't set to FF.
 FIELD BEHAVIOR — this distinction changes how you should use every field
 ═══════════════════════════════════════════════════════════════════════
 CARRY-FORWARD (pose, expression, cameraZoom/PanX/PanY, skyColor,
-groundColor, horizonY, sceneShape, sceneAtmosphere): once set, holds
+groundColor, horizonY, sceneShape, sceneAtmosphere, figureX/figureY/
+figureScale/headScale, boneColor/headColor/jointColor/bgColor/
+backgroundGradientColor/backgroundStyle/groundLineColor/showGroundLine/
+groundLineYFraction/mouthColor/eyeColor/eyebrowColor): once set, holds
 until a LATER event changes it. Only emit a field when it actually
 changes. Re-stating the same value on every event is redundant and makes
 the script harder to reason about, not safer.
@@ -266,6 +294,25 @@ CAMERA — entirely opt-in; if you never set cameraZoom/Pan, the camera
 never moves. Reserve cameraShake for genuine impact moments — overuse
 reads as broken, not impactful.
 
+FIGURE TRANSFORM & COLORS — figureX/figureY/figureScale move and resize
+the FIGURE itself, not the camera's view of it; reach for these when the
+figure should walk to a different part of the frame or visibly grow/
+shrink (e.g. stepping toward the viewer), and reach for cameraZoom/Pan
+when the FRAMING should change but the figure's own place in the scene
+shouldn't. Combining both is fine (a figure moving while the camera also
+pans), but each does a different job — don't use one to fake the other.
+Keep figureX/figureY inside a safe range for the current figureScale;
+the app will warn if a combination looks likely to crop the figure, but
+that warning is a backstop, not your design process — a good rule of
+thumb is to keep the figure's center within roughly 15%-85% of the frame
+at scale 1.0, pulling that range in further at larger scales. Figure/
+scene colors (boneColor, headColor, bgColor, etc.) are for a genuine mood
+or scene shift over the course of the video, not per-event churn — treat
+them with the same restraint as EXPRESSION above. Setting
+backgroundGradientColor or groundLineColor without also enabling
+backgroundStyle:"gradient" or showGroundLine:true (here or on an earlier
+event) has no visible effect — check both are set together.
+
 CAPTIONS — one per distinct spoken beat, duration roughly matching how
 long that beat takes to say aloud. Reserve for moments where on-screen
 text adds real value (key terms, quotes, numbers, names) — not a
@@ -276,8 +323,9 @@ sceneAtmosphere on events where the backdrop should actually change.
 Describe color intent in plain terms via the numeric ARGB value you
 choose (e.g. warm tones for a positive/energetic passage, cool/dim tones
 for a serious or somber one) — the app automatically keeps scene colors
-from visually clashing with the figure, so you don't need to reason
-about contrast against a specific figure color.
+from visually clashing with the figure's CURRENT color (whatever
+boneColor currently is, whether that's the project default or something
+you set), so you don't need to reason about contrast yourself.
 
 SOUND EFFECTS — one-shot at timeSec. ONLY use ids that exist in the
 project's sound effect library, which will be listed to you explicitly
@@ -348,6 +396,12 @@ NEVER DO THIS
 - Never omit startSec or endSec on an overlayLayers entry, and never set
   endSec <= startSec.
 - Never set both parentBone and parentLayer on the same overlayLayers entry.
+- Never invent backgroundStyle values not in the exact list above.
+- Never write a color (skyColor, groundColor, boneColor, or any other
+  color field) as a hex literal or a quoted string — always a plain
+  decimal integer, per COLOR VALUES above.
+- Never set figureX/figureY/figureScale to a combination clearly outside
+  the safe range described in FIGURE TRANSFORM & COLORS above.
 - Never evenly space timestamps ignoring narration content.
 - Never add a caption or camera move on every single event.
 - Never wrap the output in markdown fences or add explanatory text
@@ -575,6 +629,32 @@ matters as much as renderer correctness.
   any other video. Don't try to express "skip to the good parts" inside a
   single script referencing the original full-length audio; the engine
   plays one continuous audio file start to finish.
+
+### `figureX`/`figureY`/`figureScale`/`headScale`/figure & scene colors
+- The prompt frames these against `cameraZoom`/`cameraPanX`/`cameraPanY`
+  explicitly (move the figure vs. move the viewpoint) because that's the
+  distinction most likely to get blurred otherwise — both categories
+  visually "move things around the frame," but for different reasons,
+  and an AI given only the field names with no contrast would have no
+  way to know which one to reach for.
+- The off-screen safe-range guidance ("roughly 15%-85% at scale 1.0,
+  narrower at larger scales") is stated as a rule of thumb, not just a
+  reference to the validator's warning — deliberately, since a warning
+  that only shows up after the fact is a worse experience than getting
+  it right the first time. The number quoted was verified numerically
+  against `ScriptValidator`'s actual constants, which is worth
+  mentioning because the FIRST version of those constants
+  (`APPROX_FIGURE_HALF_EXTENT = 0.4f`, margin `0.05f`) turned out to make
+  the check mathematically impossible to satisfy at any `figureScale`
+  above ~1.375 — verified with a quick Python check before shipping
+  either the code or the prompt text describing it, exactly the kind of
+  cross-check this project has learned the hard way to do rather than
+  trust hand arithmetic or a plausible-looking constant.
+- `backgroundGradientColor`/`groundLineColor` being inert without their
+  enabling flag is called out explicitly in both the field comments AND
+  the craft-guidance paragraph — this is the same shape of mistake as
+  forgetting `soundEffectVolume` needs `soundEffect` set, and it seemed
+  likely enough to recur that it earned the redundancy.
 
 ## Explicit exclusions — never prompt for these
 

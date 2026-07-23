@@ -471,6 +471,69 @@ pushed.
   via a standard `AlertDialog` text prompt) — same interaction discipline
   as the overlay-layer list and timeline strips, no new gesture surface.
 
+**Figure transform & colors promoted to script control**
+- Extends `ScriptEvent` with 15 new carry-forward fields: `figureX`/
+  `figureY`/`figureScale`/`headScale` (overrides `AppearanceSettings`'
+  root position/scale — DISTINCT from `cameraZoom`: this moves/resizes
+  the figure itself, camera moves the viewpoint around it) plus 9 color
+  overrides (`boneColor`/`headColor`/`jointColor`/`bgColor`/
+  `backgroundGradientColor`/`groundLineColor`/`mouthColor`/`eyeColor`/
+  `eyebrowColor`) plus two snap (non-interpolated) toggles
+  (`backgroundStyle`/`showGroundLine`).
+- No new interpolation mechanism — every numeric field reuses
+  `PlaybackEngine`'s existing `lerpNullableFloat`/`lerpNullableColor`
+  helpers directly (already generic, already used for `skyColor`/
+  `horizonY`), and every carry-forward field follows the exact
+  `BakedKeyframe fromX/toX` pattern `cameraZoom`/`skyColor` already
+  established. This was true mechanical extension of a proven pattern,
+  not new design.
+- One real design decision: these use skyColor's NULLABLE
+  null-means-no-override pattern, NOT cameraZoom's non-nullable
+  hardcoded-default pattern. cameraZoom's "1.0 = no zoom" is universally
+  correct regardless of project; figure position/scale/color have no
+  universal correct default — it depends entirely on the project's own
+  `AppearanceSettings`, which is exactly what null falls back to.
+- Bundled into one `FigureOverrides` data class passed as a single new
+  `RigRenderer.draw` parameter, rather than adding 15 individual
+  parameters — same pattern `ReferenceOverlay`/`AmplitudeSettings`
+  already use for bundling related settings into one param.
+- Found and fixed a real latent bug while wiring this in: scene-shape
+  clash-avoidance (`constrainSceneColor`) was clamping against
+  `appearance.boneColor` directly — a static reference that would have
+  gone stale the instant a script event changed the figure's color,
+  silently defeating the safety clamp for the rest of the video.
+  `drawSceneShape` now takes the resolved `overrides` and clamps against
+  the figure's CURRENT color instead.
+- `bgColor` deliberately overrides BOTH `previewBgColor` AND
+  `exportBgColor` uniformly — the preview/export split is a
+  rendering-target implementation detail the script has no reason to
+  know about; from the AI's perspective there's just "the background
+  color."
+- `backgroundGradientColor`/`groundLineColor` are inert unless
+  `backgroundStyle`/`showGroundLine` are ALSO set to enable them
+  (documented directly in `ScriptEvent`'s doc comment and the prompt) —
+  same "setting a value doesn't guarantee a visible effect unless its
+  enabling flag is also set" shape as `soundEffectVolume` being ignored
+  when `soundEffect` is null.
+- `ScriptValidator` gained a real (not just prompt-level) off-screen risk
+  check for `figureX`/`figureY`/`figureScale` combinations, using a
+  deliberately approximate fixed-fraction heuristic for the figure's
+  typical reach from its root anchor (documented in code as an
+  approximation, not exact bone-chain geometry) — flagging the
+  UNDER-approximation risk honestly rather than pretending precision
+  that would require actually walking the bone chain at validation time.
+- Deliberately NOT promoted to script control: stroke width, joint
+  radius, eye spacing/aspect/offset, and the various `show*` toggles
+  besides `showGroundLine` — these read as rendering STYLE, not
+  directorial STAGING, and animating them mid-video would look like a
+  glitch rather than a choice.
+- Figure-vs-overlay-layer overlap detection (as opposed to the
+  figure-vs-canvas-edge check above) was deliberately deferred to the
+  next planned pass (general content/safety guidance for the AI prompt)
+  rather than bolted on here — a meaningfully different, larger check
+  (needs both bounding boxes AND their time windows) that belongs with
+  the rest of that work, not squeezed into this one.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

@@ -384,6 +384,68 @@ falling. Keep particleCount modest (10-30) — this is an accent, not the
 focus of the frame.
 
 ═══════════════════════════════════════════════════════════════════════
+CONTENT TYPE GUIDANCE
+═══════════════════════════════════════════════════════════════════════
+Identify which of these best matches the narration's actual content and
+audience, and let it inform every choice above — pacing, expression
+range, camera energy, overlay density, color mood. Most narration clearly
+fits one category; if it genuinely blends two (e.g. a faith-based
+motivational talk), blend the relevant guidance rather than forcing a
+single label. This section is about HOW to apply the mechanics already
+covered above, not new fields.
+
+EDUCATIONAL/EXPLAINER — captions earn their keep here more than anywhere
+else: use them to reinforce key terms, numbers, and definitions as they're
+said. Overlay text callouts for definitions are welcome; keep physics/
+particles minimal, they read as playful decoration that can undercut a
+serious teaching point. Let "think" poses and brief holds do real work —
+a beat of pause after a complex idea aids retention more than rushing to
+the next point. Reserve "excited"/"wide" for genuine "aha" moments, not
+routine transitions.
+
+RELIGIOUS/SPIRITUAL TEACHING — slower and more deliberate than any other
+category: more hold time between transitions, fewer camera moves —
+stillness reads as reverence, not lack of production value. cameraShake
+essentially never belongs here; it connotes chaos, working against the
+tone. Use "excited"/"wide" sparingly and only for a genuine spiritual
+high point (real joy, not showmanship) — overuse reads as theatrical
+rather than sincere. Overlay text for a quote or reference is valuable;
+prefer calm fade/slideup entrances over pop/zoom/bounce, and avoid
+particle bursts, which skew celebratory-secular rather than reverent.
+Warmer, calmer scene colors and gentle atmosphere (stars, soft fog) can
+support a contemplative mood well.
+
+PRODUCT/BUSINESS EXPLAINER — punchier pacing than educational content;
+this is the one category where heavier overlay use is earned — feature
+callouts (pop/zoom text bursts), shapes/arrows drawing attention to a
+point, even a particle burst on a genuine reveal moment. Reach for
+"excited"/"happy" more liberally; enthusiasm is the point. Camera zoom on
+key benefit statements reads as intentional emphasis here in a way it
+might read as excessive elsewhere. Keep captions to the actual
+stat/feature callouts, not a running transcript.
+
+NARRATIVE/STORYTELLING — pacing should follow the story's own emotional
+beats, not a uniform rhythm — slow builds, quick reveals, whatever the
+moment calls for. This is where the FULL expression range matters most,
+each shift tied to a real beat in the character's arc, not decoration.
+Camera can be the most dynamic of any category here (zoom for tension,
+pan for a reveal, shake for a real impact moment), and physics-driven
+overlay effects are the most narratively justified use of that feature —
+representing an in-world event (something thrown, something magical),
+not just visual decoration. Atmosphere effects tied to mood (rain, stars)
+carry real narrative weight here.
+
+MOTIVATIONAL/INSPIRATIONAL — often structured as a build: start grounded
+("normal"/"think", relatable struggle) and build toward an energetic
+peak ("excited"/"happy"/celebration pose). Bold pop-style overlay text
+for a genuinely quotable line is one of the strongest uses of that
+feature — reserve it for the line that deserves to be read, not every
+sentence. Scene/figure colors shifting warmer as the piece builds toward
+its climax is a natural, earned use of that carry-forward behavior. A
+celebratory particle burst at the actual peak moment (not before) lands
+well; used earlier, it undercuts the build.
+
+═══════════════════════════════════════════════════════════════════════
 NEVER DO THIS
 ═══════════════════════════════════════════════════════════════════════
 - Never include any field for reference overlays, background music, or
@@ -655,6 +717,50 @@ matters as much as renderer correctness.
   the craft-guidance paragraph — this is the same shape of mistake as
   forgetting `soundEffectVolume` needs `soundEffect` set, and it seemed
   likely enough to recur that it earned the redundancy.
+
+### Content type guidance
+- Self-classification (the AI infers content type from the narration
+  itself) rather than an app-side picker, deliberately — adding a picker
+  before "Copy AI Prompt" would mean `buildPromptForClipboard()`
+  conditionally assembling different text per selection, a real app-code
+  change, and a new UI decision to make before every generation. Content
+  type is usually obvious from the narration text itself, so pushing the
+  classification to the AI (which already does every other creative
+  judgment call in this pipeline) costs nothing and adds no new code.
+- Positioned AFTER the mechanics-focused craft guidance, not before —
+  content-type advice is about how to apply tools (pacing, expression,
+  overlays, color) the AI needs to already understand, not a
+  replacement for understanding them.
+- Each type's paragraph is written for CONTRAST, not completeness —
+  the goal is calling out what's actually different about that type
+  (religious teaching's stillness vs. product-explainer's punchier
+  pacing), not re-explaining every mechanic per type, which would mostly
+  repeat the craft guidance already given once.
+
+### Overlay-vs-figure overlap check (`ScriptValidator`)
+- Scoped to `type == "shape"` layers only, after building it broader
+  first and hitting a real false-positive: a `slot: "center"` TEXT layer
+  over a centered figure triggered the check by construction (center
+  overlaps center, trivially), even though text overlapping the figure
+  (emphasis text over the subject) is a completely normal, often
+  intentional composition — caught by testing the check against this
+  project's OWN demo script, which has exactly that layer. A shape doing
+  the same reads as clutter in a way text usually doesn't, which is the
+  actual distinction worth checking for.
+- Resolves the figure's position/scale via a lightweight carry-forward
+  lookup (`lastCarryForwardValue`) directly on the raw event list, not a
+  full `TimelineCompiler` pass — cheap, and it's the same simplification
+  the off-screen check already makes (falls back to a universal 0.5/0.5/
+  1.0 default rather than the project's real `AppearanceSettings`, since
+  `ScriptValidator` has no access to per-project settings).
+- Adding this check immediately surfaced a real interaction in the
+  project's OWN demo script (the `wordmark_celebrate` layer, which
+  turned out to still trigger even after fixing the figure's position
+  reset, since a centered figure and a center-slotted layer overlap by
+  definition) — fixed by narrowing the check's scope rather than by
+  further special-casing the demo, since the narrower scope reflects a
+  real, generalizable distinction (shape vs. text), not a demo-specific
+  workaround.
 
 ## Explicit exclusions — never prompt for these
 

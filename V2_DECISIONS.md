@@ -527,12 +527,47 @@ pushed.
   besides `showGroundLine` — these read as rendering STYLE, not
   directorial STAGING, and animating them mid-video would look like a
   glitch rather than a choice.
-- Figure-vs-overlay-layer overlap detection (as opposed to the
-  figure-vs-canvas-edge check above) was deliberately deferred to the
-  next planned pass (general content/safety guidance for the AI prompt)
-  rather than bolted on here — a meaningfully different, larger check
-  (needs both bounding boxes AND their time windows) that belongs with
-  the rest of that work, not squeezed into this one.
+- Figure-vs-overlay-layer overlap detection was deliberately deferred at
+  the time this feature shipped, to land with the general content/safety
+  guidance work instead — see that section below, which is where it
+  actually landed.
+
+**Content type guidance + overlay-vs-figure overlap check**
+- Added a new CONTENT TYPE GUIDANCE section to the AI prompt: five
+  distinct craft-guidance paragraphs (educational, religious/spiritual,
+  product/business, narrative/storytelling, motivational/inspirational),
+  each written for CONTRAST against the others rather than restating the
+  mechanics already covered once. The AI self-classifies from the
+  narration itself — no app-side content-type picker, no change to
+  `buildPromptForClipboard()` — content type is usually obvious from the
+  narration text, so pushing the classification to the AI (which already
+  makes every other creative judgment call in this pipeline) costs
+  nothing.
+- Added the deferred figure-vs-overlay-layer overlap check to
+  `ScriptValidator`, scoped to `type == "shape"` layers only — narrowed
+  down from an initial broader version after it produced a real
+  false-positive against this project's OWN demo script: a `slot:
+  "center"` TEXT layer over a centered figure trivially overlaps by
+  construction (center overlaps center), but text over the figure
+  (emphasis text over the subject) is a normal, often-intentional
+  composition, unlike a shape doing the same, which reads as clutter.
+  Caught by actually running the new check against the demo rather than
+  reasoning about it in the abstract — the same "verify, don't assume"
+  discipline this project keeps re-learning applies to a validator's own
+  heuristics, not just to prior session summaries.
+- Uses a new `lastCarryForwardValue` helper (lightweight carry-forward
+  lookup directly on the raw event list) rather than a full
+  `TimelineCompiler` pass, matching the same universal-default
+  simplification (0.5/0.5/1.0, not the project's real
+  `AppearanceSettings`) the off-screen check already accepted.
+- Fixing the demo script's own false-positive (the `wordmark_celebrate`
+  layer) surfaced a second, independent bug worth its own mention: the
+  figure's `figureX`/`figureScale` shift from the `present` event at
+  6.0s was never reset before the celebrate beat, meaning the figure sat
+  off-center for the second half of the demo. Fixed by resetting it at
+  the natural point in the pose flow (right after the walk sequence,
+  before celebrating) rather than only at the final event — narratively
+  better AND fixes the overlap, not a trade-off between the two.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

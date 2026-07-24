@@ -164,7 +164,16 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "particleGravity": number,       // optional downward accel on particles. 0 = straight drift (sparks), >0 = arc and fall (confetti). Default 0.
   "particleLifetimeSec": number,   // how long each particle lives before fading. Default 1.0.
   "particleSizeMin": number,       // per-particle radius range, fraction of canvas min-dimension. Default 0.006.
-  "particleSizeMax": number        // Default 0.016.
+  "particleSizeMax": number,       // Default 0.016.
+
+  // ── figure layers (only used when type=="figure") ────────────────────
+  // A supporting, illustrative SECOND figure (e.g. "she told her
+  // friend..."). NOT a co-equal character — no independent blinking, no
+  // audio-driven mouth-sync, no sub-timeline. One static pose/expression
+  // held for the whole startSec/endSec window. Reuses x/y/slot/scale/
+  // color from above for position/size/color — only these two are new:
+  "pose": "string" | null,         // BUILT-IN pose id ONLY (see the pose list below) — NOT the project's custom pose library. Falls back to "stand_straight" if omitted/unrecognized.
+  "expression": "string" | null    // one of the 6 canonical expression values below. Default "normal". Static face only, no lip-sync (no audio channel to sync to).
 }
 
 ═══════════════════════════════════════════════════════════════════════
@@ -205,7 +214,7 @@ sceneAtmosphere: none | rain | snow | fog | stars
 
 backgroundStyle: solid | gradient
 
-overlayLayers[].type: text | shape | particles
+overlayLayers[].type: text | shape | particles | figure
 overlayLayers[].shape: rect | circle | line | arrow
 overlayLayers[].slot: upper | center | lower
 overlayLayers[].enterStyle / exitStyle: fade | pop | zoom | slideup |
@@ -383,6 +392,21 @@ as an outward spark/energy burst; a nonzero value reads as confetti
 falling. Keep particleCount modest (10-30) — this is an accent, not the
 focus of the frame.
 
+FIGURE LAYERS — reach for a "figure" overlay when the narration
+references ANOTHER person and a visual would help ("she told her
+friend...", "the customer said..."), not to build a second speaking
+character — there's no audio channel for it to lip-sync to, so its face
+is a fixed shape for the whole layer, not animated dialogue. Use a
+BUILT-IN pose only (see the pose list below) — a custom pose id will
+just fall back to stand_straight. Give it its own color distinct from
+the main figure so the two read as separate people, and generally a
+smaller scale (it's a supporting element, not competing with the main
+figure for attention) — position it clear of the main figure's own
+space unless deliberate closeness is the point. If the supporting figure
+should change pose or expression, use two adjacent figure layers rather
+than expecting one layer to animate — each one holds a single static
+pose for its own window.
+
 ═══════════════════════════════════════════════════════════════════════
 CONTENT TYPE GUIDANCE
 ═══════════════════════════════════════════════════════════════════════
@@ -464,6 +488,7 @@ NEVER DO THIS
   decimal integer, per COLOR VALUES above.
 - Never set figureX/figureY/figureScale to a combination clearly outside
   the safe range described in FIGURE TRANSFORM & COLORS above.
+- Never use a custom pose id on a "figure" overlay layer — built-in poses only.
 - Never evenly space timestamps ignoring narration content.
 - Never add a caption or camera move on every single event.
 - Never wrap the output in markdown fences or add explanatory text
@@ -761,6 +786,29 @@ matters as much as renderer correctness.
   further special-casing the demo, since the narrower scope reflects a
   real, generalizable distinction (shape vs. text), not a demo-specific
   workaround.
+
+### `overlayLayers[].pose`/`expression` (figure layers)
+- Built-in poses only, deliberately — the same "don't reach into the
+  project's custom pose library" boundary drawn for consistency with
+  `parentBone` only recognizing the fixed 10-bone rig, not project-
+  specific concepts. A wrong pose id here is a silent fallback (to
+  `stand_straight`), not a hard failure, matching how `type`/`shape`/etc
+  already degrade gracefully elsewhere in this schema — but
+  `ScriptValidator` still warns about it, same "graceful degradation
+  doesn't mean invisible" principle as everywhere else.
+- Caught a real bug while implementing `drawSecondaryFigure`, worth
+  recording because of HOW it was caught: the first draft independently
+  recomputed the layer's absolute canvas position and scale inside the
+  new drawing function, duplicating work `drawGmsOverlay` had ALREADY
+  done via `canvas.translate`/`scale` before dispatching to any type
+  handler — meaning position and scale would have been applied twice.
+  Found by re-reading `drawGmsOverlay`'s actual dispatch code before
+  writing the new function, not by assuming the convention from memory
+  of writing `drawGmsShape`/`drawGmsText` earlier in the same session —
+  the exact "verify against the real thing, don't trust your own recent
+  memory of it" discipline this project keeps re-learning, this time
+  applied to code written minutes earlier in the SAME conversation, not
+  a stale handoff from a previous one.
 
 ## Explicit exclusions — never prompt for these
 

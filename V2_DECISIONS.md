@@ -569,6 +569,58 @@ pushed.
   before celebrating) rather than only at the final event — narratively
   better AND fixes the overlap, not a trade-off between the two.
 
+**Character variants — illustrative secondary figure (`overlayLayers` `type: "figure"`)**
+- Deliberately the SMALL half of "character variants" — see the horizon
+  list below for the large half (a true co-equal second speaking
+  character) that's still deferred. This one is explicitly NOT that: no
+  independent blinking, no audio-driven mouth-sync, no sub-timeline —
+  one static pose/expression held for the layer's whole bounded window,
+  same semantics every other overlay layer already has.
+- Multiple simultaneous secondary figures are already possible for free
+  — `overlayLayers` is a list, so however many `type: "figure"` entries
+  the AI adds, however many can be active at once. No special-casing was
+  needed for "more than two characters"; the existing bounded-window
+  list architecture already generalizes.
+- Reuses `x`/`y`/`slot`/`scale`/`color` from the existing schema rather
+  than inventing figure-specific position/size/color fields — only
+  `pose`/`expression` are new. BUILT-IN poses only (not the project's
+  custom pose library) — a deliberate boundary, the same shape as
+  `parentBone` only recognizing the fixed 10-bone rig rather than any
+  project-specific concept; a supporting figure is meant to be generic/
+  illustrative, not a second target for the project's own custom-pose
+  creative investment.
+- Chose the "duplicate, fully-isolated logic" implementation over
+  refactoring `RigRenderer`'s main FK/face-drawing pipeline into a
+  reusable function — explicit tradeoff, made deliberately: the
+  duplicate-logic path touches ZERO existing code in the main figure's
+  (already-shipped-but-unverified-on-device-at-time-of-writing) render
+  path, at the cost of a second, simplified copy of FK-matrix-chaining
+  and face-drawing logic that could in principle drift from the main
+  figure's version over time. `drawSecondaryFigure`/`drawSecondaryFace`
+  have their own dedicated Paint objects and a per-call LOCAL `Matrix`
+  array — nothing shared with `bonePaint`/`headPaint`/the main `matrices`
+  field.
+- The secondary figure's face is a simple, static, expression-driven
+  shape (round/narrow/wide eyes, a curved or straight mouth per
+  expression) — NOT a reuse of the main figure's audio-driven mouth-
+  shape system, since there's no audio channel for a supporting figure
+  to lip-sync to in the first place.
+- Caught a real bug before it shipped: the first draft of
+  `drawSecondaryFigure` independently recomputed the layer's absolute
+  canvas position/scale, duplicating work `drawGmsOverlay` had ALREADY
+  done via `canvas.translate`/`scale` before dispatching to any type
+  handler — meaning position and scale would have been applied twice.
+  Found by re-reading `drawGmsOverlay`'s actual dispatch code before
+  writing the new function, not by trusting memory of the convention
+  from writing `drawGmsShape`/`drawGmsText` earlier in this same
+  session — the same "verify against the real thing" discipline this
+  project keeps re-learning, this time applied to code from minutes
+  earlier in the same conversation, not a stale prior-session handoff.
+- `ScriptValidator` warns (doesn't block) on an unrecognized/custom pose
+  id, distinguishing that case in its message from a plain typo — a
+  custom pose id is a reasonable thing to try that just isn't supported
+  here, not obviously a mistake the way a typo is.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -583,18 +635,19 @@ zoom in."
 ## On the horizon (not yet started)
 
 - Low-res preview before full export
-- Multiple characters within a single project (e.g. a dialogue scene) —
-  the other half of "character variants," deliberately scoped OUT of the
-  presets work above and treated as its own future project rather than
-  folded in here. Touches the core rig architecture directly (RigRenderer/
-  PlaybackEngine/ScriptEvent/StickFigureRig are all built around exactly
-  one figure — one FK rig, one appearance, one mouth-shape/blink system
-  tied to one audio file), unlike the presets feature or the overlay-layer
-  system, both of which were additive on top of the existing single-figure
-  pipeline. Needs its own dedicated scoping pass before any code: per-
-  character pose events, per-character appearance, and critically, a way
-  to know WHICH stretch of audio belongs to which speaker for mouth-shape
-  purposes — none of that exists today even in outline form.
+- A CO-EQUAL second speaking character (its own audio track, independent
+  mouth-sync, own pose timeline) — NOT the same thing as the
+  `overlayLayers` `type: "figure"` supporting-character feature that
+  shipped (see "What's implemented" below), which deliberately covers
+  only the illustrative/descriptive case. A true second speaker still
+  touches the core rig architecture directly (`RigRenderer`/
+  `PlaybackEngine`/`ScriptEvent`/`StickFigureRig` are all built around
+  exactly one figure — one FK rig, one appearance, one mouth-shape/blink
+  system tied to one audio file) and still needs its own dedicated
+  scoping pass: per-character pose events, per-character appearance, and
+  critically, a way to know WHICH stretch of audio belongs to which
+  speaker for mouth-shape purposes — none of that exists today even in
+  outline form.
 - A bundled built-in sound effect library — see the correction note
   below; this is more tractable than originally assessed and just hasn't
   been done yet, not blocked.

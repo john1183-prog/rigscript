@@ -289,6 +289,17 @@ data class AnimScript(
                     particleCount = 24, particleSpeed = 0.4f, particleGravity = 0.9f,
                     particleLifetimeSec = 1.1f, particleSizeMin = 0.008f, particleSizeMax = 0.018f,
                     color = 0xFFFF7043L, gradientColor = 0xFFFFEE58L
+                ),
+                // Character variants — a supporting, illustrative second
+                // figure (e.g. "she told her friend...") alongside the main
+                // one during the explain beat. Built-in pose only, own
+                // color for visual distinction, smaller by default.
+                OverlayLayer(
+                    id = "supporting_figure", type = "figure",
+                    startSec = 3.6f, endSec = 5.8f,
+                    x = 0.8f, y = 0.62f, scale = 0.8f,
+                    pose = "wave", expression = "happy", color = 0xFFFFA726L,
+                    enterStyle = "fade", exitStyle = "fade"
                 )
             )
         )

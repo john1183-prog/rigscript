@@ -53,6 +53,16 @@ class RigRenderer {
     private val gmsTextPaint  = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val gmsGlowPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
+    // "figure" overlay layers (character variants) — deliberately SEPARATE
+    // Paint objects and a per-call LOCAL matrix array (see drawSecondaryFigure),
+    // not shared with the main figure's own bonePaint/headPaint/matrices —
+    // full isolation from the already-working main rendering path was the
+    // explicit point of this design, not an oversight.
+    private val figureBonePaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private val figureHeadPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val figureEyePaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val figureMouthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+
     fun draw(
         canvas: Canvas,
         angles: FloatArray,
@@ -554,6 +564,7 @@ class RigRenderer {
         when (layer.type) {
             "shape" -> drawGmsShape(canvas, w, h, minDim, layer)
             "text"  -> drawGmsText(canvas, w, h, layer)
+            "figure" -> drawSecondaryFigure(canvas, w, h, layer)
         }
 
         canvas.restore()
@@ -686,6 +697,119 @@ class RigRenderer {
         val metrics = gmsTextPaint.fontMetrics
         val baselineOffset = -(metrics.ascent + metrics.descent) / 2f
         canvas.drawText(text, 0f, baselineOffset, gmsTextPaint)
+    }
+
+    /**
+     * Draws a supporting, illustrative second figure for a `type: "figure"`
+     * overlay layer — see [OverlayLayer]'s doc comment for why this is
+     * deliberately simplified and fully self-contained (own local matrix
+     * array, own Paints, no state shared with the main figure's FK pass
+     * earlier in [draw]) rather than refactoring that function to be
+     * reusable. Static pose (no interpolation), static expression-driven
+     * face (no audio-driven mouth, no independent blink schedule).
+     *
+     * Drawn in LOCAL space — [drawGmsOverlay] has ALREADY applied
+     * `canvas.translate(x,y)`/rotate/scale for this layer before
+     * dispatching here, same as [drawGmsShape]/[drawGmsText] — the root
+     * bone sits at local (0,0), not an absolute canvas position computed
+     * again in here. [layer.scale] is likewise already baked into the
+     * active canvas transform, so it is deliberately NOT multiplied in
+     * again below.
+     */
+    private fun drawSecondaryFigure(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
+        val angles = layer.figurePoseAngles ?: return
+        val minDim = min(w, h).toFloat()
+        // Base size at layer.scale==1.0 — deliberately smaller than the
+        // main figure's usual footprint, so a supporting figure reads as
+        // secondary by default rather than competing with the main one.
+        val figScale = minDim * 0.3f
+
+        val bones = StickFigureRig.BONES
+        val n = StickFigureRig.BONE_COUNT
+        val localMatrices = Array(n) { Matrix() }
+        val pts = FloatArray(4)
+
+        val baseColor = layer.color.toInt()
+        val alpha = combinedAlpha(baseColor, layer.opacity)
+        figureBonePaint.color = baseColor
+        figureBonePaint.alpha = alpha
+        figureBonePaint.strokeWidth = 0.06f * figScale
+        figureHeadPaint.color = baseColor
+        figureHeadPaint.alpha = alpha
+
+        var headCx = 0f; var headCy = 0f; var headR = 0f
+
+        for (i in 0 until n) {
+            val bone = bones[i]
+            val matrix = localMatrices[i]
+            if (bone.parentId == null) {
+                matrix.reset()
+                matrix.preRotate(angles[i])
+            } else {
+                val pIdx = StickFigureRig.BONE_INDEX[bone.parentId] ?: continue
+                matrix.set(localMatrices[pIdx])
+                matrix.preTranslate(bones[pIdx].normalizedLength * figScale, 0f)
+                matrix.preRotate(angles[i])
+            }
+
+            val length = bone.normalizedLength * figScale
+            pts[0] = 0f; pts[1] = 0f
+            pts[2] = length; pts[3] = 0f
+            matrix.mapPoints(pts)
+            val startX = pts[0]; val startY = pts[1]
+            val endX = pts[2]; val endY = pts[3]
+
+            if (bone.isHeadBone) {
+                headCx = endX; headCy = endY
+                headR = bone.headNormalizedRadius * figScale
+                canvas.drawCircle(headCx, headCy, headR, figureHeadPaint)
+            } else {
+                canvas.drawLine(startX, startY, endX, endY, figureBonePaint)
+            }
+        }
+
+        if (headR > 0f) drawSecondaryFace(canvas, headCx, headCy, headR, layer.figureExpression, baseColor, alpha)
+    }
+
+    /**
+     * Simple, static, expression-driven face for [drawSecondaryFigure] —
+     * NOT a reuse of the main figure's audio-driven mouth/eye system
+     * (there is no audio channel for a supporting figure to sync to).
+     */
+    private fun drawSecondaryFace(canvas: Canvas, cx: Float, cy: Float, r: Float, expression: Int, baseColor: Int, alpha: Int) {
+        figureEyePaint.color = baseColor
+        figureEyePaint.alpha = alpha
+        val eyeRx = r * 0.12f
+        val eyeRy = when (expression) {
+            Expression.SQUINT -> eyeRx * 0.35f
+            Expression.WIDE, Expression.HAPPY -> eyeRx * 1.3f
+            else -> eyeRx
+        }
+        val eyeOffsetX = r * 0.35f
+        val eyeOffsetY = -r * 0.1f
+        canvas.drawOval(cx - eyeOffsetX - eyeRx, cy + eyeOffsetY - eyeRy, cx - eyeOffsetX + eyeRx, cy + eyeOffsetY + eyeRy, figureEyePaint)
+        canvas.drawOval(cx + eyeOffsetX - eyeRx, cy + eyeOffsetY - eyeRy, cx + eyeOffsetX + eyeRx, cy + eyeOffsetY + eyeRy, figureEyePaint)
+
+        figureMouthPaint.color = baseColor
+        figureMouthPaint.alpha = alpha
+        figureMouthPaint.strokeWidth = r * 0.08f
+        val mouthY = cy + r * 0.4f
+        val mouthHalfW = r * 0.3f
+        when (expression) {
+            Expression.HAPPY -> {
+                val path = Path()
+                path.moveTo(cx - mouthHalfW, mouthY)
+                path.quadTo(cx, mouthY + r * 0.35f, cx + mouthHalfW, mouthY)
+                canvas.drawPath(path, figureMouthPaint)
+            }
+            Expression.ANGRY, Expression.WORRIED -> {
+                val path = Path()
+                path.moveTo(cx - mouthHalfW, mouthY + r * 0.15f)
+                path.quadTo(cx, mouthY - r * 0.2f, cx + mouthHalfW, mouthY + r * 0.15f)
+                canvas.drawPath(path, figureMouthPaint)
+            }
+            else -> canvas.drawLine(cx - mouthHalfW, mouthY, cx + mouthHalfW, mouthY, figureMouthPaint)
+        }
     }
 
     /**

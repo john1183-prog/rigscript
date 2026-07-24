@@ -28,7 +28,11 @@ data class ResolvedOverlay(
     val glowColor: Long,
     val glowRadius: Float,
     /** World-fraction trail sample points, oldest first, current position last. Empty unless [OverlayLayer.trail] is set on a physics-driven layer. */
-    val trailPoints: List<Pair<Float, Float>> = emptyList()
+    val trailPoints: List<Pair<Float, Float>> = emptyList(),
+    /** Only set when [type] == "figure" — resolved bone angles (degrees) for the SAME 10-bone order as [StickFigureRig.BONES]. List<Float>, not FloatArray, so this data class's equals/hashCode stay well-defined. */
+    val figurePoseAngles: List<Float>? = null,
+    /** Only set when [type] == "figure" — see [com.example.engine.Expression]'s constants. */
+    val figureExpression: Int = 0
 )
 
 /**
@@ -66,7 +70,11 @@ data class TimeResolvedOverlay(
     /** Set only for a physics-driven "arrow" shape — overrides rotation with the direction of travel instead of a static angle. */
     val velocityAngleDeg: Float? = null,
     /** Local-space trail sample points (see [ResolvedOverlay.trailPoints]). */
-    val trailPointsLocal: List<Pair<Float, Float>> = emptyList()
+    val trailPointsLocal: List<Pair<Float, Float>> = emptyList(),
+    /** Only set when [type] == "figure" — see [ResolvedOverlay.figurePoseAngles]. */
+    val figurePoseAngles: List<Float>? = null,
+    /** Only set when [type] == "figure" — see [ResolvedOverlay.figureExpression]. */
+    val figureExpression: Int = 0
 )
 
 /**
@@ -179,6 +187,14 @@ object OverlayResolver {
         val finalX = if (usesPhysics) baseX else baseX + offsetX
         val finalY = if (usesPhysics) baseY else baseY + offsetY
 
+        // Figure layers — resolved once per call (cheap: 10 bones), not
+        // cached, same "pure function of time, no persisted state" spirit
+        // as everything else here. BUILT-IN poses only — see OverlayLayer's
+        // doc comment for why a supporting figure deliberately doesn't
+        // reach into the project's custom pose library.
+        val poseAngles: List<Float>? = if (layer.type == "figure") resolveFigurePose(layer.pose) else null
+        val expressionIndex = if (layer.type == "figure") Expression.fromString(layer.expression ?: "normal") else 0
+
         return TimeResolvedOverlay(
             id = layer.id, type = layer.type, shape = layer.shape,
             parentBone = layer.parentBone, parentLayer = layer.parentLayer,
@@ -189,8 +205,22 @@ object OverlayResolver {
             color = layer.color, gradientColor = layer.gradientColor,
             width = layer.width, height = layer.height, radius = layer.radius,
             glow = layer.glow, glowColor = layer.glowColor ?: layer.color, glowRadius = layer.glowRadius,
-            velocityAngleDeg = velocityAngle, trailPointsLocal = trailPts
+            velocityAngleDeg = velocityAngle, trailPointsLocal = trailPts,
+            figurePoseAngles = poseAngles, figureExpression = expressionIndex
         )
+    }
+
+    /**
+     * Resolves a BUILT-IN pose id (only — see [OverlayLayer]'s doc comment
+     * for why) into an absolute bone-angle list, same defaultAngle +
+     * relativeOffset formula [TimelineCompiler.compile] uses for the main
+     * figure. Falls back to "stand_straight" for a null/unrecognized id —
+     * a figure layer is never left with no pose at all.
+     */
+    private fun resolveFigurePose(poseId: String?): List<Float> {
+        val pose = StickFigureRig.BUILT_IN_POSE_INDEX[poseId]
+            ?: StickFigureRig.BUILT_IN_POSE_INDEX["stand_straight"]
+        return StickFigureRig.BONES.map { bone -> bone.defaultAngleDegrees + (pose?.joints?.get(bone.id) ?: 0f) }
     }
 
     private fun animate(style: String, p: Float): FourFloats = when (style) {
@@ -358,7 +388,8 @@ object OverlayResolver {
                 color = p.color, gradientColor = p.gradientColor,
                 width = p.width, height = p.height, radius = p.radius,
                 glow = p.glow, glowColor = p.glowColor, glowRadius = p.glowRadius,
-                trailPoints = p.trailPointsLocal
+                trailPoints = p.trailPointsLocal,
+                figurePoseAngles = p.figurePoseAngles, figureExpression = p.figureExpression
             )
         }
     }

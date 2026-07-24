@@ -33,7 +33,7 @@ object ScriptValidator {
     private val VALID_SCENE_SHAPE = setOf("none", "mountains", "city", "trees", "clouds")
     private val VALID_ATMOSPHERE  = setOf("none", "rain", "snow", "fog", "stars")
 
-    private val VALID_OVERLAY_TYPE  = setOf("text", "shape", "particles")
+    private val VALID_OVERLAY_TYPE  = setOf("text", "shape", "particles", "figure")
     private val VALID_OVERLAY_SHAPE = setOf("rect", "circle", "line", "arrow")
     private val VALID_PARTICLE_SHAPE = setOf("circle", "rect")
     private val VALID_PHYSICS = setOf("none", "projectile", "bounce")
@@ -223,6 +223,18 @@ object ScriptValidator {
         unknownValues(layers.filter { it.type == "particles" }.map { it.particleShape }, VALID_PARTICLE_SHAPE)
             .takeIf { it.isNotEmpty() }
             ?.let { warnings += "Unknown overlay particleShape value(s), treated as circle: ${it.joinToString()}" }
+
+        // Figure layers only support BUILT-IN poses (see OverlayLayer's doc
+        // comment for why) — this check exists specifically because a
+        // custom pose id looks identical to a typo from the outside, and
+        // the difference matters: a typo is a mistake, a custom-pose id is
+        // a reasonable thing to try that just isn't supported here.
+        val knownPoseIds = StickFigureRig.BUILT_IN_POSE_INDEX.keys
+        layers.filter { it.type == "figure" && it.pose != null && it.pose !in knownPoseIds }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "Overlay figure layer(s) with a pose id that isn't a BUILT-IN pose (custom poses aren't supported for figure layers), falls back to stand_straight: ${bad.mapNotNull { it.pose }.distinct().joinToString()}"
+            }
 
         unknownValues(layers.map { it.physics }, VALID_PHYSICS)
             .takeIf { it.isNotEmpty() }

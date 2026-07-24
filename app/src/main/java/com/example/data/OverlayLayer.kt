@@ -33,10 +33,20 @@ import kotlinx.serialization.Serializable
  *                  [com.example.engine.ScriptValidator]'s warning messages
  *                  and as a [parentLayer] target — never otherwise read by
  *                  the renderer.
- * [type]           "text" | "shape" | "particles". See
+ * [type]           "text" | "shape" | "particles" | "figure". See
  *                  [com.example.engine.OverlayResolver]. A "particles"
  *                  layer expands into many individual shape particles at
  *                  resolve time — see the Phase 2 particles section below.
+ *                  A "figure" layer draws a SECOND, simplified stick
+ *                  figure for illustrative/descriptive purposes (e.g. "she
+ *                  told her friend..." — a supporting figure alongside the
+ *                  main one) — see the FIGURE LAYERS section below. Not a
+ *                  co-equal animated character: no independent blinking,
+ *                  no audio-driven mouth-sync, no sub-timeline — one
+ *                  static pose held for the layer's whole window. Reuses
+ *                  [x]/[y]/[slot]/[scale]/[color] for position/size/color;
+ *                  only [pose]/[expression] below are new fields specific
+ *                  to this type.
  * [shape]          Only used when [type] == "shape": "rect" | "circle" |
  *                  "line" | "arrow". "arrow" draws a line with a
  *                  triangular head pointing along [rotationDeg] — or,
@@ -162,6 +172,24 @@ import kotlinx.serialization.Serializable
  *                      randomized lifetime.
  * [particleSizeMin]/[particleSizeMax] Per-particle radius range, fraction
  *                      of canvas min-dimension.
+ *
+ * ── figure layers (only used when [type] == "figure") ───────────────────
+ * A supporting, illustrative second figure — see [type]'s doc comment
+ * above for why this is deliberately NOT a co-equal animated character.
+ * [pose]           One of the BUILT-IN pose ids only (the same 23 poses
+ *                  documented for [com.example.engine.StickFigureRig] —
+ *                  NOT the project's custom pose library, deliberately:
+ *                  custom poses are a per-project creative choice for the
+ *                  MAIN figure, while a supporting figure is meant to be
+ *                  generic/illustrative). Held for this layer's entire
+ *                  [startSec]/[endSec] window — no interpolation, no
+ *                  sub-timeline. Defaults to "stand_straight" if omitted
+ *                  or unrecognized.
+ * [expression]     One of the 6 canonical expression values (see EXACT
+ *                  VALID VALUES). Drives a simple static face (eyes/mouth
+ *                  shape per expression) — there is no audio channel for
+ *                  a supporting figure to lip-sync to, so its mouth is
+ *                  always a fixed shape, not animated.
  */
 @Serializable
 data class OverlayLayer(
@@ -213,5 +241,8 @@ data class OverlayLayer(
     val particleGravity: Float = 0f,
     val particleLifetimeSec: Float = 1.0f,
     val particleSizeMin: Float = 0.006f,
-    val particleSizeMax: Float = 0.016f
+    val particleSizeMax: Float = 0.016f,
+    // Figure layers (only used when type == "figure")
+    val pose: String? = null,
+    val expression: String? = null
 )

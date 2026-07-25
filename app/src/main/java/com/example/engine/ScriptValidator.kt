@@ -322,18 +322,6 @@ object ScriptValidator {
     }
 
     /**
-     * Finds the most recent non-null value of some [ScriptEvent] field at or
-     * before [atOrBefore] — a lightweight carry-forward lookup on the RAW
-     * event list, used by the overlay-vs-figure overlap check so it doesn't
-     * need a full [TimelineCompiler.compile] pass just to approximate where
-     * the figure currently is. Doesn't require [events] to be pre-sorted.
-     */
-    private fun <T> lastCarryForwardValue(events: List<ScriptEvent>, atOrBefore: Float, selector: (ScriptEvent) -> T?): T? =
-        events.filter { it.timeSec <= atOrBefore && selector(it) != null }
-            .maxByOrNull { it.timeSec }
-            ?.let(selector)
-
-    /**
      * Finds the value of a nullable [ScriptEvent] field as carried forward
      * to [atOrBefore] — the LATEST event at or before that time whose
      * [selector] returns non-null. Deliberately NOT a full

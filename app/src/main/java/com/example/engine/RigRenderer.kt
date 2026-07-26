@@ -62,6 +62,13 @@ class RigRenderer {
     private val figureHeadPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val figureEyePaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val figureMouthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    // Reused across frames/calls rather than allocated fresh each time —
+    // same reasoning as the main figure's own `matrices` field above.
+    // Every element gets fully overwritten (.reset() or .set()) before use
+    // each call, so reuse across calls is safe with no stale state.
+    private val secondaryFigureMatrices = Array(StickFigureRig.BONE_COUNT) { Matrix() }
+    // See cachedShrunkTextSize's doc comment.
+    private val textShrinkCache = HashMap<String, Float>()
 
     fun draw(
         canvas: Canvas,
@@ -235,11 +242,13 @@ class RigRenderer {
         // height) as it's computed below, for OverlayResolver.applyParenting
         // to use — same coordinate space overlay layers already use
         // (w * x, h * y), since this whole FK pass runs inside the same
-        // camera-transformed canvas region. Only built when there's
-        // something that might need it — most frames have no overlay
-        // layers at all, and this loop already runs unconditionally.
+        // camera-transformed canvas region. Only built when something
+        // actually needs it (a parentBone-attached layer) — most frames
+        // have no overlay layers at all, or none that attach to a bone,
+        // and this loop already runs unconditionally either way.
+        val needsBoneAnchors = overlays.any { it.parentBone != null }
         val boneAnchors: MutableMap<String, Pair<Float, Float>>? =
-            if (overlays.isNotEmpty()) HashMap(n) else null
+            if (needsBoneAnchors) HashMap(n) else null
 
         for (i in 0 until n) {
             val bone   = bones[i]
@@ -634,12 +643,55 @@ class RigRenderer {
                 canvas.drawPath(head, paint)
                 paint.style = prevStyle
             }
+            "cross" -> {
+                // Traditional Latin-cross proportions: crossbar sits about
+                // a third of the way down from the top, and spans about
+                // 60% of the total height — reuses width/height (arm
+                // thickness / overall height) rather than adding new
+                // fields, same "reuse what's there" approach as every
+                // other shape. Added directly in response to a real
+                // AI-generated script: a single rotated rect can only
+                // ever be one bar, never an actual cross.
+                val thickness = (layer.width ?: 0.03f) * w
+                val totalHeight = (layer.height ?: 0.2f) * h
+                val armSpan = totalHeight * 0.6f
+                val vertHalf = totalHeight / 2f
+                val crossbarY = -vertHalf + totalHeight * 0.32f
+                canvas.drawRect(-thickness / 2f, -vertHalf, thickness / 2f, vertHalf, paint)
+                canvas.drawRect(-armSpan / 2f, crossbarY - thickness / 2f, armSpan / 2f, crossbarY + thickness / 2f, paint)
+            }
             else -> { // "rect"
                 val halfW = (layer.width ?: 0.3f) * w / 2f
                 val halfH = (layer.height ?: 0.15f) * h / 2f
                 canvas.drawRect(-halfW, -halfH, halfW, halfH, paint)
             }
         }
+    }
+
+    /**
+     * Caches the auto-shrink computation from [drawGmsText]'s own doc
+     * comment — a static text layer's final on-screen size can't change
+     * frame-to-frame (text/fontSize/bold and the canvas's own dimensions
+     * are all fixed for that layer's whole lifetime), so recomputing
+     * [Paint.measureText] every single frame it was on screen was pure
+     * waste. Keyed on every input the computation actually depends on;
+     * bounded to guard against unbounded growth in the unlikely event a
+     * script has an unusually large number of distinct text layers.
+     */
+    private fun cachedShrunkTextSize(text: String, fontSizeFraction: Float, bold: Boolean, w: Int, h: Int): Float {
+        val key = "$text|$fontSizeFraction|$bold|$w|$h"
+        textShrinkCache[key]?.let { return it }
+        if (textShrinkCache.size > 200) textShrinkCache.clear()
+
+        var textSize = h * fontSizeFraction
+        gmsTextPaint.textSize = textSize
+        val measuredWidth = gmsTextPaint.measureText(text)
+        val maxWidth = w * 0.92f
+        if (measuredWidth > maxWidth && measuredWidth > 0f) {
+            textSize *= maxWidth / measuredWidth
+        }
+        textShrinkCache[key] = textSize
+        return textSize
     }
 
     private fun drawGmsText(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
@@ -664,15 +716,12 @@ class RigRenderer {
         // confirmed on-device for "AMAZING!" specifically. Measure at the
         // height-driven size first, then shrink proportionally (never
         // enlarge) if it would exceed a safe margin of the actual canvas
-        // width, so it never overflows on EITHER aspect ratio.
-        var textSize = h * layer.fontSize
+        // width, so it never overflows on EITHER aspect ratio. Cached —
+        // see cachedShrunkTextSize's doc comment for why recomputing this
+        // every single frame was pure waste for a layer whose text/
+        // fontSize/bold never change over its own lifetime.
+        val textSize = cachedShrunkTextSize(text, layer.fontSize, layer.bold, w, h)
         gmsTextPaint.textSize = textSize
-        val measuredWidth = gmsTextPaint.measureText(text)
-        val maxWidth = w * 0.92f
-        if (measuredWidth > maxWidth && measuredWidth > 0f) {
-            textSize *= maxWidth / measuredWidth
-            gmsTextPaint.textSize = textSize
-        }
 
         gmsTextPaint.shader = if (layer.gradientColor != null) {
             val halfH = textSize / 2f
@@ -726,7 +775,7 @@ class RigRenderer {
 
         val bones = StickFigureRig.BONES
         val n = StickFigureRig.BONE_COUNT
-        val localMatrices = Array(n) { Matrix() }
+        val localMatrices = secondaryFigureMatrices
         val pts = FloatArray(4)
 
         val baseColor = layer.color.toInt()

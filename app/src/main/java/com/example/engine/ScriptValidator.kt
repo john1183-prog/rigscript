@@ -34,7 +34,7 @@ object ScriptValidator {
     private val VALID_ATMOSPHERE  = setOf("none", "rain", "snow", "fog", "stars")
 
     private val VALID_OVERLAY_TYPE  = setOf("text", "shape", "particles", "figure")
-    private val VALID_OVERLAY_SHAPE = setOf("rect", "circle", "line", "arrow")
+    private val VALID_OVERLAY_SHAPE = setOf("rect", "circle", "line", "arrow", "cross")
     private val VALID_PARTICLE_SHAPE = setOf("circle", "rect")
     private val VALID_PHYSICS = setOf("none", "projectile", "bounce")
     private val VALID_OVERLAY_STYLE = setOf("fade", "pop", "zoom", "slideup", "slidedown", "none")

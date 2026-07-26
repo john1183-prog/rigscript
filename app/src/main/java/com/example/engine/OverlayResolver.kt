@@ -326,15 +326,21 @@ object OverlayResolver {
         if (localT < 0f) return emptyList()
         val out = ArrayList<TimeResolvedOverlay>(layer.particleCount)
         val lifetime = layer.particleLifetimeSec.coerceAtLeast(0.05f)
+        val seed = layer.id.hashCode()
         for (i in 0 until layer.particleCount) {
             if (localT > lifetime) continue
-            // Fresh Random per particle index -- deterministic regardless
-            // of when this is called, no shared generator state to keep
-            // in sync across seeks. See the class doc comment.
-            val rnd = kotlin.random.Random(layer.id.hashCode() * 1_000_003 + i)
-            val angleDeg = rnd.nextFloat() * 360f
-            val speed = layer.particleSpeed * (0.3f + rnd.nextFloat() * 0.7f)
-            val size = layer.particleSizeMin + rnd.nextFloat() * (layer.particleSizeMax - layer.particleSizeMin)
+            // Pure hash function per particle index, NOT a
+            // kotlin.random.Random instance -- a burst active for its
+            // whole lifetime was allocating particleCount Random objects
+            // EVERY FRAME (20-30/frame for a typical burst), the same
+            // class of hot-path allocation this project already fixed
+            // once for springEulerStep. hash01 is still fully
+            // deterministic per (seed, salt) pair, so re-seeking to any
+            // time still reproduces the identical burst -- same guarantee
+            // the Random-based version made, at zero allocation cost.
+            val angleDeg = hash01(seed, i * 3) * 360f
+            val speed = layer.particleSpeed * (0.3f + hash01(seed, i * 3 + 1) * 0.7f)
+            val size = layer.particleSizeMin + hash01(seed, i * 3 + 2) * (layer.particleSizeMax - layer.particleSizeMin)
             val rad = Math.toRadians(angleDeg.toDouble())
             val vx = (kotlin.math.cos(rad) * speed).toFloat()
             val vy = (kotlin.math.sin(rad) * speed).toFloat()
@@ -352,10 +358,36 @@ object OverlayResolver {
                 text = null, fontSize = 0f, bold = false, align = "center",
                 color = layer.color, gradientColor = layer.gradientColor,
                 width = null, height = null, radius = size,
-                glow = layer.glow, glowColor = layer.glowColor ?: layer.color, glowRadius = layer.glowRadius
+                // Glow deliberately NOT inherited per-particle — a burst
+                // with glow:true was triggering particleCount separate
+                // BlurMaskFilter operations every frame (a real cost,
+                // BlurMaskFilter is not cheap), for a visual difference
+                // that's barely distinguishable at typical particle sizes.
+                // Pair a glowing non-particle layer at the same beat if a
+                // glowing burst effect is genuinely wanted.
+                glow = false, glowColor = layer.color, glowRadius = 0f
             )
         }
         return out
+    }
+
+    /**
+     * Deterministic pseudo-random float in [0,1), zero allocation — see
+     * [expandParticles]'s doc comment for why this replaced a per-particle
+     * `kotlin.random.Random` instance. Same (seed, salt) pair always
+     * produces the same result; different salts for the same seed produce
+     * independent-looking values, the same role calling `nextFloat()`
+     * multiple times on a seeded `Random` would have played. Not
+     * cryptographic quality — doesn't need to be, this is cosmetic.
+     */
+    private fun hash01(seed: Int, salt: Int): Float {
+        var h = seed * -0x61c8864f + salt * -0x7a143595 // 0x9E3779B1 / 0x85EBCA6B as signed Int literals, verified numerically before use
+        h = h xor (h ushr 15)
+        h *= 0x2C1B3C6D
+        h = h xor (h ushr 12)
+        h *= 0x297A2D39
+        h = h xor (h ushr 15)
+        return (h ushr 8).toFloat() / 16777216f // top 24 bits -> [0, 1)
     }
 
     // ── Phase 2: parenting ───────────────────────────────────────────────────

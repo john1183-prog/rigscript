@@ -621,6 +621,59 @@ pushed.
   custom pose id is a reasonable thing to try that just isn't supported
   here, not obviously a mistake the way a typo is.
 
+**Performance scan findings (bug/edit/new-feature triage, from real
+on-device testing — a Kotlin compile error AND a real script-authoring
+gap surfaced by an actual AI-generated script) — reported to and
+approved by the person before implementing:**
+- **Bug fixed**: a duplicate `lastCarryForwardValue` declaration in
+  `ScriptValidator.kt` — one used bare (unqualified) `ScriptEvent`, which
+  the file never imports, causing "Symbol not found" that cascaded into
+  a string of confusing secondary errors at every call site. Root cause:
+  added the function a second time without checking the first one (added
+  a session ago) still existed. Swept every other file touched this
+  session for the same class of mistake; found nothing else.
+- **Edits (performance, no behavior change)**:
+  - Particle bursts were allocating a `kotlin.random.Random` object PER
+    PARTICLE, PER FRAME, for as long as the burst was active (20-30
+    allocations/frame for a typical burst) — the exact same class of
+    hot-path allocation this project already fixed once for
+    `springEulerStep`. Replaced with `hash01`, a pure integer hash
+    function (verified numerically for both correct 32-bit constant
+    values — the first hand-conversion of the hex constants to signed
+    Int literals was simply wrong, caught by checking with Python before
+    using it — and for actually producing well-distributed output, not
+    just compiling). Zero allocation, same determinism guarantee.
+  - Particle bursts with `glow: true` were triggering `particleCount`
+    separate `BlurMaskFilter` operations per frame (a real cost) for a
+    visual difference barely distinguishable at typical particle sizes.
+    Glow is no longer inherited per-particle; pair a glowing non-particle
+    layer at the same beat if a glowing burst is genuinely wanted.
+  - `drawSecondaryFigure` was allocating a fresh 10-`Matrix` array every
+    frame it was active — now a reused field, same pattern the main
+    figure's own `matrices` field already used. Safe to reuse across
+    multiple simultaneously-active secondary figures: each call fully
+    overwrites every element before reading it, single-threaded, no
+    cross-call interference possible.
+  - The bone-anchor map in `RigRenderer.draw` was allocated every frame
+    whenever ANY overlay layer existed, even ones that never attach to a
+    bone — now only allocated when at least one layer actually has
+    `parentBone` set.
+  - `drawGmsText`'s auto-shrink `Paint.measureText` call was recomputed
+    every single frame a text layer was on screen, even though the
+    result can't change over that layer's lifetime (text/fontSize/bold
+    and canvas dimensions are all fixed once resolved). Now cached,
+    keyed on exactly those inputs, with a defensive size cap.
+- **New feature**: a `cross` shape (`overlayLayers[].shape`) — directly
+  motivated by a real AI-generated script that tried to build a cross
+  out of a single rotated `rect`, which can only ever be one bar in one
+  orientation, never an actual cross. Reuses `width`/`height` as arm
+  thickness / overall height rather than adding new fields — same
+  "reuse what's there" approach as every other shape. Traditional Latin-
+  cross proportions (crossbar ~1/3 down from the top, spanning ~60% of
+  total height) hardcoded rather than exposed as fields, since a
+  supporting decorative symbol doesn't need per-instance proportion
+  control the way position/size/color do.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

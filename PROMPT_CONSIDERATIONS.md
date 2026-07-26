@@ -119,7 +119,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
 {
   "id": "string",                 // optional label, for your own reference only
   "type": "string",               // REQUIRED. "text" | "shape" | "particles"
-  "shape": "string",               // only used when type=="shape": "rect" | "circle" | "line" | "arrow". Default "rect".
+  "shape": "string",               // only used when type=="shape": "rect" | "circle" | "line" | "arrow" | "cross". Default "rect".
   "startSec": number,             // REQUIRED. When this layer's enter animation begins.
   "endSec": number,               // REQUIRED. When this layer is fully gone. Must be > startSec.
   "x": number,                    // center X, fraction of canvas width (0..1). Default 0.5.
@@ -215,7 +215,7 @@ sceneAtmosphere: none | rain | snow | fog | stars
 backgroundStyle: solid | gradient
 
 overlayLayers[].type: text | shape | particles | figure
-overlayLayers[].shape: rect | circle | line | arrow
+overlayLayers[].shape: rect | circle | line | arrow | cross
 overlayLayers[].slot: upper | center | lower
 overlayLayers[].enterStyle / exitStyle: fade | pop | zoom | slideup |
   slidedown | none
@@ -357,7 +357,12 @@ the app will warn about this, but don't rely on the warning as your
 design process. "pop" reads best paired with enterEase "back" (a slight
 overshoot); "fade" is the safe default for anything you're not sure about.
 Don't caption AND overlay-text the same line redundantly — pick whichever
-better serves that specific moment.
+better serves that specific moment. For a "cross" shape specifically,
+width means arm THICKNESS (not overall span) and height means the
+OVERALL cross height — the crossbar's own length and position are fixed
+proportionally, so you don't need (and can't set) a separate field for
+them. Don't try to build a cross out of a single rotated rect — a
+rotated rect is still only one bar, never two; use "cross" directly.
 
 PARENTBONE / PARENTLAYER — reach for parentBone when something should
 visibly travel WITH the figure (a sparkle at a raised hand, an accent
@@ -809,6 +814,21 @@ matters as much as renderer correctness.
   memory of it" discipline this project keeps re-learning, this time
   applied to code written minutes earlier in the SAME conversation, not
   a stale handoff from a previous one.
+
+### `overlayLayers[].shape` — `cross`
+- Added directly in response to a real AI-generated script, not a
+  speculative addition — the AI tried to build a cross with a single
+  rotated `rect`, which structurally can only ever be one bar, never two.
+  Given religious/spiritual content is one of the five content types the
+  prompt explicitly guides for, and a cross is about as central a symbol
+  as that category has, this seemed worth a real fix rather than a
+  prompt-only workaround telling the AI to layer two rects itself (more
+  error-prone, and asks the AI to do geometry it shouldn't need to).
+- `width`/`height` reused as arm-thickness/overall-height rather than
+  adding shape-specific fields — the crossbar's own length and vertical
+  position are fixed proportionally (traditional Latin-cross ratios),
+  not independently configurable, since a supporting decorative symbol
+  doesn't need the same per-instance control position/size/color get.
 
 ## Explicit exclusions — never prompt for these
 

@@ -94,7 +94,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
 {
   "id": "string",                 // optional label, for your own reference only
   "type": "string",               // REQUIRED. "text" | "shape" | "particles"
-  "shape": "string",               // only used when type=="shape": "rect" | "circle" | "line" | "arrow". Default "rect".
+  "shape": "string",               // only used when type=="shape": "rect" | "circle" | "line" | "arrow" | "cross". Default "rect".
   "startSec": number,             // REQUIRED. When this layer's enter animation begins.
   "endSec": number,               // REQUIRED. When this layer is fully gone. Must be > startSec.
   "x": number,                    // center X, fraction of canvas width (0..1). Default 0.5.
@@ -190,7 +190,7 @@ sceneAtmosphere: none | rain | snow | fog | stars
 backgroundStyle: solid | gradient
 
 overlayLayers[].type: text | shape | particles | figure
-overlayLayers[].shape: rect | circle | line | arrow
+overlayLayers[].shape: rect | circle | line | arrow | cross
 overlayLayers[].slot: upper | center | lower
 overlayLayers[].enterStyle / exitStyle: fade | pop | zoom | slideup |
   slidedown | none
@@ -332,7 +332,12 @@ the app will warn about this, but don't rely on the warning as your
 design process. "pop" reads best paired with enterEase "back" (a slight
 overshoot); "fade" is the safe default for anything you're not sure about.
 Don't caption AND overlay-text the same line redundantly — pick whichever
-better serves that specific moment.
+better serves that specific moment. For a "cross" shape specifically,
+width means arm THICKNESS (not overall span) and height means the
+OVERALL cross height — the crossbar's own length and position are fixed
+proportionally, so you don't need (and can't set) a separate field for
+them. Don't try to build a cross out of a single rotated rect — a
+rotated rect is still only one bar, never two; use "cross" directly.
 
 PARENTBONE / PARENTLAYER — reach for parentBone when something should
 visibly travel WITH the figure (a sparkle at a raised hand, an accent

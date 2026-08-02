@@ -70,6 +70,17 @@ fun EditorScreen(
     val exportedFile by vm.exportedFile.collectAsStateWithLifecycle()
     val messages     = vm.message
 
+    // Preview-only aspect toggle — lets the person see how a script
+    // composes in BOTH orientations before committing to export, without
+    // changing the project's actual configured export.exportSettings.
+    // Initialized from the project's own aspect once (not re-synced after
+    // that), so switching projects doesn't silently reset a toggle the
+    // person is actively using.
+    var previewAspect by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(project?.id) {
+        previewAspect = project?.exportSettings?.aspectRatio ?: "9:16"
+    }
+
     LaunchedEffect(projectId) { vm.loadProject(projectId) }
 
     val snackState = remember { SnackbarHostState() }
@@ -286,13 +297,49 @@ fun EditorScreen(
             // keyboard state, squeezing the script editor into whatever sliver
             // was left once the keyboard appeared, to the point of being fully
             // covered rather than just cramped.
+            // Preview aspect toggle — tap-only segmented control, same
+            // interaction discipline as every other control added this
+            // project (no gestures). Only shown once a project is loaded.
+            if (project != null && selectedTab != 0) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    listOf("9:16" to "Portrait", "16:9" to "Landscape").forEach { (value, label) ->
+                        FilterChip(
+                            selected = previewAspect == value,
+                            onClick = { previewAspect = value },
+                            label = { Text(label, fontSize = 11.sp) },
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
+                }
+            }
+
             Box(
                 Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(if (selectedTab == 0) 0.14f else 0.38f)
-                    .background(Color(project?.appearance?.previewBgColor?.toInt() ?: 0xFF1A1A2E.toInt()))
+                    .background(Color(project?.appearance?.previewBgColor?.toInt() ?: 0xFF1A1A2E.toInt())),
+                contentAlignment = Alignment.Center
             ) {
+                // Aspect-locked inner box — the outer box above still fills
+                // the full available area (so the background doesn't leave
+                // an awkward gap), while this one constrains the actual
+                // rendered content to precisely the toggled aspect ratio,
+                // matching ExportSettings.dimensions()'s corrected width/
+                // height exactly rather than whatever shape happens to be
+                // left over from the surrounding layout.
+                val (aspectW, aspectH) = remember(previewAspect, project?.exportSettings?.resolution) {
+                    com.example.data.ExportSettings(
+                        aspectRatio = previewAspect ?: "9:16",
+                        resolution  = project?.exportSettings?.resolution ?: "1080p"
+                    ).dimensions()
+                }
                 AndroidView(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(aspectW.toFloat() / aspectH.toFloat(), matchHeightConstraintsFirst = true),
                     factory = { ctx ->
                         AnimationSurfaceView(ctx).also { sv ->
                             surfaceView = sv
@@ -824,6 +871,9 @@ private fun AppearancePanel(
         }
         LabeledSlider("Head size", appearance.headScaleMultiplier, 0.5f..2.0f) {
             onAppearance(appearance.copy(headScaleMultiplier = it))
+        }
+        LabeledSlider("Neck length", appearance.neckLengthMultiplier, 0.8f..2.5f) {
+            onAppearance(appearance.copy(neckLengthMultiplier = it))
         }
         LabeledSwitch("Show eyes", appearance.showEyes) {
             onAppearance(appearance.copy(showEyes = it))

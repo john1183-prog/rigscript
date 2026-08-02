@@ -191,6 +191,19 @@ class RigRenderer {
             drawSceneShape(canvas, canvasW, canvasH, horizonY ?: groundLineYFraction, sceneShape, appearance, currentTimeSec, overrides)
         }
 
+        // Stars specifically (not rain/snow/fog — see drawAtmosphere's own
+        // doc comment for why those stay screen-space) are drawn HERE,
+        // inside the camera transform and before the figure's own FK pass
+        // below — a background-sky element like stars reading as being IN
+        // FRONT of the figure was a real, reported bug. Panning/zooming
+        // the camera now moves the stars along with the rest of the scene,
+        // which is the correct behavior for a sky element (unlike rain/
+        // snow, which are meant to feel like they're between the camera
+        // and the whole scene, not part of it).
+        if (sceneAtmosphere == SceneAtmosphere.STARS) {
+            drawStars(canvas, canvasW, canvasH, currentTimeSec)
+        }
+
         if (overrides.showGroundLine ?: appearance.showGroundLine) {
             groundPaint.color = (overrides.groundLineColor ?: appearance.groundLineColor).toInt()
             groundPaint.strokeWidth = 2f
@@ -252,7 +265,14 @@ class RigRenderer {
 
         for (i in 0 until n) {
             val bone   = bones[i]
-            val length = bone.normalizedLength * scale
+            // neckLengthMultiplier only affects the head bone's own length
+            // (how far the head CENTER sits above the torso tip) — it has
+            // no children, so this can't cascade into any other bone's
+            // position. See AppearanceSettings.neckLengthMultiplier's doc
+            // comment for why this needed to be separate from
+            // headScaleMultiplier (which controls head SIZE, not position).
+            val lengthMultiplier = if (bone.id == "head") appearance.neckLengthMultiplier else 1f
+            val length = bone.normalizedLength * scale * lengthMultiplier
 
             pts[0] = 0f;    pts[1] = 0f       // bone origin (local)
             pts[2] = length; pts[3] = 0f       // bone tip   (local)
@@ -301,12 +321,15 @@ class RigRenderer {
         canvas.restore()
 
         // ── Screen-space layers (unaffected by camera zoom/pan/shake) ─────────
-        // Atmosphere is a whole-viewport weather/mood filter — panning or
-        // zooming the camera shouldn't make rain streaks slide relative to the
-        // frame, so it's drawn after restore(), same reasoning as the caption
-        // being a fixed subtitle rather than something that scrolls with the
-        // scene.
-        if (sceneAtmosphere != SceneAtmosphere.NONE) {
+        // Rain/snow/fog are a whole-viewport weather filter — panning or
+        // zooming the camera shouldn't make rain streaks slide relative to
+        // the frame, so these stay screen-space, same reasoning as the
+        // caption being a fixed subtitle rather than something that
+        // scrolls with the scene. STARS is handled separately, in
+        // world-space before the figure — see that call site's own
+        // comment for why a background-sky element needed different
+        // treatment.
+        if (sceneAtmosphere != SceneAtmosphere.NONE && sceneAtmosphere != SceneAtmosphere.STARS) {
             drawAtmosphere(canvas, canvasW, canvasH, sceneAtmosphere, currentTimeSec)
         }
         if (!captionText.isNullOrBlank()) {
@@ -472,20 +495,28 @@ class RigRenderer {
                     canvas.drawCircle(x, y, 3f, atmospherePaint)
                 }
             }
-            SceneAtmosphere.STARS -> {
-                atmospherePaint.color = 0xDDFFFFFFL.toInt()
-                val stars = 40
-                for (i in 0 until stars) {
-                    // Fixed pseudo-random grid — stars don't move, just a light static-time twinkle.
-                    val x = ((i * 6151) % w.coerceAtLeast(1)).toFloat()
-                    val y = ((i * 3079) % (h / 2).coerceAtLeast(1)).toFloat()
-                    val twinkle = 0.5f + 0.5f * kotlin.math.sin(timeSec * 2f + i)
-                    atmospherePaint.alpha = (140 + 100 * twinkle).toInt().coerceIn(0, 255)
-                    canvas.drawCircle(x, y, 2f, atmospherePaint)
-                }
-                atmospherePaint.alpha = 255
-            }
         }
+    }
+
+    /**
+     * Stars specifically — split out from [drawAtmosphere] because it's
+     * called from a DIFFERENT place in [draw] (world-space, before the
+     * figure) than rain/snow/fog (screen-space, after). See the call
+     * site's own comment for why. Same fixed pseudo-random grid + gentle
+     * twinkle as before this split, unchanged.
+     */
+    private fun drawStars(canvas: Canvas, w: Int, h: Int, timeSec: Float) {
+        atmospherePaint.color = 0xDDFFFFFFL.toInt()
+        val stars = 40
+        for (i in 0 until stars) {
+            // Fixed pseudo-random grid — stars don't move, just a light static-time twinkle.
+            val x = ((i * 6151) % w.coerceAtLeast(1)).toFloat()
+            val y = ((i * 3079) % (h / 2).coerceAtLeast(1)).toFloat()
+            val twinkle = 0.5f + 0.5f * kotlin.math.sin(timeSec * 2f + i)
+            atmospherePaint.alpha = (140 + 100 * twinkle).toInt().coerceIn(0, 255)
+            canvas.drawCircle(x, y, 2f, atmospherePaint)
+        }
+        atmospherePaint.alpha = 255
     }
 
     /**

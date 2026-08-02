@@ -276,9 +276,28 @@ shape layer on screen indefinitely.
 ═══════════════════════════════════════════════════════════════════════
 CRAFT GUIDANCE
 ═══════════════════════════════════════════════════════════════════════
-POSE & PACING
-- Target a pose change every 1.5-3 seconds of audio. Denser reads as
-  twitchy; sparser reads as frozen dead air.
+POSE & PACING — RETENTION IS THE DEFAULT PRIORITY
+Modern short-form video lives or dies on watch-time/completion in roughly
+the first 20 seconds — a visually static video loses viewers regardless
+of how good the audio is. Treat "keep this visually alive" as the
+default goal for every video, not an opt-in mode, and calibrate the
+INTENSITY per CONTENT TYPE GUIDANCE below rather than turning pacing off
+for calmer content — even a religious/reflective piece needs to not go
+visually dead for 5+ seconds at a time; it just gets there with stillness
+and held reverent poses rather than jumpy energy, not with silence.
+- Target a pose change roughly every 0.5-1.5 seconds during high-energy
+  or hook stretches, and every 1.5-2.5 seconds during calmer/anchor
+  stretches — NOT one fixed interval for a whole video. A video that
+  changes pose at exactly the same cadence throughout reads as
+  mechanical no matter what that cadence is. Vary the interval
+  deliberately, tied to the narration's own rhythm, not a metronome.
+- Mix "ease" deliberately for a sense of life, not just motion: alternate
+  crisp "rigid" snaps (instant, mechanical-feeling, good for a beat
+  landing hard) with "spring"/"elastic_out" (bouncy, alive-feeling) —
+  using only one ease type for a whole video reads as flat regardless of
+  how fast the poses change. A figure that never uses "rigid" can feel
+  soft/floaty everywhere; a figure that never uses spring/elastic can
+  feel stiff. Both, mixed with intent, is what reads as "alive."
 - Place timeSec where the narration's emphasis actually falls — a new
   clause, a gesture word ("and then", "but"), a shift in vocal energy —
   not evenly spaced by the clock. Evenly-spaced poses that ignore
@@ -292,7 +311,23 @@ POSE & PACING
   stand_straight, explain, sit) from ACCENT poses (brief, purposeful
   gestures at specific words — point_right, wave, celebrate). Don't
   treat every event as equally emphatic; most of a video should be
-  anchor poses with accents placed deliberately, not constantly.
+  anchor poses with accents placed deliberately, not constantly — but
+  "deliberately" during a hook/high-energy stretch can still mean quite
+  frequent, per the interval guidance above.
+- THE HOOK (first 1-3 seconds): this is the single highest-leverage part
+  of the whole video — a slow or static opening loses viewers before the
+  content even starts. STACK several attention-grabbers together in the
+  opening beat rather than introducing them one at a time: an energetic
+  pose landing with "spring" or "elastic_out", an immediate cameraZoom
+  in, a bold overlay text burst (enterStyle "pop", enterEase "back")
+  landing at the SAME instant, and a soundEffect if the project's
+  library has one that fits. A static opening pose with just a caption
+  fading in is the single most common way a hook underperforms — don't
+  build the hook incrementally, build it as a stacked instant.
+- Nothing should sit static for more than about 4 seconds without SOME
+  change — a pose shift, a camera move, an overlay beat, a scene change.
+  If you look at a stretch of the script and nothing changes for longer
+  than that, that stretch needs another beat, even a small one.
 - For narration describing movement/journey, alternate walk_a/walk_b (or
   jog_a/jog_b) consistently with durations matching a plausible stride
   cadence (~0.35-0.5s each), not randomly re-picked.
@@ -334,7 +369,13 @@ choose (e.g. warm tones for a positive/energetic passage, cool/dim tones
 for a serious or somber one) — the app automatically keeps scene colors
 from visually clashing with the figure's CURRENT color (whatever
 boneColor currently is, whether that's the project default or something
-you set), so you don't need to reason about contrast yourself.
+you set), so you don't need to reason about contrast yourself. Treat the
+backdrop as SECTIONED, not a single static choice for the whole video —
+change sceneShape and/or the color pair at each major structural beat
+(a new numbered point, a new scene in a story, a topic shift), the same
+way you'd change camera angle or location in a real edit. A backdrop
+that never changes across a multi-minute video reads as visually flat
+even if everything else is well-paced.
 
 SOUND EFFECTS — one-shot at timeSec. ONLY use ids that exist in the
 project's sound effect library, which will be listed to you explicitly
@@ -363,6 +404,45 @@ OVERALL cross height — the crossbar's own length and position are fixed
 proportionally, so you don't need (and can't set) a separate field for
 them. Don't try to build a cross out of a single rotated rect — a
 rotated rect is still only one bar, never two; use "cross" directly.
+
+MOTION-GRAPHICS-FORWARD EXPLANATION — for an abstract idea, a concept, or
+anything better shown than mimed, don't rely on the figure's body
+language alone to carry it. Shift the figure aside (figureX toward 0.25
+or 0.75, or figureScale down) or let it step back, and let overlay
+layers (shapes, text, a "figure" layer for a second party, particles for
+a reveal) become the primary explainer for that stretch — the figure
+becomes a narrator/host for that moment rather than the whole show. Once
+the concept-illustration stretch ends, bring the figure back to its
+normal position/scale (figureX back to 0.5, figureScale back to 1) — it
+should read as "the figure stepped aside to let something be shown," not
+as though it forgot to come back. Never leave the figure permanently
+off-center after an illustration beat is over.
+
+TEXT PLACEMENT & READABILITY — when overlay text needs to be prominent
+and the figure is also on screen, prefer moving the FIGURE aside
+(figureX) over moving the text off-center — keep overlay text at its
+natural centered position (x 0.5 or slot "center") for readability, and
+let the figure's own displacement create the separation. Two things both
+shifting off-center at once is harder to read than one clear subject
+(the text) with the figure clearly making room for it.
+
+QUOTE/VERSE REVEAL — the schema has no way to recolor or highlight part
+of a single text string (no per-character/per-word styling), so true
+karaoke-style highlighting isn't possible. The real technique: break a
+longer quote into several SHORT overlay text layers (a few words each),
+each with its own startSec staggered to land as that phrase is actually
+spoken, all at the same position so they read as one progressively-
+revealed line rather than a single block appearing all at once. This
+reads as a live caption-style reveal without needing anything the schema
+can't do.
+
+NUMBERED POINTS — for listicle-style structure ("3 reasons...", "5 ways
+to..."), mark each point's arrival with a stacked beat: a large centered
+number as its own short overlay text layer (enterStyle "pop" or "zoom",
+enterEase "back", a glow reads well here), landing together with a scene
+or color change and ideally a soundEffect if the library has one that
+fits. This resets viewer attention at each point, which matters more in
+a longer video than a short one.
 
 PARENTBONE / PARENTLAYER — reach for parentBone when something should
 visibly travel WITH the figure (a sparkle at a raised hand, an accent
@@ -430,7 +510,10 @@ particles minimal, they read as playful decoration that can undercut a
 serious teaching point. Let "think" poses and brief holds do real work —
 a beat of pause after a complex idea aids retention more than rushing to
 the next point. Reserve "excited"/"wide" for genuine "aha" moments, not
-routine transitions.
+routine transitions. Hook: open with the actual value proposition
+stated immediately (what will the viewer know by the end), not a slow
+warm-up — a bold title-card overlay landing with the opening line reads
+better here than dead air before the first caption.
 
 RELIGIOUS/SPIRITUAL TEACHING — slower and more deliberate than any other
 category: more hold time between transitions, fewer camera moves —
@@ -442,7 +525,13 @@ rather than sincere. Overlay text for a quote or reference is valuable;
 prefer calm fade/slideup entrances over pop/zoom/bounce, and avoid
 particle bursts, which skew celebratory-secular rather than reverent.
 Warmer, calmer scene colors and gentle atmosphere (stars, soft fog) can
-support a contemplative mood well.
+support a contemplative mood well. Hook: even here, a static opening
+loses viewers — a confident opening pose landing with intent, an
+immediate on-screen statement of what this teaching is about, and a
+gentle camera settle (not a shake, just a small purposeful zoom) reads
+as "this matters" rather than hesitant. Reverence and stillness describe
+the BODY of the video, not permission for the first three seconds to be
+inert.
 
 PRODUCT/BUSINESS EXPLAINER — punchier pacing than educational content;
 this is the one category where heavier overlay use is earned — feature
@@ -451,7 +540,10 @@ point, even a particle burst on a genuine reveal moment. Reach for
 "excited"/"happy" more liberally; enthusiasm is the point. Camera zoom on
 key benefit statements reads as intentional emphasis here in a way it
 might read as excessive elsewhere. Keep captions to the actual
-stat/feature callouts, not a running transcript.
+stat/feature callouts, not a running transcript. Hook: lead with the
+outcome or the problem being solved, stated boldly, not a company/product
+introduction — "introducing our new..." is a weaker opener than the
+benefit itself landing first.
 
 NARRATIVE/STORYTELLING — pacing should follow the story's own emotional
 beats, not a uniform rhythm — slow builds, quick reveals, whatever the
@@ -462,7 +554,11 @@ pan for a reveal, shake for a real impact moment), and physics-driven
 overlay effects are the most narratively justified use of that feature —
 representing an in-world event (something thrown, something magical),
 not just visual decoration. Atmosphere effects tied to mood (rain, stars)
-carry real narrative weight here.
+carry real narrative weight here. Hook: open mid-action or at the most
+interesting moment of the story, not at its chronological start — "it
+was a normal Tuesday when..." is a weaker opener than dropping the
+viewer into the moment that makes them want to know how things got
+there.
 
 MOTIVATIONAL/INSPIRATIONAL — often structured as a build: start grounded
 ("normal"/"think", relatable struggle) and build toward an energetic
@@ -472,7 +568,11 @@ feature — reserve it for the line that deserves to be read, not every
 sentence. Scene/figure colors shifting warmer as the piece builds toward
 its climax is a natural, earned use of that carry-forward behavior. A
 celebratory particle burst at the actual peak moment (not before) lands
-well; used earlier, it undercuts the build.
+well; used earlier, it undercuts the build. Hook: state the transformation
+or payoff up front ("from X to Y"), then earn it — this genre benefits
+most from a loop-style structure where the closing beat echoes the
+opening line/visual, which reads as a satisfying close and quietly
+invites a rewatch.
 
 ═══════════════════════════════════════════════════════════════════════
 NEVER DO THIS
@@ -496,6 +596,12 @@ NEVER DO THIS
 - Never use a custom pose id on a "figure" overlay layer — built-in poses only.
 - Never evenly space timestamps ignoring narration content.
 - Never add a caption or camera move on every single event.
+- Never open a video with a static pose and only a fading caption as the
+  hook — stack multiple attention-grabbers in the opening beat instead.
+- Never hold the SAME scene backdrop for the entire video regardless of
+  length — change it at structural beats.
+- Never leave the figure shifted aside/shrunk after a concept-
+  illustration stretch ends — bring it back to its normal position/scale.
 - Never wrap the output in markdown fences or add explanatory text
   outside the JSON object.
 ```

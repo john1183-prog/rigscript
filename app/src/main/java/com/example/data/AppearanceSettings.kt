@@ -64,6 +64,18 @@ data class AppearanceSettings(
     val characterScale: Float = 1.0f,
     /** Head circle radius multiplier, independent of [characterScale] — lets a stylised bigger/smaller head ratio without rescaling the whole body. 1.0 = default (headNormalizedRadius as authored on the bone). */
     val headScaleMultiplier: Float = 1.5f,
+    /**
+     * How far the head sits above the torso tip, as a multiplier on the
+     * head bone's own authored length — DISTINCT from [headScaleMultiplier],
+     * which controls head SIZE, not POSITION. Both the head and the arms
+     * share the same parent point (the torso tip); the head bone's raw
+     * authored length (0.05) plus [headScaleMultiplier]'s enlarged radius
+     * (0.048 * 1.5 by default) meant the bottom of the head circle sat
+     * almost exactly at the shoulder line, visually covering the mouth —
+     * a real reported issue. 1.0 = the bone's raw authored length (the old,
+     * too-tight default); the default here is deliberately higher.
+     */
+    val neckLengthMultiplier: Float = 1.6f,
     /** Root anchor as fraction of canvas width (0..1). */
     val rootAnchorX: Float = 0.50f,
     /** Root anchor as fraction of canvas height (0..1). */

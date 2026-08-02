@@ -8,8 +8,9 @@ import kotlinx.serialization.Serializable
  * [aspectRatio] "9:16" (portrait/Reels) or "16:9" (landscape/presentations).
  *               Ignored when [dualAspectExport] is true — see that field's
  *               doc comment.
- * [resolution]  "360p", "720p", or "1080p" — height is the named dimension;
- *               width is derived from the aspect ratio. "360p" exists
+ * [resolution]  "360p", "720p", or "1080p" — names the SHORT side of the
+ *               frame (not always height — see [dimensions]'s doc comment
+ *               for why that distinction matters). "360p" exists
  *               primarily for [com.example.viewmodel.MainViewModel.exportPreview]'s
  *               quick low-res preview render, not as a normal export choice —
  *               though nothing stops a person from picking it directly if a
@@ -46,18 +47,31 @@ data class ExportSettings(
 ) {
     /** Resolved pixel dimensions for the export canvas, for a given [aspect] (defaults to this settings' own [aspectRatio]). */
     fun dimensions(aspect: String = aspectRatio): Pair<Int, Int> {
-        val height = when (resolution) {
+        // The resolution setting names the SHORT side, not always the
+        // height — a bug fixed here: this used to fix height to the named
+        // value regardless of orientation, so "1080p" portrait came out
+        // 608x1080 (width computed FROM a wrongly-fixed height) instead of
+        // the intended 1080x1920. That wasn't just a resolution shortfall:
+        // RigRenderer scales the figure from the canvas's MINIMUM
+        // dimension, so portrait (minDim 608) and landscape (minDim 1080)
+        // produced visibly different figure sizes/positions from the same
+        // script — the "figure elevates in portrait" symptom traced back
+        // to this.
+        val short = when (resolution) {
             "360p" -> 360
             "720p" -> 720
             else   -> 1080
         }
-        val width = when (aspect) {
-            "9:16"  -> (height * 9) / 16
-            "16:9"  -> (height * 16) / 9
-            "1:1"   -> height
-            else    -> (height * 9) / 16
+        val (width, height) = when (aspect) {
+            "9:16" -> short to (short * 16) / 9
+            "16:9" -> (short * 16) / 9 to short
+            "1:1"  -> short to short
+            else   -> short to (short * 16) / 9
         }
-        // Width must be even for H.264
-        return Pair(if (width % 2 == 0) width else width + 1, height)
+        // Both dimensions must be even for H.264, not just width.
+        return Pair(
+            if (width % 2 == 0) width else width + 1,
+            if (height % 2 == 0) height else height + 1
+        )
     }
 }

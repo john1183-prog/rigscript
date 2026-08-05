@@ -203,6 +203,30 @@ pushed.
   against `BackgroundMusicPlayer.durationMs` when looping, clamp/pause
   when not. The export path's own mixing was independently re-verified
   correct and didn't need a change.
+- **Streaming mix (fixed a later session)**: `AudioMixer` used to build a
+  full-length mixed `ShortArray` (`mix()`), overlay sound effects into it
+  in place (`overlayAt()`), then hand the whole thing to `encodeAac()`,
+  which made a SECOND full-length copy as a `ByteArray` before feeding
+  the encoder. For a 10-minute stereo project that's ~400MB peak (narration
+  + music + mixed array + encoder's byte copy, all resident at once) — a
+  real OOM risk on low-end devices exactly for the longer-form educational/
+  religious-teaching content this app targets. `mix()`, `overlayAt()`, and
+  `encodeAac()` were replaced by a single `encodeMixedStreaming()` that
+  mixes narration+music, overlays any sound effects intersecting that
+  range, and feeds the AAC encoder — all per 4096-frame chunk, never
+  materializing the full mixed output or a duplicate encoder-input copy.
+  Cuts peak memory roughly in half (~200MB for the same 10-minute case).
+  `decodeToPcm` itself is UNCHANGED — narration and music are each still
+  fully decoded to PCM before mixing starts (one file's buffer at a time,
+  released before the next), since that's a smaller, bounded cost per
+  file and a true streaming *decode* would mean making the resampler
+  stateful across chunk boundaries — real risk of introducing audible
+  clicks at chunk seams with no on-device way to verify by listening.
+  Verified byte-for-byte identical output against the old two-pass
+  approach via a standalone numeric check (multiple chunk sizes, effects
+  crossing chunk boundaries, effects running past the mix's end, looped
+  music) before this was written into the file — not verified on-device,
+  same caveat as the rest of this object.
 
 **Sound effects**
 - Per-project sound effect library (`SoundEffectClip`: `id`/`filePath`/

@@ -7,6 +7,8 @@ import android.text.TextPaint
 import com.example.data.AppearanceSettings
 import com.example.data.ReferenceOverlay
 import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.cos
 
 /**
  * Forward-kinematic stick-figure renderer.
@@ -128,8 +130,16 @@ class RigRenderer {
         // character scaling in place against a fixed backdrop.
         val zoom = cameraZoom.coerceAtLeast(0.1f)
         val shakeMag = cameraShakeIntensity.coerceIn(0f, 1f) * minDim * 0.03f
-        val shakeX = if (shakeMag > 0f) (kotlin.random.Random.nextFloat() * 2f - 1f) * shakeMag else 0f
-        val shakeY = if (shakeMag > 0f) (kotlin.random.Random.nextFloat() * 2f - 1f) * shakeMag else 0f
+        // Deterministic pseudo-random jitter as a function of currentTimeSec —
+        // NOT kotlin.random.Random, which would make preview and the exported
+        // file diverge on every frame with shake active (export re-samples at
+        // its own timestamps via seekToWithAmplitude, so a stateful/live RNG
+        // can never match what preview showed at the same timeSec). Two
+        // different frequencies for X/Y so the offset isn't just diagonal.
+        // Same "seed everything from timeSec, never from a live RNG" principle
+        // PlaybackEngine already applies to blink/fidget scheduling.
+        val shakeX = if (shakeMag > 0f) sin(currentTimeSec * 137.5f) * shakeMag else 0f
+        val shakeY = if (shakeMag > 0f) (cos(currentTimeSec * 93.7f) ) * shakeMag else 0f
 
         canvas.save()
         canvas.scale(zoom, zoom, canvasW / 2f, canvasH / 2f)

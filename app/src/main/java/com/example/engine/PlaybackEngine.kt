@@ -453,14 +453,27 @@ class PlaybackEngine {
             return
         }
 
-        // Find the active keyframe
-        var activeKf: BakedKeyframe? = null
-        for (kf in timeline) {
-            if (timeSec >= kf.timeSec) activeKf = kf
-            else break
+        // Find the active keyframe — binary search for the rightmost keyframe
+        // whose timeSec <= timeSec. Safe because TimelineCompiler always hands
+        // us `timeline` pre-sorted ascending by timeSec (see its sortedBy call),
+        // and this must handle BOTH sequential tick() calls and random-access
+        // seekTo()/seekToWithAmplitude() calls correctly — a forward-only
+        // cursor would break on scrubbing backward, so binary search (stateless,
+        // correct for any access pattern) is used instead of an advancing index.
+        var lo = 0
+        var hi = timeline.size - 1
+        var activeIdx = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (timeline[mid].timeSec <= timeSec) {
+                activeIdx = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
         }
 
-        val kf = activeKf ?: timeline.first()
+        val kf = if (activeIdx >= 0) timeline[activeIdx] else timeline.first()
         val elapsed  = (timeSec - kf.timeSec).coerceAtLeast(0f)
         val t        = (elapsed / kf.duration).coerceIn(0f, 1f)
 

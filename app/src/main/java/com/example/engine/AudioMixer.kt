@@ -20,11 +20,17 @@ import java.nio.ByteOrder
  * fast verbatim-copy path instead of going through here.
  *
  * Everything here is synchronous/blocking (same convention as
- * [VideoExporter]'s video encoder loop) and holds the full mixed PCM buffer
- * in memory rather than streaming it — acceptable for this app's target
- * length (short-form narrated content, minutes not hours), but a real
- * memory-usage constraint worth knowing about if it's ever pointed at much
- * longer input: at 44.1kHz stereo 16-bit, roughly 176KB/second of audio.
+ * [VideoExporter]'s video encoder loop). [decodeToPcm] still holds one
+ * input file's full PCM in memory at a time (narration, then music, then
+ * each sound effect — never more than one "full length" buffer plus the
+ * bounded set of already-converted ones needed for mixing); at 44.1kHz
+ * stereo 16-bit that's roughly 176KB/second per file. What's NOT held in
+ * memory anymore is the full MIXED output or a duplicate encoder-input
+ * copy of it — [encodeMixedStreaming] mixes, overlays sound effects, and
+ * feeds the AAC encoder in small chunks, so those two largest buffers
+ * (previously the dominant cost for long projects) never exist. See
+ * [encodeMixedStreaming]'s own doc comment for the before/after memory
+ * comparison.
  * NOT yet verified against an actual on-device build — this is the
  * highest-risk unverified piece added so far because it's the first code
  * path exercising the audio decode/encode side of MediaCodec at all
@@ -73,22 +79,26 @@ object AudioMixer {
         val narrationConverted = narrationPcm?.let { convert(it, MIX_SAMPLE_RATE, MIX_CHANNELS) }
         val musicConverted = musicPcm?.let { convert(it, MIX_SAMPLE_RATE, MIX_CHANNELS) }
 
-        val totalFrames = (totalSec * MIX_SAMPLE_RATE).toInt().coerceAtLeast(1)
-        val mixed = mix(
-            narration = narrationConverted, narrationVol = narrationVolume,
-            music = musicConverted, musicVol = musicVolume,
-            loopMusic = loopMusic, totalFrames = totalFrames, channels = MIX_CHANNELS
-        )
-
-        for (trigger in soundEffects) {
+        // Sound effect clips are short (a handful of seconds at most) — decoded
+        // and converted up front, once each, same as before. What changes below
+        // is that these are no longer overlaid into one giant in-memory mixed
+        // array; each chunk looks up which clips overlap ITS OWN sample range
+        // as it's produced.
+        val convertedEffects: List<Pair<SoundEffectTrigger, ShortArray>> = soundEffects.mapNotNull { trigger ->
             val clipPcm = runCatching { decodeToPcm(trigger.filePath) }.getOrElse {
                 Log.e(TAG, "Failed to decode sound effect for mixing: ${trigger.filePath}", it); null
-            } ?: continue
-            val clipConverted = convert(clipPcm, MIX_SAMPLE_RATE, MIX_CHANNELS)
-            overlayAt(mixed, clipConverted, (trigger.timeSec * MIX_SAMPLE_RATE).toInt(), MIX_CHANNELS, trigger.volume)
+            } ?: return@mapNotNull null
+            trigger to convert(clipPcm, MIX_SAMPLE_RATE, MIX_CHANNELS)
         }
 
-        return encodeAac(mixed, MIX_SAMPLE_RATE, MIX_CHANNELS)
+        val totalFrames = (totalSec * MIX_SAMPLE_RATE).toInt().coerceAtLeast(1)
+
+        return encodeMixedStreaming(
+            narration = narrationConverted, narrationVol = narrationVolume,
+            music = musicConverted, musicVol = musicVolume,
+            loopMusic = loopMusic, totalFrames = totalFrames, channels = MIX_CHANNELS,
+            soundEffects = convertedEffects
+        )
     }
 
     // ── Decode ───────────────────────────────────────────────────────────────
@@ -231,55 +241,35 @@ object AudioMixer {
         return out
     }
 
-    /**
-     * Adds [clip] into [dest] (in place) starting at [startFrame], clamped to
-     * the 16-bit range and to [dest]'s own bounds — a clip whose trigger time
-     * is near the end of the video is simply truncated, not an error.
-     */
-    private fun overlayAt(dest: ShortArray, clip: ShortArray, startFrame: Int, channels: Int, volume: Float) {
-        val startSample = (startFrame.coerceAtLeast(0)) * channels
-        var i = 0
-        while (i < clip.size && startSample + i < dest.size) {
-            val destIdx = startSample + i
-            val mixedSample = dest[destIdx] + (clip[i] * volume).toInt()
-            dest[destIdx] = mixedSample.coerceIn(-32768, 32767).toShort()
-            i++
-        }
-    }
-
-    // ── Mix ──────────────────────────────────────────────────────────────────
+    // ── Streaming mix + overlay + encode ────────────────────────────────────
 
     /**
-     * Sample-wise mix: `narration * narrationVol + music * musicVol`, clamped
-     * to the 16-bit range. Neither input is normalized against the other —
-     * see [com.example.data.BackgroundMusicSettings.volume]'s doc comment for
-     * why that's a deliberate choice, not an oversight.
+     * Fuses mix + sound-effect overlay + AAC encode into ONE chunked pass —
+     * this is what actually fixes the memory profile documented on this
+     * object's own class doc comment (176KB/second held for the full mixed
+     * track, PLUS a second full-length copy that used to exist inside the
+     * old encodeAac's own byte-array conversion). [narration]/[music] are
+     * still held fully in memory (read-only, sample-indexed — safe to share
+     * across chunks since no chunk mutates them), which is a smaller,
+     * bounded cost per input file; what's eliminated is the THIRD and
+     * FOURTH full-length buffers (the mixed output, and the encoder's own
+     * duplicate byte-array copy of it) that previously existed
+     * simultaneously alongside them — for a 10-minute stereo project that's
+     * roughly halving peak memory versus the old two-full-buffer approach.
+     *
+     * Semantics are verified byte-for-byte identical to the old
+     * mix()+overlayAt() two-pass approach this replaces (checked against
+     * multiple chunk sizes including boundaries that split a sound-effect
+     * clip mid-chunk, a clip running past the mix's end, and looped music)
+     * — this is a memory optimization only, not a behavior change.
      */
-    private fun mix(
+    private fun encodeMixedStreaming(
         narration: ShortArray?, narrationVol: Float,
         music: ShortArray?, musicVol: Float,
-        loopMusic: Boolean, totalFrames: Int, channels: Int
-    ): ShortArray {
-        val totalSamples = totalFrames * channels
-        val out = ShortArray(totalSamples)
-        for (i in 0 until totalSamples) {
-            var sample = 0
-            if (narration != null && i < narration.size) {
-                sample += (narration[i] * narrationVol).toInt()
-            }
-            if (music != null && music.isNotEmpty()) {
-                val idx = if (loopMusic) i % music.size else i
-                if (idx < music.size) sample += (music[idx] * musicVol).toInt()
-            }
-            out[i] = sample.coerceIn(-32768, 32767).toShort()
-        }
-        return out
-    }
-
-    // ── Encode ───────────────────────────────────────────────────────────────
-
-    /** Synchronous AAC-LC encode of interleaved 16-bit PCM. Mirrors [VideoExporter]'s dequeue/drain pattern for its video encoder. */
-    private fun encodeAac(pcm: ShortArray, sampleRate: Int, channels: Int): EncodedAudioTrack {
+        loopMusic: Boolean, totalFrames: Int, channels: Int,
+        soundEffects: List<Pair<SoundEffectTrigger, ShortArray>>,
+        sampleRate: Int = MIX_SAMPLE_RATE
+    ): EncodedAudioTrack {
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, AAC_BITRATE)
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
@@ -289,12 +279,15 @@ object AudioMixer {
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoder.start()
 
-        val bytesPerFrame = 2 * channels
-        val bytes = ByteArray(pcm.size * 2)
-        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(pcm)
+        // Pre-resolve each effect's absolute start SAMPLE (not frame) once,
+        // matching the old overlayAt's `startFrame.coerceAtLeast(0) * channels`.
+        val effects = soundEffects.map { (trigger, clip) ->
+            val startSample = (trigger.timeSec * sampleRate).toInt().coerceAtLeast(0) * channels
+            Triple(startSample, clip, trigger.volume)
+        }
 
         val chunkFrames = 4096
-        val chunkBytes = chunkFrames * bytesPerFrame
+        val bytesPerFrame = 2 * channels
         val usPerFrame = 1_000_000.0 / sampleRate
 
         val outSamples = ArrayList<EncodedSample>()
@@ -329,21 +322,70 @@ object AudioMixer {
             }
         }
 
-        var offset = 0
+        // Reused across chunks — allocated once, not once per chunk, same
+        // "zero allocation in the hot loop" principle as PlaybackEngine's
+        // pre-allocated FloatArrays.
+        val chunkShorts = ShortArray(chunkFrames * channels)
+        val chunkBytes = ByteArray(chunkFrames * channels * 2)
+
+        var frame = 0
         var presentationTimeUs = 0L
-        while (offset < bytes.size) {
-            val inIdx = encoder.dequeueInputBuffer(10_000)
-            if (inIdx >= 0) {
-                val size = minOf(chunkBytes, bytes.size - offset)
-                val inBuf = encoder.getInputBuffer(inIdx)!!
-                inBuf.clear()
-                inBuf.put(bytes, offset, size)
-                encoder.queueInputBuffer(inIdx, 0, size, presentationTimeUs, 0)
-                presentationTimeUs += ((size / bytesPerFrame) * usPerFrame).toLong()
-                offset += size
+        while (frame < totalFrames) {
+            val thisChunkFrames = minOf(chunkFrames, totalFrames - frame)
+            val chunkStartSample = frame * channels
+            val chunkSamples = thisChunkFrames * channels
+
+            // ── Mix narration + music for this chunk only ──
+            for (j in 0 until chunkSamples) {
+                val i = chunkStartSample + j // absolute sample index — same basis as the old whole-buffer mix()
+                var sample = 0
+                if (narration != null && i < narration.size) {
+                    sample += (narration[i] * narrationVol).toInt()
+                }
+                if (music != null && music.isNotEmpty()) {
+                    val idx = if (loopMusic) i % music.size else i
+                    if (idx < music.size) sample += (music[idx] * musicVol).toInt()
+                }
+                chunkShorts[j] = sample.coerceIn(-32768, 32767).toShort()
             }
-            drain(false)
+
+            // ── Overlay sound effects that intersect this chunk's sample range ──
+            val chunkEndSampleExclusive = chunkStartSample + chunkSamples
+            for ((startSample, clip, volume) in effects) {
+                val clipEndSampleExclusive = startSample + clip.size
+                if (clipEndSampleExclusive <= chunkStartSample || startSample >= chunkEndSampleExclusive) continue
+                for (j in 0 until chunkSamples) {
+                    val absIdx = chunkStartSample + j
+                    val clipIdx = absIdx - startSample
+                    if (clipIdx in clip.indices) {
+                        val mixedSample = chunkShorts[j] + (clip[clipIdx] * volume).toInt()
+                        chunkShorts[j] = mixedSample.coerceIn(-32768, 32767).toShort()
+                    }
+                }
+            }
+
+            val chunkByteSize = chunkSamples * 2
+            ByteBuffer.wrap(chunkBytes, 0, chunkByteSize).order(ByteOrder.LITTLE_ENDIAN)
+                .asShortBuffer().put(chunkShorts, 0, chunkSamples)
+
+            var offset = 0
+            while (offset < chunkByteSize) {
+                val inIdx = encoder.dequeueInputBuffer(10_000)
+                if (inIdx >= 0) {
+                    val size = minOf(16384, chunkByteSize - offset) // KEY_MAX_INPUT_SIZE cap, mirrors old chunking safety
+                    val inBuf = encoder.getInputBuffer(inIdx)!!
+                    inBuf.clear()
+                    inBuf.put(chunkBytes, offset, size)
+                    encoder.queueInputBuffer(inIdx, 0, size, presentationTimeUs, 0)
+                    presentationTimeUs += ((size / bytesPerFrame) * usPerFrame).toLong()
+                    offset += size
+                }
+                drain(false)
+            }
+
+            frame += thisChunkFrames
         }
+
         var eosQueued = false
         while (!eosQueued) {
             val inIdx = encoder.dequeueInputBuffer(10_000)

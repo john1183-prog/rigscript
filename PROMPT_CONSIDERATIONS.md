@@ -96,9 +96,9 @@ Each object in "events":
   "figureY": number | null,       // fraction of canvas height. Overrides rootAnchorY.
   "figureScale": number | null,   // overall character size multiplier. Overrides characterScale. NOT the same as cameraZoom.
   "headScale": number | null,     // overrides headScaleMultiplier.
-  "boneColor": number | null,     // ARGB as a decimal integer — see COLOR VALUES below.
-  "headColor": number | null,
-  "jointColor": number | null,
+  "boneColor": number | null,     // ARGB decimal — see COLOR VALUES. Sets the whole figure's color (limbs + head + joints) unless headColor/jointColor are also set to override per-element.
+  "headColor": number | null,     // overrides boneColor for the head only when set.
+  "jointColor": number | null,    // overrides boneColor for joints only when set.
   "bgColor": number | null,       // overrides BOTH preview and export background color uniformly.
   "backgroundGradientColor": number | null,  // no visible effect unless backgroundStyle is (or becomes) "gradient".
   "backgroundStyle": "string" | null,        // "solid" | "gradient". Snap (not interpolated).

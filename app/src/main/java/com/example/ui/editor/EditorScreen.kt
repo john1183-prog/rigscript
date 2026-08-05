@@ -368,8 +368,7 @@ fun EditorScreen(
                         project?.referenceOverlay?.let { sv.setReferenceOverlay(it) }
                         sv.setSoundEffectLibrary(project?.soundEffects ?: emptyList())
                     },
-                    onRelease = { it.release() },
-                    modifier = Modifier.fillMaxSize()
+                    onRelease = { it.release() }
                 )
 
                 exportProg?.let { progress ->

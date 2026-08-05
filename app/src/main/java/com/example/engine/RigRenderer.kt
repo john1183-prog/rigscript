@@ -220,8 +220,8 @@ class RigRenderer {
 
         bonePaint.color          = (overrides.boneColor ?: appearance.boneColor).toInt()
         bonePaint.strokeWidth    = appearance.boneStrokeNormalized * minDim
-        headPaint.color          = (overrides.headColor ?: appearance.headColor).toInt()
-        jointPaint.color         = (overrides.jointColor ?: appearance.jointColor).toInt()
+        headPaint.color          = (overrides.headColor ?: overrides.boneColor ?: appearance.headColor).toInt()
+        jointPaint.color         = (overrides.jointColor ?: overrides.boneColor ?: appearance.jointColor).toInt()
         mouthPaint.color         = (overrides.mouthColor ?: appearance.mouthColor).toInt()
         eyePaint.color           = (overrides.eyeColor ?: appearance.eyeColor).toInt()
         eyebrowPaint.color       = (overrides.eyebrowColor ?: appearance.eyebrowColor).toInt()
@@ -832,9 +832,9 @@ class RigRenderer {
                 matrix.preRotate(angles[i])
             }
 
-            val length = bone.normalizedLength * figScale
+            val lengthSF = bone.normalizedLength * figScale * (if (bone.isHeadBone) appearance.neckLengthMultiplier else 1f)
             pts[0] = 0f; pts[1] = 0f
-            pts[2] = length; pts[3] = 0f
+            pts[2] = lengthSF; pts[3] = 0f
             matrix.mapPoints(pts)
             val startX = pts[0]; val startY = pts[1]
             val endX = pts[2]; val endY = pts[3]

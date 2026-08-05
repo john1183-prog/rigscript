@@ -324,7 +324,7 @@ class RigRenderer {
             val resolved = OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
             for (layer in resolved) {
                 if (layer.trailPoints.size >= 2) drawGmsTrail(canvas, canvasW, canvasH, layer)
-                drawGmsOverlay(canvas, canvasW, canvasH, layer)
+                drawGmsOverlay(canvas, canvasW, canvasH, layer, appearance)
             }
         }
 
@@ -602,7 +602,7 @@ class RigRenderer {
      * same "believe the device over the reasoning" discipline as this
      * file's eyebrow-tilt note above.
      */
-    private fun drawGmsOverlay(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
+    private fun drawGmsOverlay(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay, appearance: AppearanceSettings) {
         if (layer.opacity <= 0.001f) return
         val minDim = min(w, h).toFloat()
 
@@ -614,7 +614,7 @@ class RigRenderer {
         when (layer.type) {
             "shape" -> drawGmsShape(canvas, w, h, minDim, layer)
             "text"  -> drawGmsText(canvas, w, h, layer)
-            "figure" -> drawSecondaryFigure(canvas, w, h, layer)
+            "figure" -> drawSecondaryFigure(canvas, w, h, layer, appearance)
         }
 
         canvas.restore()
@@ -806,7 +806,7 @@ class RigRenderer {
      * active canvas transform, so it is deliberately NOT multiplied in
      * again below.
      */
-    private fun drawSecondaryFigure(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
+    private fun drawSecondaryFigure(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay, appearance: AppearanceSettings) {
         val angles = layer.figurePoseAngles ?: return
         val minDim = min(w, h).toFloat()
         // Base size at layer.scale==1.0 — deliberately smaller than the

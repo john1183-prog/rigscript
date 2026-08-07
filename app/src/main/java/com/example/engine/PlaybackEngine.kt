@@ -74,6 +74,8 @@ class PlaybackEngine {
         private set
     @Volatile var currentHeadScale: Float? = null
         private set
+    @Volatile var currentFigureOpacity: Float? = null
+        private set
     @Volatile var currentBoneColor: Long? = null
         private set
     @Volatile var currentHeadColor: Long? = null
@@ -106,6 +108,7 @@ class PlaybackEngine {
      */
     val currentFigureOverrides: FigureOverrides get() = FigureOverrides(
         x = currentFigureX, y = currentFigureY, scale = currentFigureScale, headScale = currentHeadScale,
+        opacity = currentFigureOpacity,
         boneColor = currentBoneColor, headColor = currentHeadColor, jointColor = currentJointColor,
         bgColor = currentBgColor, backgroundGradientColor = currentBackgroundGradientColor,
         backgroundStyle = currentBackgroundStyle, groundLineColor = currentGroundLineColor,
@@ -438,6 +441,7 @@ class PlaybackEngine {
             currentFigureY = null
             currentFigureScale = null
             currentHeadScale = null
+            currentFigureOpacity = null
             currentBoneColor = null
             currentHeadColor = null
             currentJointColor = null
@@ -526,6 +530,7 @@ class PlaybackEngine {
         currentFigureY     = lerpNullableFloat(kf.fromFigureY, kf.toFigureY, easedT)
         currentFigureScale = lerpNullableFloat(kf.fromFigureScale, kf.toFigureScale, easedT)
         currentHeadScale   = lerpNullableFloat(kf.fromHeadScale, kf.toHeadScale, easedT)
+        currentFigureOpacity = lerpNullableFloat(kf.fromFigureOpacity, kf.toFigureOpacity, easedT)
         currentBoneColor   = lerpNullableColor(kf.fromBoneColor, kf.toBoneColor, easedT)
         currentHeadColor   = lerpNullableColor(kf.fromHeadColor, kf.toHeadColor, easedT)
         currentJointColor  = lerpNullableColor(kf.fromJointColor, kf.toJointColor, easedT)

@@ -94,6 +94,10 @@ import kotlinx.serialization.Serializable
  *                    size in the scene; [cameraZoom] changes how much of the
  *                    whole scene is visible.
  * [headScale]        Overrides [com.example.data.AppearanceSettings.headScaleMultiplier].
+ * [figureOpacity]    0..1 opacity multiplier for the whole figure (bones, head, face) —
+ *                    independent of [figureX]/[figureY]/[figureScale]. Null means fully
+ *                    opaque, same fallback rule as the other overrides. Lets the figure
+ *                    fade out to let motion-graphics overlays lead, then fade back in.
  * [boneColor]/[headColor]/[jointColor]/[mouthColor]/[eyeColor]/[eyebrowColor]
  *                    Override the matching [com.example.data.AppearanceSettings] color.
  * [bgColor]          Overrides BOTH [com.example.data.AppearanceSettings.previewBgColor]
@@ -141,6 +145,7 @@ data class ScriptEvent(
     val figureY: Float? = null,
     val figureScale: Float? = null,
     val headScale: Float? = null,
+    val figureOpacity: Float? = null,
     // Figure & scene colors
     val boneColor: Long? = null,
     val headColor: Long? = null,

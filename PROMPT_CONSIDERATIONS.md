@@ -96,6 +96,7 @@ Each object in "events":
   "figureY": number | null,       // fraction of canvas height. Overrides rootAnchorY.
   "figureScale": number | null,   // overall character size multiplier. Overrides characterScale. NOT the same as cameraZoom.
   "headScale": number | null,     // overrides headScaleMultiplier.
+  "figureOpacity": number | null, // 0..1, whole figure (bones+head+face). Overrides nothing project-side — 1.0 (fully opaque) if never set. Fades the figure out to let overlays lead, and back in.
   "boneColor": number | null,     // ARGB decimal — see COLOR VALUES. Sets the whole figure's color (limbs + head + joints) unless headColor/jointColor are also set to override per-element.
   "headColor": number | null,     // overrides boneColor for the head only when set.
   "jointColor": number | null,    // overrides boneColor for joints only when set.
@@ -146,6 +147,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "exitDuration": number,          // seconds. Default 0.35.
   "exitEase": "string",            // Default "ease_in".
   "opacity": number,               // ceiling alpha 0..1 once fully "in". Default 1.
+  "inFrontOfFigure": boolean,      // true = draws over the figure (default, original behavior). false = figure draws over THIS layer instead.
 
   // ── Phase 2 (all optional — omit anything you're not using) ──────────
   "parentBone": "string" | null,   // attach to a stick-figure bone tip (see PARENTBONE VALUES). x/y become an OFFSET from the bone.
@@ -253,7 +255,7 @@ FIELD BEHAVIOR — this distinction changes how you should use every field
 ═══════════════════════════════════════════════════════════════════════
 CARRY-FORWARD (pose, expression, cameraZoom/PanX/PanY, skyColor,
 groundColor, horizonY, sceneShape, sceneAtmosphere, figureX/figureY/
-figureScale/headScale, boneColor/headColor/jointColor/bgColor/
+figureScale/headScale/figureOpacity, boneColor/headColor/jointColor/bgColor/
 backgroundGradientColor/backgroundStyle/groundLineColor/showGroundLine/
 groundLineYFraction/mouthColor/eyeColor/eyebrowColor): once set, holds
 until a LATER event changes it. Only emit a field when it actually
@@ -417,6 +419,30 @@ normal position/scale (figureX back to 0.5, figureScale back to 1) — it
 should read as "the figure stepped aside to let something be shown," not
 as though it forgot to come back. Never leave the figure permanently
 off-center after an illustration beat is over.
+
+Stepping aside still keeps the figure visible and part of the
+composition. For a stretch that should read as pure motion graphics —
+the figure genuinely not part of the moment, not even in a corner — fade
+it out with figureOpacity toward 0 instead (or all the way to 0 for
+fully gone), then back toward 1 when the figure returns to the story.
+This is a different tool for a different intent: reach for
+figureX/figureScale when the figure is still narrating from the
+sidelines, reach for figureOpacity when the beat doesn't need a narrator
+at all. Same rule as position: never leave figureOpacity faded down
+after the graphics-only stretch ends — fade it back to 1 explicitly.
+Don't churn opacity per-event either — treat it with the same restraint
+as figureX/figureScale, a handful of fades across a video, not a flicker
+on every line.
+
+Most overlays should stay at the default inFrontOfFigure:true (drawn
+over the figure, the original and still normal behavior). Set it false
+for the rare case a layer should read as sitting on or behind the figure
+itself — scenery-like graphics, or a "figure" layer for a second
+character meant to look like it's standing behind the main one rather
+than layered on top of it. inFrontOfFigure is independent of
+figureX/figureScale/figureOpacity above — it's about DRAW ORDER, not
+position, and works the same whether the figure is fully visible,
+stepped aside, or faded down.
 
 TEXT PLACEMENT & READABILITY — when overlay text needs to be prominent
 and the figure is also on screen, prefer moving the FIGURE aside
@@ -593,6 +619,9 @@ NEVER DO THIS
   decimal integer, per COLOR VALUES above.
 - Never set figureX/figureY/figureScale to a combination clearly outside
   the safe range described in FIGURE TRANSFORM & COLORS above.
+- Never fade figureOpacity down for a motion-graphics stretch and skip
+  the later event that brings it back to 1 — same rule as never leaving
+  figureX/figureScale off-center permanently.
 - Never use a custom pose id on a "figure" overlay layer — built-in poses only.
 - Never evenly space timestamps ignoring narration content.
 - Never add a caption or camera move on every single event.
@@ -853,6 +882,43 @@ matters as much as renderer correctness.
   the craft-guidance paragraph — this is the same shape of mistake as
   forgetting `soundEffectVolume` needs `soundEffect` set, and it seemed
   likely enough to recur that it earned the redundancy.
+
+### `figureOpacity` (added alongside `inFrontOfFigure` below, same session)
+- Motivated directly by wanting motion-graphics-forward stretches to be
+  able to go all the way to "figure genuinely absent," not just
+  "stepped aside" — `figureX`/`figureScale` alone can move the figure
+  off-center or shrink it, but can't make it actually gone, and a video
+  that's supposed to be pure kinetic-typography/graphics with the figure
+  still small and visible in a corner isn't the same effect.
+- Implemented as a single `canvas.saveLayerAlpha()` around just the FK
+  draw pass, rather than multiplying alpha into each individual Paint
+  (bone/head/joint/mouth/eye/eyebrow) — one control point that can't
+  miss a sub-element, at the cost of an offscreen layer only when
+  opacity is actually fractional (skipped entirely at the default 1.0,
+  and the draw pass itself is skipped, not just hidden, below ~0.001).
+- The prompt frames it as a DIFFERENT tool from stepping aside, not a
+  stronger version of the same tool — deliberately, so the AI reaches
+  for the one that matches actual intent (still narrating vs. not part
+  of the moment at all) instead of always maxing out whichever field it
+  reaches for first.
+
+### `inFrontOfFigure` (`overlayLayers` field + mirrored on `ReferenceOverlay`)
+- Default `true` preserves every existing script's rendering exactly —
+  overlays have always drawn after/on top of the figure; this only adds
+  the option to invert that per layer, nothing changes unless a script
+  explicitly sets it.
+- The implementation detail worth recording for future maintainers: the
+  bone-anchor map that `parentBone` resolution depends on used to be
+  built as a side effect of the figure's own draw pass, which made drawing
+  behind-the-figure overlays before that pass impossible naively (no
+  anchors would exist yet). Fixed by reading the anchor positions off
+  the FK matrix pass BEFORE either overlay pass or the figure draws —
+  the matrix pass already ran first regardless (it's the same numbers
+  the draw pass would've read from), so this cost nothing extra at
+  runtime, just an earlier readout of values that already existed. Worth
+  recording because it wasn't obvious until actually re-reading
+  `RigRenderer.draw()`'s two-pass FK structure — the fix looks like a
+  bigger restructuring than it actually is.
 
 ### Content type guidance
 - Self-classification (the AI infers content type from the narration

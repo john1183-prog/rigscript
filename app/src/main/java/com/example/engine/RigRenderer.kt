@@ -9,6 +9,7 @@ import com.example.data.ReferenceOverlay
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.cos
+import kotlin.math.roundToInt
 
 /**
  * Forward-kinematic stick-figure renderer.
@@ -243,6 +244,13 @@ class RigRenderer {
         val jointR               = appearance.jointRadiusNormalized * minDim
         val showJoints           = if (forExport) appearance.showJointsOnExport else appearance.showJoints
         val headScaleMultiplier  = overrides.headScale ?: appearance.headScaleMultiplier
+        // Resolved 0..1 figure opacity — see FigureOverrides.opacity's doc
+        // comment. Used below to (a) skip the figure's own draw pass
+        // entirely near zero, genuinely absent rather than just invisible,
+        // and (b) wrap it in a single saveLayerAlpha otherwise, rather than
+        // multiplying every individual Paint's alpha (bone/head/joint/
+        // mouth/eye/eyebrow) and risking missing one.
+        val figureAlpha = (overrides.opacity ?: 1f).coerceIn(0f, 1f)
 
         // ── FK pass ───────────────────────────────────────────────────────────
         for (i in 0 until n) {
@@ -260,18 +268,59 @@ class RigRenderer {
             }
         }
 
-        // ── Draw pass ─────────────────────────────────────────────────────────
-        // Captures each bone's tip position (fraction of canvas width/
-        // height) as it's computed below, for OverlayResolver.applyParenting
-        // to use — same coordinate space overlay layers already use
-        // (w * x, h * y), since this whole FK pass runs inside the same
-        // camera-transformed canvas region. Only built when something
-        // actually needs it (a parentBone-attached layer) — most frames
-        // have no overlay layers at all, or none that attach to a bone,
-        // and this loop already runs unconditionally either way.
+        // ── Bone anchors + overlay resolution ───────────────────────────────
+        // Moved ahead of the actual draw pass below (previously computed as
+        // a side effect of it) so overlays with inFrontOfFigure = false can
+        // draw BEFORE the figure using real anchor positions. Genuinely free
+        // vs. the old ordering — this reads off the SAME matrices the FK
+        // pass above already computed; no new forward-kinematics work, just
+        // an earlier readout of numbers that already exist. See
+        // OverlayLayer.inFrontOfFigure's doc comment for the reasoning.
+        //
+        // Only built when something actually needs it (a parentBone-
+        // attached layer) — most frames have no overlay layers at all, or
+        // none that attach to a bone.
         val needsBoneAnchors = overlays.any { it.parentBone != null }
         val boneAnchors: MutableMap<String, Pair<Float, Float>>? =
             if (needsBoneAnchors) HashMap(n) else null
+
+        if (boneAnchors != null) {
+            for (i in 0 until n) {
+                val bone = bones[i]
+                val lengthMultiplier = if (bone.id == "head") appearance.neckLengthMultiplier else 1f
+                val length = bone.normalizedLength * scale * lengthMultiplier
+                pts[0] = 0f; pts[1] = 0f
+                pts[2] = length; pts[3] = 0f
+                matrices[i].mapPoints(pts)
+                boneAnchors[bone.id] = (pts[2] / canvasW) to (pts[3] / canvasH)
+            }
+        }
+
+        val resolvedOverlays = if (overlays.isNotEmpty())
+            OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
+        else emptyList()
+        // partition{} predicate is "match goes to first list" — matching
+        // !inFrontOfFigure (i.e. behind) first reads more naturally at the
+        // call site below than the inverted alternative would.
+        val (behindOverlays, frontOverlays) = resolvedOverlays.partition { !it.inFrontOfFigure }
+
+        for (layer in behindOverlays) {
+            if (layer.trailPoints.size >= 2) drawGmsTrail(canvas, canvasW, canvasH, layer)
+            drawGmsOverlay(canvas, canvasW, canvasH, layer, appearance)
+        }
+
+        // ── Draw pass ─────────────────────────────────────────────────────────
+        // Skipped entirely near figureAlpha == 0 (genuinely absent, not
+        // just invisible) and wrapped in a single saveLayerAlpha otherwise
+        // — see figureAlpha's own doc comment above for why one control
+        // point here beats multiplying every individual Paint's alpha.
+        if (figureAlpha > 0.001f) {
+        val figureLayer = if (figureAlpha < 0.999f) {
+            canvas.saveLayerAlpha(
+                -canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, canvasH * 2f,
+                (figureAlpha * 255f).roundToInt().coerceIn(0, 255)
+            )
+        } else null
 
         for (i in 0 until n) {
             val bone   = bones[i]
@@ -290,8 +339,6 @@ class RigRenderer {
 
             val startX = pts[0]; val startY = pts[1]   // neck / joint end
             val endX   = pts[2]; val endY   = pts[3]   // head position
-
-            boneAnchors?.put(bone.id, (endX / canvasW) to (endY / canvasH))
 
             if (bone.isHeadBone) {
                 // Draw head circle at the bone's TIP (endX, endY).
@@ -316,16 +363,16 @@ class RigRenderer {
             }
         }
 
+        if (figureLayer != null) canvas.restoreToCount(figureLayer)
+        } // end if (figureAlpha > 0.001f)
+
         if (overlayVisible && referenceOverlay != null && referenceOverlay.inFrontOfFigure) {
             drawReferenceOverlay(canvas, canvasW, canvasH, referenceOverlay, referenceOverlayBitmap)
         }
 
-        if (overlays.isNotEmpty()) {
-            val resolved = OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
-            for (layer in resolved) {
-                if (layer.trailPoints.size >= 2) drawGmsTrail(canvas, canvasW, canvasH, layer)
-                drawGmsOverlay(canvas, canvasW, canvasH, layer, appearance)
-            }
+        for (layer in frontOverlays) {
+            if (layer.trailPoints.size >= 2) drawGmsTrail(canvas, canvasW, canvasH, layer)
+            drawGmsOverlay(canvas, canvasW, canvasH, layer, appearance)
         }
 
         canvas.restore()

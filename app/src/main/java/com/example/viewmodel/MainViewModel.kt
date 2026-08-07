@@ -3,6 +3,7 @@ package com.example.viewmodel
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
@@ -12,10 +13,12 @@ import com.example.db.AppDatabase
 import com.example.db.AppRepository
 import com.example.db.ProjectSummary
 import com.example.engine.*
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -665,12 +668,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Export ────────────────────────────────────────────────────────────────
 
+    /**
+     * Warns once via [_message] if the device reaches
+     * [PowerManager.THERMAL_STATUS_SEVERE] or worse while the caller's
+     * export job is running, re-arming if it cools back down and
+     * escalates again later. Deliberately no auto-cancel — the person
+     * decides whether to cancel, this just makes sure they know in time to.
+     *
+     * API 29+; below that this simply returns null and does nothing, same
+     * as the rest of the export path has no finer-grained mitigation on
+     * older devices.
+     *
+     * Returns an infinite-loop child [Job] the caller MUST cancel in its
+     * own `finally` block (same pattern as the wake lock release right
+     * next to it) — it won't stop on its own, and per structured
+     * concurrency the enclosing coroutine can't complete until it does.
+     */
+    private fun CoroutineScope.watchThermalStatus(pm: PowerManager): Job? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return launch {
+            var warned = false
+            while (isActive) {
+                val severe = pm.currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE
+                if (severe && !warned) {
+                    _message.emit("Device is heating up — export may slow down or need to be cancelled.")
+                    warned = true
+                } else if (!severe) {
+                    warned = false
+                }
+                delay(5000)
+            }
+        }
+    }
+
     fun exportVideo(context: Context) {
         val project = _activeProject.value ?: return
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:Export")
         exportJob = viewModelScope.launch {
             wakeLock.acquire(3 * 60 * 60 * 1000L)
+            val thermalWatcher = watchThermalStatus(pm)
             _exportProgress.value = 0f
             _exportEtaSec.value   = null
             _exportedFile.value   = emptyList()
@@ -694,6 +731,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 _message.emit("Export failed: ${e.message}")
             } finally {
+                thermalWatcher?.cancel()
                 _exportProgress.value = null
                 _exportEtaSec.value   = null
                 exportJob = null
@@ -749,6 +787,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
         exportJob = viewModelScope.launch {
             wakeLock.acquire(30 * 60 * 1000L)   // 30 min ceiling — a preview should never legitimately take that long
+            val thermalWatcher = watchThermalStatus(pm)
             _exportProgress.value = 0f
             _exportEtaSec.value   = null
             _exportedFile.value   = emptyList()
@@ -769,6 +808,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 _message.emit("Preview failed: ${e.message}")
             } finally {
+                thermalWatcher?.cancel()
                 _exportProgress.value = null
                 _exportEtaSec.value   = null
                 exportJob = null

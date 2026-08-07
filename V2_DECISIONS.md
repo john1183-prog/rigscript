@@ -697,6 +697,45 @@ approved by the person before implementing:**
   total height) hardcoded rather than exposed as fields, since a
   supporting decorative symbol doesn't need per-instance proportion
   control the way position/size/color do.
+- **New fields**: `figureOpacity` (figure) and `inFrontOfFigure`
+  (`overlayLayers`, mirroring `ReferenceOverlay`'s existing field of the
+  same name) — both motivated by wanting motion-graphics-forward stretches
+  to be a real creative option, not just the figure narrating everything
+  with text pasted on top. See PROMPT_CONSIDERATIONS.md's own entries for
+  the AI-facing reasoning; two implementation notes worth recording here:
+  - `figureOpacity` wraps just the FK draw pass in a single
+    `canvas.saveLayerAlpha()` rather than multiplying alpha into each
+    individual Paint (bone/head/joint/mouth/eye/eyebrow) — one control
+    point, nothing to miss. Skips the draw pass outright below ~0.001
+    opacity (genuinely absent, not just an invisible draw call), and
+    skips the saveLayerAlpha's offscreen buffer entirely at the default
+    1.0 — the common case, since most frames won't have this scripted.
+  - `inFrontOfFigure` needed the bone-anchor map `parentBone` parenting
+    depends on to exist BEFORE the figure draws, not just before overlays
+    draw (the old ordering). Rather than compute FK twice, the anchor map
+    is now read off the existing matrix-computation pass — which already
+    ran first, unconditionally — as its own small step, ahead of both the
+    behind-figure overlay pass and the figure's own draw pass. Same
+    numbers, earlier readout, no new forward-kinematics cost.
+    `OverlayResolver.applyParenting()` is called once, early, on the full
+    overlay list, then partitioned into front/behind — NOT called twice
+    (once per group), which would have silently broken cross-group
+    `parentLayer` references (a front-group layer parented to one in the
+    behind group, or vice versa), since `applyParenting`'s id-lookup only
+    sees whatever list it's given.
+- **New feature**: a thermal-status safety net around both export paths
+  (`MainViewModel.exportVideo`/`exportPreview`) — a coroutine polling
+  `PowerManager.currentThermalStatus` every 5s alongside the existing
+  wake lock, warning once (via the existing `_message` flow) at
+  `THERMAL_STATUS_SEVERE`+, re-arming if the device cools back down and
+  escalates again. Deliberately no auto-cancel — warn only, the person
+  decides. API 29+; no-ops below that (this project's minSdk is 26).
+  Motivated by a real, measured pain point: an 8-minute video's export
+  taking 30-60 minutes with the device heating up and sometimes
+  freezing, on the current software Bitmap/getPixels/argbToNV12 path.
+  Deliberately scoped as its own standalone piece rather than folded
+  into the GLES rewrite below, specifically so it ships well before that
+  larger, separately-queued effort does.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 
@@ -733,10 +772,42 @@ zoom in."
 
 - **Surface-input export (OpenGL ES / `createInputSurface()`)** —
   confirmed to need a full OpenGL ES rendering rewrite, not a light
-  retarget of the existing `lockHardwareCanvas()` path. Deferred until
-  there's a measured export-time baseline to justify the rewrite's cost
-  against — the current bulk-`getPixels()` fix already resolved the
-  worst (multi-hour) case.
+  retarget of the existing `lockHardwareCanvas()` path. Was deferred
+  until there's a measured export-time baseline to justify the
+  rewrite's cost against; that baseline now exists — an 8-minute
+  video taking 30-60 minutes to export with the device heating up and
+  sometimes freezing, reported after the argbToNV12 parallelization in
+  `30d37e9`/`88d7cb6`, so the earlier bulk-`getPixels()` fix did NOT
+  resolve this the way it resolved the prior multi-hour case. No longer
+  deferred on the measurement question — still queued rather than
+  started, see the priority order below for why.
+  - Live preview (`AnimationSurfaceView`) currently shares the exact
+    same `RigRenderer.draw()` Canvas path export uses via
+    `holder.lockCanvas()` — this is why preview/export parity has held
+    without much deliberate effort. A GLES rewrite scoped to export
+    only forks that into two implementations needing to be kept
+    pixel-identical by hand, with no device in this environment to
+    verify they match. Worth scoping preview+export together, or
+    explicitly accepting that risk if scoped export-only — not yet
+    decided, a real decision for whenever this is actually picked up.
+- **Agreed priority order for currently-queued work** (this session,
+  supersedes any earlier ordering — see this file's own note above
+  about not letting docs describe stale state): (1) figureOpacity +
+  inFrontOfFigure + thermal safety net — shipped this session, see
+  above; (2) prompt guidance rewrite for motion-graphics-forward
+  expressiveness — no code, already partially done as part of shipping
+  figureOpacity/inFrontOfFigure's own prompt entries, may need a further
+  pass once real AI-generated output using the new fields exists to
+  react to; (3) a live visual overlay editor — tap to select, drag to
+  reposition, mirroring `PoseEditorScreen`'s existing hit-test/drag/
+  write-back pattern rather than inventing a new interaction model;
+  (4) the GLES export rewrite above; (5) foot-plant IK for
+  `walk_a`/`walk_b`, scoped as a walk-cycle-specific analytic correction,
+  not a general arbitrary-target IK solver. (4) and (5) deliberately
+  ordered last — export/IK are both self-contained "under the hood"
+  work, while (2) and (3) directly affect whether AI-generated output
+  actually looks distinctive rather than samey, which was judged higher
+  value to land first.
 - **Full visual timeline editor** — scoped down to tap-to-seek only
   (`EventTimelineStrip`). Drag-to-reposition, long-press-to-delete, and
   tap-to-add were all originally scoped but explicitly cut: this

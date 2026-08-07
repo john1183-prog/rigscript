@@ -32,7 +32,9 @@ data class ResolvedOverlay(
     /** Only set when [type] == "figure" — resolved bone angles (degrees) for the SAME 10-bone order as [StickFigureRig.BONES]. List<Float>, not FloatArray, so this data class's equals/hashCode stay well-defined. */
     val figurePoseAngles: List<Float>? = null,
     /** Only set when [type] == "figure" — see [com.example.engine.Expression]'s constants. */
-    val figureExpression: Int = 0
+    val figureExpression: Int = 0,
+    /** See [com.example.data.OverlayLayer.inFrontOfFigure]. */
+    val inFrontOfFigure: Boolean = true
 )
 
 /**
@@ -74,7 +76,9 @@ data class TimeResolvedOverlay(
     /** Only set when [type] == "figure" — see [ResolvedOverlay.figurePoseAngles]. */
     val figurePoseAngles: List<Float>? = null,
     /** Only set when [type] == "figure" — see [ResolvedOverlay.figureExpression]. */
-    val figureExpression: Int = 0
+    val figureExpression: Int = 0,
+    /** See [com.example.data.OverlayLayer.inFrontOfFigure]. */
+    val inFrontOfFigure: Boolean = true
 )
 
 /**
@@ -206,7 +210,8 @@ object OverlayResolver {
             width = layer.width, height = layer.height, radius = layer.radius,
             glow = layer.glow, glowColor = layer.glowColor ?: layer.color, glowRadius = layer.glowRadius,
             velocityAngleDeg = velocityAngle, trailPointsLocal = trailPts,
-            figurePoseAngles = poseAngles, figureExpression = expressionIndex
+            figurePoseAngles = poseAngles, figureExpression = expressionIndex,
+            inFrontOfFigure = layer.inFrontOfFigure
         )
     }
 
@@ -365,7 +370,8 @@ object OverlayResolver {
                 // that's barely distinguishable at typical particle sizes.
                 // Pair a glowing non-particle layer at the same beat if a
                 // glowing burst effect is genuinely wanted.
-                glow = false, glowColor = layer.color, glowRadius = 0f
+                glow = false, glowColor = layer.color, glowRadius = 0f,
+                inFrontOfFigure = layer.inFrontOfFigure
             )
         }
         return out
@@ -421,7 +427,8 @@ object OverlayResolver {
                 width = p.width, height = p.height, radius = p.radius,
                 glow = p.glow, glowColor = p.glowColor, glowRadius = p.glowRadius,
                 trailPoints = p.trailPointsLocal,
-                figurePoseAngles = p.figurePoseAngles, figureExpression = p.figureExpression
+                figurePoseAngles = p.figurePoseAngles, figureExpression = p.figureExpression,
+                inFrontOfFigure = p.inFrontOfFigure
             )
         }
     }

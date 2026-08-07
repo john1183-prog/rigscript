@@ -114,6 +114,13 @@ import kotlinx.serialization.Serializable
  *                  A cycle (a layer parenting itself, directly or through
  *                  a chain) is also warned about and safely broken at
  *                  render time rather than hanging.
+ * [inFrontOfFigure] Whether this layer draws after the figure (true,
+ *                  default — original behavior) or before it (false —
+ *                  the figure then draws on top, hiding whatever this
+ *                  layer overlaps). Mirrors [com.example.data.ReferenceOverlay]'s
+ *                  own field of the same name. Independent of [parentBone]/
+ *                  [parentLayer] — a layer can be behind the figure and
+ *                  still bone-parented to it.
  *
  * ── Phase 2: physics ─────────────────────────────────────────────────────
  * Closed-form (not frame-by-frame simulated) motion, computed fresh from
@@ -225,6 +232,11 @@ data class OverlayLayer(
     // Phase 2 — groups/parenting
     val parentBone: String? = null,
     val parentLayer: String? = null,
+    // Z-order relative to the primary figure — mirrors ReferenceOverlay's
+    // own inFrontOfFigure field. Default true matches this feature's
+    // pre-existing behavior (overlays always drew after/on top of the
+    // figure), so an existing script's rendering is unchanged.
+    val inFrontOfFigure: Boolean = true,
     // Phase 2 — physics
     val physics: String = "none",
     val physicsVx: Float = 0f,

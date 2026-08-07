@@ -21,6 +21,7 @@ data class FigureOverrides(
     val y: Float? = null,
     val scale: Float? = null,
     val headScale: Float? = null,
+    val opacity: Float? = null,
     val boneColor: Long? = null,
     val headColor: Long? = null,
     val jointColor: Long? = null,

@@ -39,8 +39,9 @@ import com.example.data.PoseDef
  * [sceneAtmosphere] Current foreground weather/atmosphere overlay — one of
  *                  [SceneAtmosphere]'s constants. Snap semantics, same as [expression].
  * [fromFigureX]/[toFigureX], [fromFigureY]/[toFigureY],
- * [fromFigureScale]/[toFigureScale], [fromHeadScale]/[toHeadScale]
- *                  Figure position/scale, interpolated like camera zoom.
+ * [fromFigureScale]/[toFigureScale], [fromHeadScale]/[toHeadScale],
+ * [fromFigureOpacity]/[toFigureOpacity]
+ *                  Figure position/scale/opacity, interpolated like camera zoom.
  *                  Null-means-no-override, same rule as [fromSkyColor] —
  *                  BUT unlike camera zoom's universal "1.0 = no-op" default,
  *                  there's no single correct fallback value here (it depends
@@ -91,6 +92,8 @@ data class BakedKeyframe(
     val toFigureScale: Float?,
     val fromHeadScale: Float?,
     val toHeadScale: Float?,
+    val fromFigureOpacity: Float?,
+    val toFigureOpacity: Float?,
     // Figure & scene colors
     val fromBoneColor: Long?,
     val toBoneColor: Long?,
@@ -202,6 +205,7 @@ object TimelineCompiler {
         var prevFigureY: Float?      = null
         var prevFigureScale: Float?  = null
         var prevHeadScale: Float?    = null
+        var prevFigureOpacity: Float? = null
         var prevBoneColor: Long?     = null
         var prevHeadColor: Long?     = null
         var prevJointColor: Long?    = null
@@ -245,6 +249,7 @@ object TimelineCompiler {
             val toFigureY     = event.figureY ?: prevFigureY
             val toFigureScale = event.figureScale ?: prevFigureScale
             val toHeadScale   = event.headScale ?: prevHeadScale
+            val toFigureOpacity = event.figureOpacity ?: prevFigureOpacity
             val toBoneColor   = event.boneColor ?: prevBoneColor
             val toHeadColor   = event.headColor ?: prevHeadColor
             val toJointColor  = event.jointColor ?: prevJointColor
@@ -290,6 +295,8 @@ object TimelineCompiler {
                 toFigureScale   = toFigureScale,
                 fromHeadScale   = prevHeadScale,
                 toHeadScale     = toHeadScale,
+                fromFigureOpacity = prevFigureOpacity,
+                toFigureOpacity   = toFigureOpacity,
                 fromBoneColor   = prevBoneColor,
                 toBoneColor     = toBoneColor,
                 fromHeadColor   = prevHeadColor,
@@ -325,6 +332,7 @@ object TimelineCompiler {
             prevFigureY = toFigureY
             prevFigureScale = toFigureScale
             prevHeadScale = toHeadScale
+            prevFigureOpacity = toFigureOpacity
             prevBoneColor = toBoneColor
             prevHeadColor = toHeadColor
             prevJointColor = toJointColor

@@ -119,7 +119,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
 "endSec" have defaults — omit anything you're not customizing):
 {
   "id": "string",                 // optional label, for your own reference only
-  "type": "string",               // REQUIRED. "text" | "shape" | "particles"
+  "type": "string",               // REQUIRED. "text" | "shape" | "particles" | "figure"
   "shape": "string",               // only used when type=="shape": "rect" | "circle" | "line" | "arrow" | "cross". Default "rect".
   "startSec": number,             // REQUIRED. When this layer's enter animation begins.
   "endSec": number,               // REQUIRED. When this layer is fully gone. Must be > startSec.
@@ -326,13 +326,41 @@ and held reverent poses rather than jumpy energy, not with silence.
   library has one that fits. A static opening pose with just a caption
   fading in is the single most common way a hook underperforms — don't
   build the hook incrementally, build it as a stacked instant.
-- Nothing should sit static for more than about 4 seconds without SOME
-  change — a pose shift, a camera move, an overlay beat, a scene change.
-  If you look at a stretch of the script and nothing changes for longer
-  than that, that stretch needs another beat, even a small one.
+- THE LOOP (optional, works for any content type, not just motivational
+  builds): if the piece has a natural closing beat, consider ending on
+  something that echoes the opening — the same sceneShape/color pair,
+  a similar figureX/figureY/cameraZoom, even a visually similar pose —
+  rather than a wholly different final image. A close that visually
+  rhymes with the open reads as a deliberate, satisfying shape rather
+  than just stopping, and can make a rewatch feel natural. Skip it when
+  the content's own ending doesn't call for symmetry — this is a device
+  to reach for when it fits, not a checklist item for every video.
+- Stillness is never the default — it's something you earn deliberately,
+  not a fallback for a stretch with nothing obvious to do. Nothing should
+  sit static for more than about 2-3 seconds without SOME change — a pose
+  shift, a camera move, an overlay beat, a scene change. If a stretch of
+  the script goes longer than that with nothing changing, that stretch
+  needs another beat, even a small one — a fidget-scale pose nudge, a
+  slow cameraPan, an ambient overlay drifting in. This applies across
+  every content type, including calm/reverent ones — see CONTENT TYPE
+  GUIDANCE below for what "alive" looks like at low intensity, which is
+  different from "nothing happening."
 - For narration describing movement/journey, alternate walk_a/walk_b (or
   jog_a/jog_b) consistently with durations matching a plausible stride
   cadence (~0.35-0.5s each), not randomly re-picked.
+
+PATTERN AND SUBVERSION — an optional technique, not mandatory for every
+video: if the narration has a repeating structure (a list, a refrain, a
+"first... then... also..." cadence), let the visual treatment repeat
+with it for 2-3 occurrences — the same beat shape each time (say, a
+pose landing together with a pop-style overlay burst) — then break the
+pattern on the next occurrence with something different in kind, not
+just degree (a physics-driven layer flying in, a particle burst, a
+scene change, a soundEffect) rather than a bigger version of the same
+thing. The repetition is what makes the break register as a break —
+don't subvert a pattern that was never established. Skip this entirely
+for narration that doesn't actually have a repeating structure to play
+against; forcing one in is worse than not using the technique.
 
 EXPRESSION — change at genuine emotional beats only, not every event.
 
@@ -375,9 +403,13 @@ you set), so you don't need to reason about contrast yourself. Treat the
 backdrop as SECTIONED, not a single static choice for the whole video —
 change sceneShape and/or the color pair at each major structural beat
 (a new numbered point, a new scene in a story, a topic shift), the same
-way you'd change camera angle or location in a real edit. A backdrop
-that never changes across a multi-minute video reads as visually flat
-even if everything else is well-paced.
+way you'd change camera angle or location in a real edit. As a rough
+frequency check for typical narration density, a backdrop that hasn't
+shifted in the last 4-8 seconds is worth a second look — not a rule to
+force a change against content that hasn't actually moved on, but a
+prompt to check you haven't let a long stretch ride on one static world
+by default. A backdrop that never changes across a multi-minute video
+reads as visually flat even if everything else is well-paced.
 
 SOUND EFFECTS — one-shot at timeSec. ONLY use ids that exist in the
 project's sound effect library, which will be listed to you explicitly
@@ -406,6 +438,16 @@ OVERALL cross height — the crossbar's own length and position are fixed
 proportionally, so you don't need (and can't set) a separate field for
 them. Don't try to build a cross out of a single rotated rect — a
 rotated rect is still only one bar, never two; use "cross" directly.
+
+COGNITIVE LOAD — cap simultaneous visual load at roughly: the figure,
+one caption, and up to two active overlay layers at once. Once a moment
+already has that much on screen, reach for figureOpacity or stepping
+the figure aside rather than adding a fifth thing competing for
+attention — dense narration is better served by letting fewer elements
+each land clearly than by piling everything on at once. This is a
+target for a given INSTANT, not the whole video — overlay layers with
+non-overlapping time windows don't count against each other just for
+existing in the same script.
 
 MOTION-GRAPHICS-FORWARD EXPLANATION — for an abstract idea, a concept, or
 anything better shown than mimed, don't rely on the figure's body
@@ -444,13 +486,40 @@ figureX/figureScale/figureOpacity above — it's about DRAW ORDER, not
 position, and works the same whether the figure is fully visible,
 stepped aside, or faded down.
 
+THE PIVOT MOMENT — an optional, rare device (once, maybe twice in a
+video, for a genuine reveal or turn) built from tools already covered
+above, not a new mechanism: isolate first — fade the figure out with
+figureOpacity toward 0 (not figureScale, which shrinks rather than
+removes it) over a beat or two, while a bold overlay (large text and/or
+a full-bleed shape behind it) takes the frame entirely. Then the figure
+returns with intent — figureOpacity back to 1 landing together with
+ease:"spring" on the pose transition and a real cameraShake value (0.3-
+0.5 is a genuine jolt; reserve higher for something that should feel
+overwhelming), the pose landing on the beat the narration turns on. Keep
+figureX/figureScale themselves within their normal safe range through
+this — the isolation comes from opacity and the overlay taking visual
+weight, not from parking the figure somewhere off-frame. Settle back to
+normal figureScale within half a second if anything moved. This only
+works as a surprise if it's rare — using it more than once or twice
+turns the "hijack" into just the video's normal rhythm, and it stops
+landing.
+
 TEXT PLACEMENT & READABILITY — when overlay text needs to be prominent
 and the figure is also on screen, prefer moving the FIGURE aside
 (figureX) over moving the text off-center — keep overlay text at its
 natural centered position (x 0.5 or slot "center") for readability, and
 let the figure's own displacement create the separation. Two things both
 shifting off-center at once is harder to read than one clear subject
-(the text) with the figure clearly making room for it.
+(the text) with the figure clearly making room for it. Remember this
+same script drives BOTH a 9:16 and a 16:9 export when dual-aspect export
+is on — composition that only works in one aspect isn't safe to assume.
+Keep the important part of any overlay (the actual text/shape, not
+necessarily its full bounding box) within roughly x 0.1-0.9 and y
+0.1-0.7 — the lower band below y 0.7 is caption territory in the 9:16
+export specifically and is worth avoiding for anything else regardless
+of aspect, and content pushed to the extreme left/right edge is the
+part most likely to sit differently, or get cropped, between the two
+exported framings.
 
 QUOTE/VERSE REVEAL — the schema has no way to recolor or highlight part
 of a single text string (no per-character/per-word styling), so true
@@ -517,6 +586,19 @@ space unless deliberate closeness is the point. If the supporting figure
 should change pose or expression, use two adjacent figure layers rather
 than expecting one layer to animate — each one holds a single static
 pose for its own window.
+
+For "people"/"customers"/"everyone"/a crowd or group rather than one
+named person, a single figure layer reads as one extra person, not a
+crowd — use several figure layers together instead, at reduced and
+slightly varied scale (e.g. 0.4-0.6) and offset x/y so they don't
+overlap identically, positioned behind or to the side of the main
+figure rather than competing with it for the center. inFrontOfFigure:
+false on a background crowd reads as depth (the main figure standing in
+front of the group); leaving it at the default true reads as the group
+crowding forward instead — pick deliberately based on which the moment
+calls for. Three or four figure layers is usually enough to read as "a
+crowd," not a literal headcount — more than that adds clutter without
+adding clarity, and works against COGNITIVE LOAD above.
 
 ═══════════════════════════════════════════════════════════════════════
 CONTENT TYPE GUIDANCE
@@ -631,6 +713,10 @@ NEVER DO THIS
   length — change it at structural beats.
 - Never leave the figure shifted aside/shrunk after a concept-
   illustration stretch ends — bring it back to its normal position/scale.
+- Never use THE PIVOT MOMENT more than once or twice in a single video —
+  frequency is what makes it read as a surprise.
+- Never stack more than the figure + one caption + two active overlay
+  layers at the same instant — see COGNITIVE LOAD above.
 - Never wrap the output in markdown fences or add explanatory text
   outside the JSON object.
 ```
@@ -938,6 +1024,67 @@ matters as much as renderer correctness.
   (religious teaching's stillness vs. product-explainer's punchier
   pacing), not re-explaining every mechanic per type, which would mostly
   repeat the craft guidance already given once.
+
+### Retention-craft additions (pattern/subversion, pivot moment, cognitive
+### load, safe zones, crowd-via-multiple-figure-layers, loop generalization)
+- Source: a full alternative system prompt John brought in, written in a
+  short-form-content "retention engineering" style (numbered Formulas,
+  a director's-treatment XML preamble, explicit hook/subversion/hijack
+  language). Checked it against the actual schema/source before porting
+  anything — worth recording what held up and what didn't, since the
+  document was clearly written without access to this repo:
+  - The `<director_treatment>` preamble-before-JSON idea would have
+    broken every import. Both `importScript()` and `onScriptTextChanged()`
+    call `decodeFromString<AnimScript>()` directly on the full pasted
+    text, no tolerance for anything before the `{`. Not ported — the
+    strict raw-JSON-only output contract stays exactly as it was.
+  - Its `figureX: 1.5` / `figureScale: 0.0` for hiding the figure both
+    predate `figureOpacity` and would violate the documented 15%-85%
+    safe-range guidance. THE PIVOT MOMENT (the rewritten version of its
+    "Attention Hijack") uses `figureOpacity` instead, and explicitly
+    tells the AI to keep figureX/figureScale in their normal range
+    through the whole beat — isolation comes from opacity + the overlay
+    taking visual weight, not from parking the figure off-frame.
+  - Its pose list and ease list, checked field-by-field against
+    `StickFigureRig.kt` and `EasingMath.kt`, were both exact matches —
+    genuinely accurate research on that part, unusually so for content
+    not written against this specific repo.
+  - Its safe-zone rule (Formula 9) was written assuming 9:16 only. This
+    project dual-exports 9:16 AND 16:9 from the same normalized-
+    coordinate script (`ExportSettings.dimensions()`) — ported the
+    concept but reframed around "the same composition has to hold in
+    both aspects," not vertical-app engagement-button margins
+    specifically, which don't mean anything in a 16:9 export.
+  - Its crowd-building instinct (Formula 3) was sound but only
+    implicit in the existing FIGURE LAYERS guidance, which was written
+    for one supporting character, not a group. Extended explicitly
+    rather than left to inference — multiple `figure` layers at reduced,
+    varied scale, with a genre-appropriate `inFrontOfFigure` call for
+    whether the group reads as background depth or a crowd pressing in.
+  - Its Formula 1 (cinematic, non-hyperactive hook) turned out to
+    already be handled, and arguably more precisely — the existing hook
+    guidance calibrates energy per CONTENT TYPE GUIDANCE (the religious/
+    spiritual section already says reverence describes the body of the
+    video, "not permission for the first three seconds to be inert").
+    A universal Formula 1 would have been a strictly worse version of
+    guidance already there. Not duplicated.
+  - Its Creative Seed Protocol (deriving a color "temperature" from the
+    first vowel of the transcript) wasn't ported. It's a fingerprint
+    disconnected from actual content — the existing SCENE guidance
+    already ties color to real tone (warm for energetic, cool for
+    somber), which produces non-identical output that actually tracks
+    content, rather than one keyed to an arbitrary letter.
+  - The "nothing static" threshold was tightened from ~4s to ~2-3s,
+    directly per instruction that stillness should not be the default —
+    not a full adoption of Formula 2's stricter 1.5s-on-the-figure-
+    specifically rule, since the existing rule already covers "any kind
+    of change," a broader and easier bar to reason about consistently
+    than one tied to a single field.
+- PATTERN AND SUBVERSION, THE PIVOT MOMENT, COGNITIVE LOAD are new
+  labeled blocks, not folded into existing sections — each is a
+  distinct-enough technique (and PIVOT MOMENT specifically rare/opt-in)
+  that burying it inside a paragraph about something else would make it
+  easy to miss on a re-read.
 
 ### Overlay-vs-figure overlap check (`ScriptValidator`)
 - Scoped to `type == "shape"` layers only, after building it broader

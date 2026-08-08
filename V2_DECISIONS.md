@@ -736,6 +736,26 @@ approved by the person before implementing:**
   Deliberately scoped as its own standalone piece rather than folded
   into the GLES rewrite below, specifically so it ships well before that
   larger, separately-queued effort does.
+- **Prompt guidance rewrite (item 2 of the agreed priority order,
+  same session as item 1 above)**: extended `system_prompt.txt` with
+  several retention-craft techniques (pattern-then-subvert pacing, a
+  rare figure-isolation "pivot moment" using `figureOpacity`, an
+  explicit simultaneous-visual-load cap, dual-aspect-aware safe zones,
+  multi-figure crowd-building, a generalized loop-close device), tightened
+  the "nothing static" threshold per explicit instruction that stillness
+  should not be the default, and fixed a real pre-existing bug — the
+  compact JSON schema comment was missing `"figure"` from the
+  `overlayLayers[].type` enum even though it's documented correctly
+  everywhere else in the same file. Full source-checked reasoning for
+  what got ported vs. rejected from the candidate document this was
+  based on is in `PROMPT_CONSIDERATIONS.md`'s own new entry — worth
+  reading in full rather than summarizing twice, but the short version:
+  several of its ideas turned out to already be handled (and more
+  precisely, since they're calibrated per content type) by existing
+  guidance, one technique (a director's-treatment XML preamble) would
+  have broken every script import and was deliberately not adopted, and
+  a few of its concrete values (figureX/figureScale used to fake hiding
+  the figure) predated fields that now do that job properly.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

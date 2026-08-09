@@ -449,6 +449,19 @@ target for a given INSTANT, not the whole video — overlay layers with
 non-overlapping time windows don't count against each other just for
 existing in the same script.
 
+This cap also matters for a reason that has nothing to do with the
+viewer: particles, glow, and physics are all genuinely more expensive to
+render and encode than a static shape or plain text, and stacking
+several at the same instant is exactly the kind of high-entropy moment
+that can visibly degrade encoded video quality if it happens often
+enough across a video, on top of costing more render time. A climax
+moment earning one glowing particle burst is a good use of the effect;
+several different moments all stacking glow+particles+physics
+simultaneously because each one individually seemed to justify it is
+not — reach for the SAME device (a pop-style overlay, a pose landing)
+you'd otherwise use, and save the heavier effects for where they're
+doing real work.
+
 MOTION-GRAPHICS-FORWARD EXPLANATION — for an abstract idea, a concept, or
 anything better shown than mimed, don't rely on the figure's body
 language alone to carry it. Shift the figure aside (figureX toward 0.25
@@ -719,6 +732,7 @@ NEVER DO THIS
   layers at the same instant — see COGNITIVE LOAD above.
 - Never wrap the output in markdown fences or add explanatory text
   outside the JSON object.
+```
 ```
 
 This tracks what the AI-script-generation prompt needs to communicate
@@ -1085,6 +1099,16 @@ matters as much as renderer correctness.
   distinct-enough technique (and PIVOT MOMENT specifically rare/opt-in)
   that burying it inside a paragraph about something else would make it
   easy to miss on a re-read.
+- COGNITIVE LOAD later extended (separate session, after a real
+  blockiness bug was root-caused to bitrate starvation under high-
+  entropy content) with a rendering-cost paragraph, not a new section —
+  it's the same underlying instinct (don't stack more than the moment
+  needs) applied for a second, unrelated reason. Deliberately kept as an
+  addition to the existing cap rather than a numeric render-cost budget
+  of its own, since the app has no way to actually measure or enforce
+  that from the AI's side — the real fix for the actual bug lives in
+  encoder settings (`ExportSettings`/`VideoExporter`), not the prompt;
+  this is a complementary nudge, not a substitute for that fix.
 
 ### Overlay-vs-figure overlap check (`ScriptValidator`)
 - Scoped to `type == "shape"` layers only, after building it broader

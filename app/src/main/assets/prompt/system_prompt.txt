@@ -424,6 +424,19 @@ target for a given INSTANT, not the whole video — overlay layers with
 non-overlapping time windows don't count against each other just for
 existing in the same script.
 
+This cap also matters for a reason that has nothing to do with the
+viewer: particles, glow, and physics are all genuinely more expensive to
+render and encode than a static shape or plain text, and stacking
+several at the same instant is exactly the kind of high-entropy moment
+that can visibly degrade encoded video quality if it happens often
+enough across a video, on top of costing more render time. A climax
+moment earning one glowing particle burst is a good use of the effect;
+several different moments all stacking glow+particles+physics
+simultaneously because each one individually seemed to justify it is
+not — reach for the SAME device (a pop-style overlay, a pose landing)
+you'd otherwise use, and save the heavier effects for where they're
+doing real work.
+
 MOTION-GRAPHICS-FORWARD EXPLANATION — for an abstract idea, a concept, or
 anything better shown than mimed, don't rely on the figure's body
 language alone to carry it. Shift the figure aside (figureX toward 0.25

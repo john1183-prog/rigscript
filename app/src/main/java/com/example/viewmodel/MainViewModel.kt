@@ -247,6 +247,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scheduleSave()
     }
 
+    /**
+     * Clears the currently-displayed warnings without touching the script
+     * itself. Not a permanent suppression — the next onScriptTextChanged()
+     * call replaces _scriptWarnings wholesale from a fresh validation pass
+     * either way, so a warning that's still actually true reappears the
+     * next time the script changes. This is purely "stop taking up space
+     * right now," matching how scriptWarnings already gets replaced (not
+     * appended to) on every validation run.
+     */
+    fun dismissScriptWarnings() {
+        _scriptWarnings.value = emptyList()
+    }
+
     // F1: Import a .json animation script from a file URI.
     fun importScript(context: Context, uri: Uri) {
         viewModelScope.launch {
@@ -556,28 +569,65 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * back into assets: once added, the clip behaves identically to a
      * user-imported one everywhere else in the app.
      */
+    private suspend fun copyBuiltInSoundEffect(
+        context: Context, builtIn: BuiltInSoundEffect, existingIds: Set<String>
+    ): SoundEffectClip? {
+        val project = _activeProject.value ?: return null
+        val destDir = File(context.filesDir, "sound_effects").also { it.mkdirs() }
+        var id = builtIn.id
+        var suffix = 1
+        while (id in existingIds) { id = "${builtIn.id}_$suffix"; suffix++ }
+
+        val destFile = File(destDir, "${project.id}_${id}.wav")
+        val copyOk = withContext(Dispatchers.IO) {
+            runCatching {
+                context.assets.open(builtIn.assetPath).use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }.isSuccess
+        }
+        return if (copyOk) SoundEffectClip(id, destFile.absolutePath) else null
+    }
+
     fun importBuiltInSoundEffect(context: Context, builtIn: BuiltInSoundEffect) {
         viewModelScope.launch {
             val project = _activeProject.value ?: return@launch
-            val destDir = File(context.filesDir, "sound_effects").also { it.mkdirs() }
             val existingIds = project.soundEffects.map { it.id }.toSet()
-            var id = builtIn.id
-            var suffix = 1
-            while (id in existingIds) { id = "${builtIn.id}_$suffix"; suffix++ }
+            val clip = copyBuiltInSoundEffect(context, builtIn, existingIds)
+            if (clip == null) { _message.emit("Couldn't load \"${builtIn.label}\""); return@launch }
 
-            val destFile = File(destDir, "${project.id}_${id}.wav")
-            val copyOk = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.assets.open(builtIn.assetPath).use { input ->
-                        destFile.outputStream().use { output -> input.copyTo(output) }
-                    }
-                }.isSuccess
-            }
-            if (!copyOk) { _message.emit("Couldn't load \"${builtIn.label}\""); return@launch }
-
-            updateActive { it.copy(soundEffects = it.soundEffects + SoundEffectClip(id, destFile.absolutePath)) }
+            updateActive { it.copy(soundEffects = it.soundEffects + clip) }
             scheduleSave()
-            _message.emit("Added \"${builtIn.label}\" as \"$id\"")
+            _message.emit("Added \"${builtIn.label}\" as \"${clip.id}\"")
+        }
+    }
+
+    /**
+     * Adds every starter-library sound not already present (matched on the
+     * built-in's own id, not a suffixed variant) in one batch — one project
+     * update and one summary message, not N of each. Safe to tap more than
+     * once: already-added sounds are skipped rather than duplicated, so a
+     * second tap after adding a few individually (or after a prior Add All)
+     * only adds whatever's still missing.
+     */
+    fun addAllBuiltInSoundEffects(context: Context) {
+        viewModelScope.launch {
+            val project = _activeProject.value ?: return@launch
+            val existingIds = project.soundEffects.map { it.id }.toMutableSet()
+            val toAdd = BuiltInSoundEffects.ALL.filter { it.id !in existingIds }
+            if (toAdd.isEmpty()) { _message.emit("All starter sounds are already added"); return@launch }
+
+            val newClips = mutableListOf<SoundEffectClip>()
+            for (builtIn in toAdd) {
+                val clip = copyBuiltInSoundEffect(context, builtIn, existingIds) ?: continue
+                existingIds += clip.id
+                newClips += clip
+            }
+            if (newClips.isEmpty()) { _message.emit("Couldn't load the starter sounds"); return@launch }
+
+            updateActive { it.copy(soundEffects = it.soundEffects + newClips) }
+            scheduleSave()
+            _message.emit("Added ${newClips.size} starter sound${if (newClips.size == 1) "" else "s"}")
         }
     }
 

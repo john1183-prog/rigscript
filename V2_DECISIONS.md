@@ -811,6 +811,46 @@ approved by the person before implementing:**
     order with its own handoff document; this fix is scoped to the
     blockiness complaint specifically, which is separate from and
     doesn't block that work.
+- **GLES handoff document upgrade + prompt rendering-cost note (same
+  session as the blockiness fix above)**: the standing GLES handoff
+  document (kept outside the repo, regenerated for John each time) was
+  substantially rewritten — updated pipeline details to match the
+  now-fixed encoder settings, an explicit "smoothness first, performance
+  second, quality is a floor" priority framework per John's own stated
+  priorities, and specific technical guidance the earlier draft didn't
+  have: EGL's thread affinity (the current `withContext(Dispatchers.Default)`
+  wrapping is a shared pool a coroutine can hop threads within after a
+  suspension point, which is exactly wrong for a thread-affine EGL
+  context — needs a dedicated thread, per the standard Grafika-style
+  reference pattern), a note that GPU-side YUV conversion may use a
+  different color range/matrix than the just-fixed software path's known
+  BT.601 limited-range one and that this needs actual on-device visual
+  comparison, and a "fall back, don't fail" instruction given the
+  software path is now a known-good baseline, not just the old thing
+  being replaced. Separately, `system_prompt.txt`'s COGNITIVE LOAD
+  section was extended (not given a new section) with a note connecting
+  effect density to real render/encode cost, not just viewer clarity —
+  the same instinct applied for a second reason, prompted directly by
+  the blockiness bug's likely cause. The actual fix for that bug lives
+  in encoder settings, not the prompt; this is a complementary nudge.
+- **Two small editor UI additions (same session)**: an "Add all" button
+  next to the built-in sound-effect chips (`MainViewModel.
+  addAllBuiltInSoundEffects`) — batches every starter-library sound not
+  already present into one project update and one summary message
+  rather than firing the existing single-add path's per-item message N
+  times, and is safe to tap repeatedly (already-present sounds, matched
+  by the built-in's own id, are skipped rather than re-added with a
+  suffixed id). The copy logic itself was extracted from the existing
+  single-add function into a shared private helper both now call, rather
+  than duplicated. And a dismiss control + scroll cap (100dp) on the
+  script-warnings list in `ScriptPanel` — warnings weren't being
+  suppressed, just capable of growing unbounded and pushing the actual
+  script text field down. `dismissScriptWarnings()` clears the display
+  only; the next script-text-change re-validates and repopulates from
+  scratch either way, same as `scriptWarnings` already gets wholesale-
+  replaced (not appended to) on every validation pass — so a warning
+  that's still genuinely true reappears next edit, dismissal isn't
+  permanent suppression of a real issue.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

@@ -512,6 +512,7 @@ fun EditorScreen(
                     scriptText   = scriptText,
                     scriptError  = scriptError,
                     scriptWarnings = scriptWarnings,
+                    onDismissScriptWarnings = { vm.dismissScriptWarnings() },
                     onTextChange = { vm.onScriptTextChanged(it) },
                     onInsertPose = onOpenPoseLibrary,
                     onInsertOverlay = { vm.insertOverlayLayer(it) },
@@ -547,6 +548,7 @@ fun EditorScreen(
                     onSoundEffectVolume = { id, v -> vm.updateSoundEffectVolume(id, v) },
                     onRenameSoundEffect = { oldId, newId -> vm.renameSoundEffect(oldId, newId) },
                     onPickBuiltInSoundEffect = { vm.importBuiltInSoundEffect(context, it) },
+                    onAddAllBuiltInSoundEffects = { vm.addAllBuiltInSoundEffects(context) },
                     onSavePreset      = { vm.saveCurrentAppearanceAsPreset(it) },
                     onApplyPreset     = { vm.applyAppearancePreset(it) },
                     onDeletePreset    = { vm.deleteAppearancePreset(it) },
@@ -612,6 +614,7 @@ private fun ScriptPanel(
     scriptText: String,
     scriptError: String?,
     scriptWarnings: List<String>,
+    onDismissScriptWarnings: () -> Unit,
     onTextChange: (String) -> Unit,
     onInsertPose: () -> Unit,
     onInsertOverlay: (com.example.data.OverlayLayer) -> Unit,
@@ -706,8 +709,18 @@ private fun ScriptPanel(
         // script from applying at all; a warning doesn't).
         if (scriptWarnings.isNotEmpty()) {
             Column(Modifier.padding(bottom = 6.dp)) {
-                scriptWarnings.forEach { w ->
-                    Text("⚠ $w", color = Color(0xFFE0A030), fontSize = 11.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${scriptWarnings.size} warning${if (scriptWarnings.size == 1) "" else "s"}",
+                        color = Color(0xFFE0A030), fontSize = 11.sp,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismissScriptWarnings, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Text("Dismiss", fontSize = 11.sp, color = Color(0xFFE0A030))
+                    }
+                }
+                Column(Modifier.heightIn(max = 100.dp).verticalScroll(rememberScrollState())) {
+                    scriptWarnings.forEach { w ->
+                        Text("⚠ $w", color = Color(0xFFE0A030), fontSize = 11.sp)
+                    }
                 }
             }
         }
@@ -758,6 +771,7 @@ private fun AppearancePanel(
     onSoundEffectVolume: (String, Float) -> Unit,
     onRenameSoundEffect: (String, String) -> Unit,
     onPickBuiltInSoundEffect: (com.example.data.BuiltInSoundEffect) -> Unit,
+    onAddAllBuiltInSoundEffects: () -> Unit,
     onSavePreset: (String) -> Unit,
     onApplyPreset: (com.example.data.AppearancePreset) -> Unit,
     onDeletePreset: (String) -> Unit,
@@ -1099,9 +1113,15 @@ private fun AppearancePanel(
             Text("Add sound effect", fontSize = 12.sp)
         }
 
-        Text("Or add from the bundled starter library (CC0):",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Or add from the bundled starter library (CC0):",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.weight(1f))
+            TextButton(onClick = onAddAllBuiltInSoundEffects, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("Add all", fontSize = 12.sp)
+            }
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(com.example.data.BuiltInSoundEffects.ALL) { builtIn ->
                 AssistChip(

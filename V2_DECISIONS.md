@@ -756,6 +756,61 @@ approved by the person before implementing:**
   have broken every script import and was deliberately not adopted, and
   a few of its concrete values (figureX/figureScale used to fake hiding
   the figure) predated fields that now do that job properly.
+- **Export quality fix (blockiness bug report, same session)**: a
+  detailed external bug analysis came in claiming two root causes —
+  16-byte stride misalignment (1080 isn't a multiple of 16) and per-
+  frame coroutine/drain overhead — plus six proposed fixes. Verified
+  each claim against actual source before acting, per this file's own
+  established practice, rather than implementing wholesale:
+  - `ExportSettings.dimensions()`'s even-only rounding was extended to
+    full 16-byte alignment (subsumes evenness). Confirmed the encoder is
+    fed via a raw tightly-packed `ByteBuffer` (`getInputBuffer().put()`),
+    not the stride-aware `Image` API, and no `KEY_STRIDE` is set — so an
+    unaligned width is a real, legitimate risk class here, not a
+    strawman. In practice this only changes 1080p's short side
+    (1080->1088) and 360p's (360->368); 720p was already aligned.
+  - Default `bitrateMbps` raised 5->8. This is judged the more likely
+    PRIMARY cause of a "recent" blockiness report specifically — the
+    timing lines up with the prompt-guidance rewrite immediately before
+    this (particles, glow, rapid scene changes are high-entropy content
+    that starves visibly at a flat rate tuned for calmer motion), and
+    the reported symptom (general blockiness) reads more like classic
+    bitrate-starved macroblocking than stride-shear, which would be a
+    constant, content-independent artifact rather than something that
+    would newly appear now. Both fixes landed regardless, since stride
+    alignment is legitimate defensive practice independent of which
+    theory is primary — but if blockiness turns out to persist, look at
+    bitrate/entropy before re-litigating the stride theory.
+  - `KEY_I_FRAME_INTERVAL` raised 1->5 (standard practice, frees bits
+    from redundant keyframes for a file with no scrubbing requirement of
+    its own) and `KEY_BITRATE_MODE` VBR enabled, but gated behind an
+    actual `isBitrateModeSupported()` capability check rather than set
+    unconditionally — there's no device in this loop to confirm an
+    unsupported mode fails gracefully rather than throwing on
+    `configure()`.
+  - Two of the six proposed fixes were deliberately NOT adopted:
+    replacing `argbToNV12`'s `coroutineScope { async }` chunking with a
+    raw `ExecutorService` + `CountDownLatch.await()` would introduce an
+    actual blocking call inside coroutine code — a real anti-pattern
+    risk — for a claimed win (per-frame coroutine launch overhead) that
+    almost certainly isn't the dominant cost next to the O(pixels) YUV
+    math and `Bitmap.getPixels()` memcpy that are the actual established
+    bottleneck this whole session. Reducing `drainAvailable()` frequency
+    from every frame to every 5th was also skipped — the per-frame call
+    is already cheap (a non-blocking poll, mostly a no-op when nothing's
+    ready), and draining LESS often trades that negligible saving for a
+    real risk of the encoder's output-buffer pool filling up before the
+    next drain — a risk this session's OWN bitrate increase makes
+    somewhat worse, not better, since higher bitrate means larger output
+    per frame. The existing conditional drain inside `queueFrame()`'s
+    retry loop (only drains when an input buffer isn't immediately
+    available) was already the correct, efficient pattern and wasn't
+    touched.
+  - Speed (the "1-2 week, 30-60s" framing for a GLES rewrite) wasn't
+    re-litigated here — that's already item 4 of the agreed priority
+    order with its own handoff document; this fix is scoped to the
+    blockiness complaint specifically, which is separate from and
+    doesn't block that work.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

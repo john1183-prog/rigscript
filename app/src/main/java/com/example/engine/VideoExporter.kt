@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
@@ -206,7 +207,34 @@ object VideoExporter {
                     MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
                 setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
                 setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                // 1 I-frame/sec was needlessly dense for a final shareable
+                // file with no scrubbing requirement of its own — every
+                // I-frame costs several times what a P-frame does for the
+                // same visual quality. 5s intervals free up bits for the
+                // encoder to spend on actual detail instead, which also
+                // helps the blockiness report above independent of the
+                // bitrate bump.
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
+            }
+            // VBR lets the encoder spend more bits on genuinely complex
+            // frames (a particle burst, a scene change) and fewer on
+            // simple ones, rather than a flat per-frame budget starving
+            // exactly the moments most likely to look blocky at a flat
+            // rate. Checked against actual encoder capabilities rather
+            // than assumed — there's no device in this loop to verify
+            // an unsupported mode fails gracefully rather than throwing.
+            val codecList = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+            val encoderName = codecList.findEncoderForFormat(videoFormat)
+            val supportsVbr = encoderName?.let { name ->
+                runCatching {
+                    codecList.codecInfos.first { it.name == name }
+                        .getCapabilitiesForType(MIME)
+                        .encoderCapabilities
+                        .isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                }.getOrDefault(false)
+            } ?: false
+            if (supportsVbr) {
+                videoFormat.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
             }
             val encoder = MediaCodec.createEncoderByType(MIME)
             encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)

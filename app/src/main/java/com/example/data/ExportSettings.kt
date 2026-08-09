@@ -16,7 +16,13 @@ import kotlinx.serialization.Serializable
  *               though nothing stops a person from picking it directly if a
  *               genuinely small file is what they actually want.
  * [fps]         24 | 30 | 60
- * [bitrateMbps] Target video bitrate in Mbit/s.
+ * [bitrateMbps] Target video bitrate in Mbit/s. Default raised from 5 to
+ *               8 after a real report of blockiness on exports — kinetic
+ *               typography (particles, glow, rapid scene/color changes)
+ *               is high-entropy content that starves visibly at a flat
+ *               rate calibrated for calmer motion. Still user-adjustable
+ *               (2-20 in the export settings slider) if 8 over- or
+ *               under-shoots for a given resolution/content mix.
  * [embedAudio]  When true, the source audio file is muxed into the output MP4.
  * [outputFormat] "MP4" (H.264) or "WEBM" (VP9 with alpha channel).
  * [dualAspectExport] When true, exports BOTH "9:16" and "16:9" as two
@@ -40,7 +46,7 @@ data class ExportSettings(
     val aspectRatio: String = "9:16",
     val resolution: String = "1080p",
     val fps: Int = 30,
-    val bitrateMbps: Int = 5,
+    val bitrateMbps: Int = 8,
     val embedAudio: Boolean = true,
     val outputFormat: String = "MP4",
     val dualAspectExport: Boolean = false
@@ -68,10 +74,20 @@ data class ExportSettings(
             "1:1"  -> short to short
             else   -> short to (short * 16) / 9
         }
-        // Both dimensions must be even for H.264, not just width.
+        // Both dimensions are aligned up to a multiple of 16, which
+        // subsumes the old even-only rounding (any multiple of 16 is
+        // even). H.264 encodes in 16x16 macroblocks, and this app feeds
+        // the encoder via a tightly-packed ByteBuffer (getInputBuffer,
+        // not the stride-aware Image API) — an unaligned width risks the
+        // encoder reading each row at its own internal 16-aligned stride
+        // assumption regardless of what was actually packed. 1080p's
+        // short side (1080, not a multiple of 16) is the one this
+        // actually changes in practice — 360p's 360 also isn't aligned,
+        // but 720p's 720 already is, and so is every derived 16:9 long
+        // side at these three resolutions.
         return Pair(
-            if (width % 2 == 0) width else width + 1,
-            if (height % 2 == 0) height else height + 1
+            ((width + 15) / 16) * 16,
+            ((height + 15) / 16) * 16
         )
     }
 }

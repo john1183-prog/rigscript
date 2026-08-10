@@ -867,5 +867,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * PHASE 1 DIAGNOSTIC — GLES export rewrite. Renders a short solid-
+     * color clip through [VideoExporter.exportGlesSmokeTest] to prove the
+     * EGL/dedicated-thread/Surface-input-encoder plumbing on an actual
+     * device — this sandbox has no compiler or device, so this is the
+     * real first checkpoint. Not part of the real export pipeline; see
+     * that function's doc comment. Remove this and its UI trigger once
+     * Phase 2+ lands and this plumbing is exercised by the real path
+     * instead.
+     *
+     * No thermal watcher here (unlike [exportVideo]/[exportPreview]) — a
+     * couple of seconds of encoding isn't a thermal-risk workload, so
+     * adding one would just be noise.
+     */
+    fun exportGlesSmokeTest(context: Context) {
+        if (exportJob != null) return   // a preview or a real export is already running
+        val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:GlesSmokeTest")
+        exportJob = viewModelScope.launch {
+            wakeLock.acquire(2 * 60 * 1000L)   // 2 min ceiling — a 2s test clip should never remotely take this long
+            _exportProgress.value = 0f
+            _exportEtaSec.value   = null
+            _exportedFile.value   = emptyList()
+            try {
+                val result = VideoExporter.exportGlesSmokeTest(context)
+                result.onSuccess {
+                    _exportedFile.value = listOf(it)
+                    _message.emit("GLES smoke test complete: ${it.location}")
+                }.onFailure { e ->
+                    _message.emit("GLES smoke test failed (this is diagnostic info, not a real export problem): ${e.message}")
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _message.emit("GLES smoke test cancelled")
+                throw e
+            } finally {
+                _exportProgress.value = null
+                _exportEtaSec.value   = null
+                exportJob = null
+                if (wakeLock.isHeld) wakeLock.release()
+            }
+        }
+    }
+
     companion object { private const val PREF_AMPLITUDE = "amplitude_settings_json" }
 }

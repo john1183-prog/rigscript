@@ -222,6 +222,20 @@ fun EditorScreen(
         else previewStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
+    // Same permission gate again, for the Phase 1 GLES export diagnostic —
+    // see MainViewModel.exportGlesSmokeTest's doc comment. Temporary;
+    // remove alongside that function once later phases replace it.
+    val glesTestStoragePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) vm.exportGlesSmokeTest(context)
+        else scope.launch { snackState.showSnackbar("Storage permission is needed to save the test clip") }
+    }
+    fun triggerGlesSmokeTest() {
+        if (Build.VERSION.SDK_INT >= 29) vm.exportGlesSmokeTest(context)
+        else glesTestStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
+
     fun openExport(uri: Uri) {
         runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW).apply {
@@ -560,6 +574,7 @@ fun EditorScreen(
                     onChange     = { vm.updateExportSettings(it) },
                     onExport     = { triggerExport() },
                     onExportPreview = { triggerExportPreview() },
+                    onGlesSmokeTest = { triggerGlesSmokeTest() },
                     onOpen       = { openExport(it) },
                     onShare      = { shareExport(it) },
                     modifier     = Modifier.fillMaxSize()
@@ -1142,6 +1157,7 @@ private fun ExportPanel(
     onChange: (ExportSettings) -> Unit,
     onExport: () -> Unit,
     onExportPreview: () -> Unit,
+    onGlesSmokeTest: () -> Unit,
     onOpen: (Uri) -> Unit,
     onShare: (Uri) -> Unit,
     modifier: Modifier = Modifier
@@ -1222,6 +1238,18 @@ private fun ExportPanel(
             Spacer(Modifier.width(8.dp))
             Text("Export Video")
         }
+
+        // Phase 1 of the GLES export rewrite (V2_DECISIONS.md) — a plain
+        // TextButton, deliberately not styled like the two real actions
+        // above, since it doesn't render the actual animation yet. Remove
+        // once later phases make GLES part of the real export path.
+        Spacer(Modifier.height(4.dp))
+        TextButton(onClick = onGlesSmokeTest, modifier = Modifier.fillMaxWidth()) {
+            Text("GLES export test (debug)", fontSize = 12.sp)
+        }
+        Text("Renders a 2s solid-color clip through the new GPU export path — a Phase 1 plumbing check, not a real export.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
     }
 }
 

@@ -851,6 +851,67 @@ approved by the person before implementing:**
   replaced (not appended to) on every validation pass — so a warning
   that's still genuinely true reappears next edit, dismissal isn't
   permanent suppression of a real issue.
+- **GLES export rewrite — Phase 1 (EGL/thread/encoder scaffolding)**: the
+  preview/export parity question left open in the "Deferred, with
+  rationale" entry below is now decided — **export-only**, not a preview
+  rewrite. Reasoning, tracked against the priority order in the GLES
+  handoff doc: preview isn't the thing overheating/freezing (only export
+  runs 30-60min pinned across cores), so rewriting it too adds new
+  EGL-thread-affinity risk to a component that isn't broken, for no
+  smoothness gain — priority 1 argues against the larger scope here, not
+  for it. Priority 3 (quality-as-floor) is the real case for scoping
+  both, but its cost is smaller than the binary framing suggested:
+  `OverlayResolver` was already Canvas-agnostic pure data, and the FK
+  bone-matrix pass was already split from the draw calls in the
+  `figureOpacity`/`inFrontOfFigure` session specifically so a future GPU
+  renderer could consume matrices as input rather than a draw side
+  effect. The GLES backend is being built to consume those same
+  already-resolved values rather than re-derive the animation logic, so
+  parity risk is real but smaller than "two independent implementations."
+  - Built this session: `GlesFrameRenderer.kt` (new) — a dedicated
+    single-thread `CoroutineDispatcher` owns EGL init
+    (`eglGetDisplay`/`eglInitialize`/`eglChooseConfig` with
+    `EGL_RECORDABLE_ANDROID`/`eglCreateContext`/`eglCreateWindowSurface`
+    against a `MediaCodec.createInputSurface()`) and every subsequent
+    GLES call, for exactly the reason above — `VideoExporter.export()`
+    already has a real coroutine-thread-hop point (`argbToNV12`'s
+    `awaitAll()`), which is concretely why naive GL calls inside the
+    existing `withContext(Dispatchers.Default)` structure would be
+    unsafe. Pattern follows Android's Grafika sample
+    (`CodecInputSurface`/`TextureMovieEncoder`).
+  - `VideoExporter.exportGlesSmokeTest()` (new) — a standalone diagnostic
+    that cycles 3 solid colors through a real Surface-input encoder via
+    `GlesFrameRenderer`, muxes, and writes to the same `Movies/RigScript/`
+    location as a real export (reuses `OutputTarget`). **Deliberately not
+    called from `export()` yet** — Phase 1 can only clear to a color, not
+    render the real figure, so wiring it into a real user's export today
+    would silently replace their animation with a blank clip, which is
+    the "quality is a floor" violation the whole rewrite exists to avoid.
+    `MediaFormat.KEY_COLOR_STANDARD`/`KEY_COLOR_RANGE` set explicitly
+    (BT.601/limited) to match the software path's known matrix — the
+    color-equivalence concern from the handoff doc, addressed but not yet
+    verified on-device.
+  - `MainViewModel.exportGlesSmokeTest()` + a small "GLES export test
+    (debug)" `TextButton` in `ExportPanel`, permission-gated the same way
+    as the real export/preview buttons — the only way to actually trigger
+    this from John's phone, since there's no shell into the running app.
+    Both are explicitly temporary; remove alongside Phase 1 once later
+    phases make GLES part of the real `export()` path.
+  - **Not verified against a compiler or device from this environment** —
+    this sandbox has no Android SDK/Gradle access either (confirmed via
+    its network allowlist, not assumed). CI compiling this is the first
+    checkpoint; John running the debug button on-device and confirming a
+    3-color video actually comes out is the second, and the one that
+    actually matters for EGL thread-affinity/driver-behavior correctness
+    — exactly the class of bug this whole section's reasoning says won't
+    show up in source review.
+  - Next up: Phase 2 (bones/head/joints — solid + simple-gradient
+    shaders, consuming the FK matrices above), then shapes/glow, then the
+    text/caption/reference-overlay hybrid (StaticLayout → `Bitmap` → GL
+    texture — including baking text glow into that same cached bitmap
+    once rather than a live shader blur, since a text layer's
+    content/glow settings are fixed for its whole lifetime the same way
+    `cachedShrunkTextSize` already assumes).
 
 ## AI drives the pipeline — the app doesn't second-guess it
 
@@ -894,17 +955,19 @@ zoom in."
   sometimes freezing, reported after the argbToNV12 parallelization in
   `30d37e9`/`88d7cb6`, so the earlier bulk-`getPixels()` fix did NOT
   resolve this the way it resolved the prior multi-hour case. No longer
-  deferred on the measurement question — still queued rather than
-  started, see the priority order below for why.
+  deferred on the measurement question, and **no longer merely queued
+  either — Phase 1 (EGL/thread/encoder scaffolding) landed, see the
+  dated History entry above** for what was built and why.
   - Live preview (`AnimationSurfaceView`) currently shares the exact
     same `RigRenderer.draw()` Canvas path export uses via
     `holder.lockCanvas()` — this is why preview/export parity has held
-    without much deliberate effort. A GLES rewrite scoped to export
-    only forks that into two implementations needing to be kept
-    pixel-identical by hand, with no device in this environment to
-    verify they match. Worth scoping preview+export together, or
-    explicitly accepting that risk if scoped export-only — not yet
-    decided, a real decision for whenever this is actually picked up.
+    without much deliberate effort. **Resolved**: export-only, not a
+    preview rewrite — see the History entry above for the full
+    reasoning (tracked against the smoothness/performance/quality
+    priority order) and the mitigation (GLES backend consumes the
+    already-resolved FK matrices / `OverlayResolver` output rather than
+    re-deriving animation logic, narrowing the drift risk rather than
+    eliminating it).
 - **Agreed priority order for currently-queued work** (this session,
   supersedes any earlier ordering — see this file's own note above
   about not letting docs describe stale state): (1) figureOpacity +

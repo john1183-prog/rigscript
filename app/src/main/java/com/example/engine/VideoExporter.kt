@@ -439,6 +439,131 @@ object VideoExporter {
 
     } // end withContext(Dispatchers.Default)
 
+    // ── GLES export rewrite: Phase 1 diagnostic ─────────────────────────────────
+
+    /**
+     * PHASE 1 DIAGNOSTIC — GLES export rewrite (see V2_DECISIONS.md).
+     *
+     * Produces a short MP4 by cycling solid colors through a real
+     * Surface-input [MediaCodec] encoder driven by [GlesFrameRenderer],
+     * proving the EGL/dedicated-thread/encoder plumbing end-to-end on an
+     * actual device — this sandbox has no compiler or device, so a real
+     * device running this is the first genuine checkpoint beyond "CI
+     * compiles it."
+     *
+     * Deliberately NOT called from [export] yet. The real pipeline keeps
+     * using the byte-buffer software path unconditionally until later
+     * phases add real figure/shape/text rendering to the GLES side —
+     * wiring this into a real export today would silently replace a
+     * user's animation with a blank color video, which is exactly the
+     * "quality is a floor" violation the whole rewrite is trying to avoid.
+     * So this stays a separate, explicit, opt-in entry point until that's
+     * no longer true.
+     *
+     * On any EGL/GLES failure this returns [Result.failure] with no video
+     * written — correct for a diagnostic ("clearly report failure"),
+     * unlike [export]'s "fall back to software and still produce output"
+     * (there's no software equivalent of a color-cycle test to fall back
+     * to).
+     */
+    suspend fun exportGlesSmokeTest(
+        context: Context,
+        width: Int = 720,
+        height: Int = 1280,
+        fps: Int = 30,
+        durationSec: Int = 2
+    ): Result<ExportResult> = withContext(Dispatchers.Default) {
+        runCatching {
+            val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                setInteger(MediaFormat.KEY_BIT_RATE, 8_000_000)
+                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
+                // Explicit, not left to the driver default — see
+                // V2_DECISIONS.md's color-equivalence note. BT.601 matches
+                // the coefficients argbToNV12Chunk uses on the software
+                // path, so a real GLES export should look the same, not
+                // shifted in tint/contrast.
+                setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT601_PAL)
+                setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
+            }
+            val encoder = MediaCodec.createEncoderByType(MIME)
+            encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val inputSurface = encoder.createInputSurface()
+            encoder.start()
+
+            val output = OutputTarget.create(context, "gles_smoketest")
+            val muxer = output.openMuxer()
+            val bufferInfo = MediaCodec.BufferInfo()
+            var videoTrackIdx = -1
+            var muxerStarted = false
+            var encoderReleased = false
+            var muxerReleased = false
+            var success = false
+            val glesRenderer = GlesFrameRenderer(inputSurface)
+
+            /** Same shape as [export]'s drainAvailable/drainUntilEndOfStream, merged since there's only one target here. */
+            fun drain(untilEos: Boolean) {
+                while (true) {
+                    val outIdx = encoder.dequeueOutputBuffer(bufferInfo, if (untilEos) TIMEOUT else 0L)
+                    when {
+                        outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> if (untilEos) continue else return
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            if (!muxerStarted) {
+                                videoTrackIdx = muxer.addTrack(encoder.outputFormat)
+                                muxer.start(); muxerStarted = true
+                            }
+                        }
+                        outIdx >= 0 -> {
+                            val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                            if (!isConfig && muxerStarted && bufferInfo.size > 0) {
+                                muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
+                            }
+                            encoder.releaseOutputBuffer(outIdx, false)
+                            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
+                        }
+                    }
+                }
+            }
+
+            try {
+                glesRenderer.init()
+
+                // Cycle through 3 colors so a person watching the output can
+                // visually confirm frames are actually advancing frame-to-
+                // frame, not just a single static swap repeated.
+                val colors = listOf(
+                    floatArrayOf(0.8f, 0.1f, 0.1f),
+                    floatArrayOf(0.1f, 0.7f, 0.2f),
+                    floatArrayOf(0.1f, 0.2f, 0.8f)
+                )
+                val totalFrames = fps * durationSec
+                for (frameIdx in 0 until totalFrames) {
+                    if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
+                    val color = colors[(frameIdx / fps) % colors.size]
+                    val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
+                    glesRenderer.drawColorFrame(color, presentationTimeNs)
+                    drain(untilEos = false)
+                }
+                encoder.signalEndOfInputStream()
+                drain(untilEos = true)
+
+                encoder.stop(); encoder.release(); encoderReleased = true
+                if (muxerStarted) { muxer.stop(); muxer.release(); muxerReleased = true }
+                output.finish(context)
+                success = true
+
+                Log.i(TAG, "GLES smoke test: $totalFrames frames -> ${output.location}")
+                ExportResult(output.uri, output.location, "GLES smoke test")
+            } finally {
+                glesRenderer.release()
+                if (!encoderReleased) { runCatching { encoder.stop() }; runCatching { encoder.release() } }
+                if (muxerStarted && !muxerReleased) { runCatching { muxer.stop() }; runCatching { muxer.release() } }
+                if (!success) output.abort(context)
+            }
+        }
+    }
+
     /**
      * Encapsulates where/how the encoded file is written, isolating the
      * API-29+ (MediaStore, scoped storage) vs API 26-28 (legacy public dir +

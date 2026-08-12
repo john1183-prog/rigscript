@@ -970,6 +970,43 @@ approved by the person before implementing:**
   - Next up: mouth/eyes (interleaved right after the head `DrawCommand`,
     per that class's doc comment, to preserve the same z-order guarantee
     Phase 2 established), then shapes/glow, then text.
+- **GLES export rewrite — Phase 2 bugfix (the exact bug Phase 1's own
+  reasoning warned about, found on a real device)**: first on-device run
+  of the real Phase 2 shader code failed immediately —
+  `eglSwapBuffers failed`, no further detail. Root cause, confirmed by
+  reading the actual call site rather than guessing: `drawFigureFrame`
+  was deliberately written as non-suspend so a caller could drive many
+  frames from inside one `withContext(dispatcher)` block rather than
+  paying a dispatch per frame — but `VideoExporter.exportGlesSmokeTest`'s
+  per-frame loop never actually added that wrapping, so `drawFigureFrame`
+  was running on whatever `Dispatchers.Default` worker thread happened to
+  resume the coroutine after `init()` suspended, not the thread the EGL
+  context is current on. Every void-returning GL call in the function
+  (`glClearColor`, `glDrawArrays`, `glUniform*`, ...) silently no-oped on
+  the wrong thread; `eglSwapBuffers` is the one call with a checked
+  return value, so it was the only one that visibly threw — which is
+  exactly why the error pointed at the swap itself rather than anything
+  upstream, and why it took real reasoning (not a quick guess) to trace
+  back to a thread-affinity bug specifically.
+  - Fix: the whole per-frame loop in `exportGlesSmokeTest` now runs
+    inside one `withContext(glesRenderer.dispatcher) { ... }` — one
+    dispatch for the entire multi-frame loop (matching what the design
+    doc comment always said, just not what the code actually did),
+    not one per frame and not zero.
+  - Two additions made at the same time so the SAME mistake, if it
+    recurs (here or in a later phase's new call site), fails immediately
+    and specifically instead of needing this same reasoning again:
+    `GlesFrameRenderer` now captures the thread `init()` actually ran on
+    and asserts `drawFigureFrame` is called from that exact thread;
+    every EGL failure check (`eglCreateWindowSurface`, `eglMakeCurrent`,
+    both `eglSwapBuffers` call sites) now includes `eglGetError()`'s
+    actual code rather than just a boolean pass/fail.
+  - This is worth naming plainly: this is precisely the failure mode
+    the GLES handoff doc spent the most words warning about before any
+    of this code was written, and it happened anyway, on the very first
+    real device run, because the warning lived in a doc comment instead
+    of in an assertion. The fix here is as much "add the assertion that
+    should have existed from Phase 1" as it is "fix this one call site."
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

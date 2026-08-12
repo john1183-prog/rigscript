@@ -562,29 +562,44 @@ object VideoExporter {
             try {
                 glesRenderer.init()
 
-                for (frameIdx in 0 until totalFrames) {
-                    if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
+                // The entire per-frame loop runs inside ONE withContext(dispatcher) —
+                // not one dispatch per frame, and NOT left unwrapped either. A first
+                // draft called glesRenderer.drawFigureFrame() directly here, outside
+                // any withContext(dispatcher) — it ran on whatever Dispatchers.Default
+                // worker thread happened to resume this coroutine after init()
+                // suspended, not the thread the EGL context is actually current on.
+                // Every void-returning GL call silently no-oped there; only
+                // eglSwapBuffers has a checked return, so that's the only place it
+                // visibly failed, as a bare "eglSwapBuffers failed" that took real
+                // reasoning to trace back to a thread-affinity bug rather than
+                // anything wrong with the swap itself. drain()/dequeueOutputBuffer
+                // don't touch EGL/GL state, so they're fine to run in here too —
+                // no reason to hop threads twice per frame to keep them out.
+                withContext(glesRenderer.dispatcher) {
+                    for (frameIdx in 0 until totalFrames) {
+                        if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
 
-                    val timeSec = frameIdx.toFloat() / fps
-                    val envIdx  = if (envelope.isNotEmpty())
-                        (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
-                    val rawAmp  = if (envIdx >= 0) envelope[envIdx] else 0f
-                    val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
-                        mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
-                    engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
+                        val timeSec = frameIdx.toFloat() / fps
+                        val envIdx  = if (envelope.isNotEmpty())
+                            (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
+                        val rawAmp  = if (envIdx >= 0) envelope[envIdx] else 0f
+                        val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
+                            mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
+                        engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
 
-                    val overrides = engine.currentFigureOverrides
-                    val scale = minDim * (overrides.scale ?: appearance.characterScale)
-                    val rootX = width  * (overrides.x ?: appearance.rootAnchorX)
-                    val rootY = height * (overrides.y ?: appearance.rootAnchorY)
+                        val overrides = engine.currentFigureOverrides
+                        val scale = minDim * (overrides.scale ?: appearance.characterScale)
+                        val rootX = width  * (overrides.x ?: appearance.rootAnchorX)
+                        val rootY = height * (overrides.y ?: appearance.rootAnchorY)
 
-                    RigRenderer.computeFkMatrices(engine.currentAngles, rootX, rootY, scale, matrices)
-                    val glesFrame = GlesFigureFrame.fromFkMatrices(
-                        matrices, appearance, overrides, width, height, scale, showJoints)
+                        RigRenderer.computeFkMatrices(engine.currentAngles, rootX, rootY, scale, matrices)
+                        val glesFrame = GlesFigureFrame.fromFkMatrices(
+                            matrices, appearance, overrides, width, height, scale, showJoints)
 
-                    val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
-                    glesRenderer.drawFigureFrame(glesFrame, presentationTimeNs)
-                    drain(untilEos = false)
+                        val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
+                        glesRenderer.drawFigureFrame(glesFrame, presentationTimeNs)
+                        drain(untilEos = false)
+                    }
                 }
                 encoder.signalEndOfInputStream()
                 drain(untilEos = true)

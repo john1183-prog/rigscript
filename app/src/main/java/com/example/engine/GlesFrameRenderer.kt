@@ -56,6 +56,19 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     private var eglSurface: EGLSurface  = EGL14.EGL_NO_SURFACE
     private var initialized = false
 
+    /**
+     * Captured inside [init] (which runs on [dispatcher]), so any call to
+     * [drawFigureFrame] can verify it's actually running on the thread that
+     * holds the EGL context current — see that function's doc comment for
+     * why this exists: a first draft got this wrong at the one real call
+     * site, and the resulting failure (`eglSwapBuffers failed`, no further
+     * detail) took real reasoning to trace back to a thread-affinity bug
+     * rather than something wrong with the swap itself. This assertion
+     * turns that same mistake, if it recurs, into an immediate and
+     * unambiguous error instead.
+     */
+    private var ownerThread: Thread? = null
+
     private var lineCapProgram = 0
     private var circleProgram  = 0
     private var vertexBuf: FloatBuffer = allocFloatBuffer(24)
@@ -157,10 +170,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         eglSurface = EGL14.eglCreateWindowSurface(
             eglDisplay, configs[0]!!, outputSurface, intArrayOf(EGL14.EGL_NONE), 0
         )
-        check(eglSurface != EGL14.EGL_NO_SURFACE) { "eglCreateWindowSurface failed" }
+        check(eglSurface != EGL14.EGL_NO_SURFACE) {
+            "eglCreateWindowSurface failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
+        }
 
         check(EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
-            "eglMakeCurrent failed"
+            "eglMakeCurrent failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
         }
 
         GLES20.glEnable(GLES20.GL_BLEND)
@@ -169,6 +184,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         lineCapProgram = buildProgram(LINE_VERT, LINE_FRAG)
         circleProgram  = buildProgram(CIRCLE_VERT, CIRCLE_FRAG)
 
+        ownerThread = Thread.currentThread()   // this block runs on dispatcher — see ownerThread's doc comment
         initialized = true
     }
 
@@ -210,6 +226,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             eglContext = EGL14.EGL_NO_CONTEXT
             eglSurface = EGL14.EGL_NO_SURFACE
             initialized = false
+            ownerThread = null
         }
         executor.shutdown()
     }
@@ -221,7 +238,9 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLES20.glClearColor(color[0], color[1], color[2], 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs)
-        check(EGL14.eglSwapBuffers(eglDisplay, eglSurface)) { "eglSwapBuffers failed" }
+        check(EGL14.eglSwapBuffers(eglDisplay, eglSurface)) {
+            "eglSwapBuffers failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
+        }
     }
 
     // ── Phase 2: real figure rendering ────────────────────────────────────────
@@ -237,9 +256,23 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * Canvas path's actual z-order (head drawn before later limbs can occlude
      * it), not just "all bones then all joints then head". See that class's
      * doc comment.
+     *
+     * The [ownerThread] check below exists because a first draft's ONE call
+     * site (`VideoExporter.exportGlesSmokeTest`) got this wrong: it called
+     * this directly from a `Dispatchers.Default` coroutine, not from inside
+     * `withContext(dispatcher)`. Every void-returning GL call in this
+     * function silently no-oped on the wrong thread; only `eglSwapBuffers`
+     * has a checked return value, so that's the only place it visibly threw
+     * — as a bare "eglSwapBuffers failed" with no indication the real
+     * problem was upstream of the swap entirely. This check turns that same
+     * mistake, if it recurs, into an immediate, specific error instead.
      */
     fun drawFigureFrame(frame: GlesFigureFrame, presentationTimeNs: Long) {
         check(initialized) { "drawFigureFrame called before init()" }
+        check(Thread.currentThread() === ownerThread) {
+            "drawFigureFrame called from ${Thread.currentThread().name}, but the EGL context " +
+                "is current on ${ownerThread?.name} — wrap the caller in withContext(dispatcher)"
+        }
 
         val w = frame.canvasW.toFloat()
         val h = frame.canvasH.toFloat()
@@ -272,7 +305,9 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         }
 
         EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs)
-        check(EGL14.eglSwapBuffers(eglDisplay, eglSurface)) { "eglSwapBuffers failed" }
+        check(EGL14.eglSwapBuffers(eglDisplay, eglSurface)) {
+            "eglSwapBuffers failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
+        }
     }
 
     // ── Drawing primitives ────────────────────────────────────────────────────

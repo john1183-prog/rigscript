@@ -253,20 +253,13 @@ class RigRenderer {
         val figureAlpha = (overrides.opacity ?: 1f).coerceIn(0f, 1f)
 
         // ── FK pass ───────────────────────────────────────────────────────────
-        for (i in 0 until n) {
-            val bone   = bones[i]
-            val matrix = matrices[i]
-            if (bone.parentId == null) {
-                matrix.reset()
-                matrix.postTranslate(rootX, rootY)
-                matrix.preRotate(angles[i])
-            } else {
-                val pIdx = rig.BONE_INDEX[bone.parentId] ?: continue
-                matrix.set(matrices[pIdx])
-                matrix.preTranslate(bones[pIdx].normalizedLength * scale, 0f)
-                matrix.preRotate(angles[i])
-            }
-        }
+        // Delegates to the companion's computeFkMatrices — see that function's
+        // doc comment for why this is now a standalone, Canvas-independent
+        // function rather than inline here: the GLES export path (Phase 2,
+        // V2_DECISIONS.md) needs this exact computation too, and duplicating
+        // it there would be exactly the parity risk the whole "export-only,
+        // not a preview rewrite" decision was contingent on mitigating.
+        computeFkMatrices(angles, rootX, rootY, scale, matrices)
 
         // ── Bone anchors + overlay resolution ───────────────────────────────
         // Moved ahead of the actual draw pass below (previously computed as
@@ -1184,22 +1177,12 @@ class RigRenderer {
         val mats   = Array(n) { Matrix() }
         val pts    = FloatArray(4)
         val result = Array(n) { FloatArray(4) }
+        computeFkMatrices(angles, rootX, rootY, scale, mats)
         for (i in 0 until n) {
             val bone = bones[i]
-            val mat  = mats[i]
-            if (bone.parentId == null) {
-                mat.reset()
-                mat.postTranslate(rootX, rootY)
-                mat.preRotate(angles[i])
-            } else {
-                val pIdx = rig.BONE_INDEX[bone.parentId] ?: continue
-                mat.set(mats[pIdx])
-                mat.preTranslate(bones[pIdx].normalizedLength * scale, 0f)
-                mat.preRotate(angles[i])
-            }
             pts[0] = 0f; pts[1] = 0f
             pts[2] = bone.normalizedLength * scale; pts[3] = 0f
-            mat.mapPoints(pts)
+            mats[i].mapPoints(pts)
             result[i][0] = pts[0]; result[i][1] = pts[1]
             result[i][2] = pts[2]; result[i][3] = pts[3]
         }
@@ -1212,5 +1195,44 @@ class RigRenderer {
         val step = 80f
         var x = 0f; while (x <= w) { canvas.drawLine(x, 0f, x, h.toFloat(), gridPaint); x += step }
         var y = 0f; while (y <= h) { canvas.drawLine(0f, y, w.toFloat(), y, gridPaint); y += step }
+    }
+
+    companion object {
+        /**
+         * Pure FK matrix computation — no Canvas/Paint dependency, so [draw]
+         * and the GLES export path (Phase 2, V2_DECISIONS.md) share exactly
+         * one implementation instead of risking the two drifting apart. Also
+         * now used by [worldEndpoints], which previously carried its own
+         * independent copy of this same loop — a second, pre-existing
+         * duplicate found while doing this extraction, fixed at the same time
+         * rather than left in place once noticed.
+         *
+         * Fills [outMatrices] in place (must be sized
+         * [StickFigureRig.BONE_COUNT]) — matches the existing "pre-allocate
+         * once, reuse every frame" convention this class already follows for
+         * its own `matrices` field, so calling this from a frame loop doesn't
+         * introduce new per-frame allocation on either side.
+         */
+        fun computeFkMatrices(
+            angles: FloatArray, rootX: Float, rootY: Float, scale: Float,
+            outMatrices: Array<Matrix>
+        ) {
+            val rig = StickFigureRig
+            val bones = rig.BONES
+            for (i in 0 until rig.BONE_COUNT) {
+                val bone = bones[i]
+                val matrix = outMatrices[i]
+                if (bone.parentId == null) {
+                    matrix.reset()
+                    matrix.postTranslate(rootX, rootY)
+                    matrix.preRotate(angles[i])
+                } else {
+                    val pIdx = rig.BONE_INDEX[bone.parentId] ?: continue
+                    matrix.set(outMatrices[pIdx])
+                    matrix.preTranslate(bones[pIdx].normalizedLength * scale, 0f)
+                    matrix.preRotate(angles[i])
+                }
+            }
+        }
     }
 }

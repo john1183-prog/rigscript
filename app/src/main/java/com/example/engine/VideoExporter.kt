@@ -439,41 +439,74 @@ object VideoExporter {
 
     } // end withContext(Dispatchers.Default)
 
-    // ── GLES export rewrite: Phase 1 diagnostic ─────────────────────────────────
+    // ── GLES export rewrite: Phase 2 diagnostic ─────────────────────────────────
 
     /**
-     * PHASE 1 DIAGNOSTIC — GLES export rewrite (see V2_DECISIONS.md).
+     * PHASE 2 DIAGNOSTIC — GLES export rewrite (see V2_DECISIONS.md).
      *
-     * Produces a short MP4 by cycling solid colors through a real
-     * Surface-input [MediaCodec] encoder driven by [GlesFrameRenderer],
-     * proving the EGL/dedicated-thread/encoder plumbing end-to-end on an
-     * actual device — this sandbox has no compiler or device, so a real
-     * device running this is the first genuine checkpoint beyond "CI
-     * compiles it."
+     * Renders the first [durationSec] seconds of [project]'s REAL timeline —
+     * same [PlaybackEngine], same envelope/blink/fidget loading, same
+     * [RigRenderer.computeFkMatrices] the Canvas path itself now calls — but
+     * through [GlesFrameRenderer.drawFigureFrame] instead of
+     * [RigRenderer.draw]'s Canvas calls. This is deliberate: the point of
+     * this diagnostic is to prove the GLES geometry agrees with what a real
+     * export would show for a real pose, not just that some frame renders.
+     * Duplicating the FK/timeline logic here instead of reusing it would
+     * have reintroduced exactly the parity risk the "export-only" decision
+     * was contingent on mitigating — see V2_DECISIONS.md's History entry.
      *
-     * Deliberately NOT called from [export] yet. The real pipeline keeps
-     * using the byte-buffer software path unconditionally until later
-     * phases add real figure/shape/text rendering to the GLES side —
-     * wiring this into a real export today would silently replace a
-     * user's animation with a blank color video, which is exactly the
-     * "quality is a floor" violation the whole rewrite is trying to avoid.
-     * So this stays a separate, explicit, opt-in entry point until that's
-     * no longer true.
+     * Phase 2 scope: bones, head, joints only — no mouth/eyes/overlays/
+     * captions/scene yet, so this will look like a bare skeleton even
+     * though the POSE itself (angles, position, scale) is the real one.
+     * That's expected, not a bug.
+     *
+     * Still deliberately NOT called from [export] — same reasoning as
+     * Phase 1: this can't render the full picture yet, so wiring it into a
+     * real user's export would visibly regress it. Remove this function and
+     * its UI trigger once a later phase makes GLES the real export path.
      *
      * On any EGL/GLES failure this returns [Result.failure] with no video
-     * written — correct for a diagnostic ("clearly report failure"),
-     * unlike [export]'s "fall back to software and still produce output"
-     * (there's no software equivalent of a color-cycle test to fall back
-     * to).
+     * written, same as Phase 1 — a diagnostic should report failure
+     * clearly, not silently fall back to something else.
      */
     suspend fun exportGlesSmokeTest(
         context: Context,
-        width: Int = 720,
-        height: Int = 1280,
-        fps: Int = 30,
-        durationSec: Int = 2
+        project: ProjectDef,
+        keyframes: List<BakedKeyframe>,
+        amplitudeSettings: com.example.data.AmplitudeSettings = com.example.data.AmplitudeSettings(),
+        durationSec: Float = 3f
     ): Result<ExportResult> = withContext(Dispatchers.Default) {
         runCatching {
+            val settings   = project.exportSettings
+            val fps        = settings.fps
+            val appearance = project.appearance
+            val (width, height) = settings.dimensions(settings.aspectRatio)
+            val minDim     = minOf(width, height).toFloat()
+
+            // Same timeline-resolution pipeline export() itself uses — see
+            // this function's doc comment for why that reuse matters here.
+            @Suppress("DEPRECATION")
+            val envelope: FloatArray = EnvelopeStore.readAmplitudeWithFallback(
+                project.amplitudeEnvelopePath, project.amplitudeEnvelope)
+            @Suppress("DEPRECATION")
+            val mouthEnvelope: IntArray = EnvelopeStore.readMouthShapesWithFallback(
+                project.mouthShapeEnvelopePath, project.mouthShapeEnvelope)
+            val envFps = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS
+
+            val engine = PlaybackEngine().also {
+                it.loadTimeline(keyframes)
+                it.amplitudeSettings = amplitudeSettings
+                it.loadBlinkSchedule(project.script.blinkEvents, durationSec)
+                it.loadFidgetSchedule(envelope, envFps)
+            }
+
+            val totalFrames = (durationSec * fps).toInt().coerceAtLeast(1)
+            // Reused every frame, filled in place by computeFkMatrices — same
+            // "pre-allocate once" convention RigRenderer's own instance field
+            // follows, so this loop doesn't allocate 10 Matrix objects/frame.
+            val matrices = Array(StickFigureRig.BONE_COUNT) { android.graphics.Matrix() }
+            val showJoints = appearance.showJointsOnExport
+
             val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, 8_000_000)
@@ -492,7 +525,7 @@ object VideoExporter {
             val inputSurface = encoder.createInputSurface()
             encoder.start()
 
-            val output = OutputTarget.create(context, "gles_smoketest")
+            val output = OutputTarget.create(context, project.projectName + "_gles_test")
             val muxer = output.openMuxer()
             val bufferInfo = MediaCodec.BufferInfo()
             var videoTrackIdx = -1
@@ -529,20 +562,28 @@ object VideoExporter {
             try {
                 glesRenderer.init()
 
-                // Cycle through 3 colors so a person watching the output can
-                // visually confirm frames are actually advancing frame-to-
-                // frame, not just a single static swap repeated.
-                val colors = listOf(
-                    floatArrayOf(0.8f, 0.1f, 0.1f),
-                    floatArrayOf(0.1f, 0.7f, 0.2f),
-                    floatArrayOf(0.1f, 0.2f, 0.8f)
-                )
-                val totalFrames = fps * durationSec
                 for (frameIdx in 0 until totalFrames) {
                     if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
-                    val color = colors[(frameIdx / fps) % colors.size]
+
+                    val timeSec = frameIdx.toFloat() / fps
+                    val envIdx  = if (envelope.isNotEmpty())
+                        (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
+                    val rawAmp  = if (envIdx >= 0) envelope[envIdx] else 0f
+                    val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
+                        mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
+                    engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
+
+                    val overrides = engine.currentFigureOverrides
+                    val scale = minDim * (overrides.scale ?: appearance.characterScale)
+                    val rootX = width  * (overrides.x ?: appearance.rootAnchorX)
+                    val rootY = height * (overrides.y ?: appearance.rootAnchorY)
+
+                    RigRenderer.computeFkMatrices(engine.currentAngles, rootX, rootY, scale, matrices)
+                    val glesFrame = GlesFigureFrame.fromFkMatrices(
+                        matrices, appearance, overrides, width, height, scale, showJoints)
+
                     val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
-                    glesRenderer.drawColorFrame(color, presentationTimeNs)
+                    glesRenderer.drawFigureFrame(glesFrame, presentationTimeNs)
                     drain(untilEos = false)
                 }
                 encoder.signalEndOfInputStream()
@@ -553,8 +594,8 @@ object VideoExporter {
                 output.finish(context)
                 success = true
 
-                Log.i(TAG, "GLES smoke test: $totalFrames frames -> ${output.location}")
-                ExportResult(output.uri, output.location, "GLES smoke test")
+                Log.i(TAG, "GLES figure test: $totalFrames frames -> ${output.location}")
+                ExportResult(output.uri, output.location, "GLES figure test")
             } finally {
                 glesRenderer.release()
                 if (!encoderReleased) { runCatching { encoder.stop() }; runCatching { encoder.release() } }

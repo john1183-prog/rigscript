@@ -1239,7 +1239,7 @@ private fun ExportPanel(
             Text("Export Video")
         }
 
-        // Phase 1 of the GLES export rewrite (V2_DECISIONS.md) — a plain
+        // GLES export rewrite, now on Phase 2 (V2_DECISIONS.md) — a plain
         // TextButton, deliberately not styled like the two real actions
         // above, since it doesn't render the actual animation yet. Remove
         // once later phases make GLES part of the real export path.
@@ -1247,7 +1247,7 @@ private fun ExportPanel(
         TextButton(onClick = onGlesSmokeTest, modifier = Modifier.fillMaxWidth()) {
             Text("GLES export test (debug)", fontSize = 12.sp)
         }
-        Text("Renders a 2s solid-color clip through the new GPU export path — a Phase 1 plumbing check, not a real export.",
+        Text("Renders ~3s of the real timeline through the new GPU export path — bones/head/joints only so far, a Phase 2 check, not a real export.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
     }

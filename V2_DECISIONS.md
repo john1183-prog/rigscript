@@ -912,6 +912,64 @@ approved by the person before implementing:**
     once rather than a live shader blur, since a text layer's
     content/glow settings are fixed for its whole lifetime the same way
     `cachedShrunkTextSize` already assumes).
+- **GLES export rewrite — Phase 2 (bones/head/joints rendering)**: real
+  shaders now, not a color cycle. `GlesFrameRenderer` gained
+  `drawFigureFrame()` — round-capped bone lines and filled circles (head,
+  joints) via SDF fragment shaders, anti-aliased to a constant ~1 screen
+  pixel regardless of a segment's own length (an earlier draft used a
+  fixed epsilon in length-normalised space instead, which would have
+  made the torso's edge look different from a joint's; caught on review).
+  `GlesFigureFrame` (new) carries one frame's resolved geometry as an
+  ORDERED `DrawCommand` list, not grouped-by-type arrays — see below.
+  - **`RigRenderer.computeFkMatrices` extracted** to a companion function
+    — the FK pass in `draw()` is now a call to it, and it's also fixed a
+    second, independent copy of the same maths that `worldEndpoints()`
+    (touch hit-testing) carried on its own. This is the actual mechanism
+    behind last session's "GLES backend consumes already-resolved values
+    instead of re-deriving animation logic" claim — before this it was
+    true in spirit (the FK pass was a separate STEP) but not in fact
+    (there was no separate CALLABLE function GLES code could reuse
+    without copy-pasting the loop). `VideoExporter`'s new diagnostic
+    calls this same function, so there is now exactly one implementation
+    of bone FK math, not three.
+  - **Two real bugs caught on review, before either shipped — neither
+    would have been caught by CI, only by careful reading**:
+    1. A first draft of `GlesFigureFrame` grouped output as "all bone
+       lines, then all joints, then the head last." `StickFigureRig.BONES`
+       is ordered `[torso, head, upper_arm_r, ...]`, so the Canvas path
+       actually draws the head SECOND — meaning limbs drawn afterward can
+       visually occlude it (arm-in-front-of-face poses). The grouped
+       version inverted that: head would always render on top. Fixed by
+       having `GlesFigureFrame` carry an ordered `DrawCommand` list built
+       in the same per-bone-index loop as `RigRenderer.draw`, replayed
+       faithfully rather than re-derived.
+    2. `drawCircle`'s first draft padded the draw quad beyond the true
+       radius (room for AA falloff) but left the UV coordinates at a
+       fixed ±1 regardless of that padding — meaning `length(uv)==1.0`
+       landed at the PADDED radius, not the true one, so every circle
+       (head, every joint) would have rendered about 2% larger than
+       specified. Fixed by scaling UV by `pad/r` so `length(uv)==1.0`
+       always means "exactly at radius r" no matter how much padding the
+       quad itself carries.
+  - `VideoExporter.exportGlesSmokeTest` upgraded in place (same name, same
+    debug button — no reason to churn the UI John already has) to render
+    the REAL active project's real timeline for a few seconds — same
+    `PlaybackEngine`, same envelope/blink/fidget loading `export()` itself
+    uses, same `computeFkMatrices` — rather than a synthetic pose, so this
+    diagnostic actually tests whether GLES geometry agrees with a real
+    export for a real pose. Bare skeleton only (no mouth/eyes/overlays/
+    captions/scene yet) is expected at this phase, not a bug.
+  - Still deliberately not called from `export()` — same reasoning as
+    Phase 1, just pushed one phase further out: this still can't render
+    the full picture (no face, no overlays, no captions), so it would
+    still visibly regress a real export today.
+  - Not verified against a compiler or device from this environment, same
+    caveat as Phase 1 — CI compiling this is the first checkpoint; a
+    real device showing a recognisable, correctly-proportioned, correctly
+    z-ordered skeleton is the second.
+  - Next up: mouth/eyes (interleaved right after the head `DrawCommand`,
+    per that class's doc comment, to preserve the same z-order guarantee
+    Phase 2 established), then shapes/glow, then text.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

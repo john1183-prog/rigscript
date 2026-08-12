@@ -868,38 +868,45 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * PHASE 1 DIAGNOSTIC — GLES export rewrite. Renders a short solid-
-     * color clip through [VideoExporter.exportGlesSmokeTest] to prove the
-     * EGL/dedicated-thread/Surface-input-encoder plumbing on an actual
-     * device — this sandbox has no compiler or device, so this is the
-     * real first checkpoint. Not part of the real export pipeline; see
-     * that function's doc comment. Remove this and its UI trigger once
-     * Phase 2+ lands and this plumbing is exercised by the real path
-     * instead.
+     * PHASE 2 DIAGNOSTIC — GLES export rewrite. Renders ~3s of the ACTUAL
+     * active project's real timeline (bones/head/joints only — see
+     * [VideoExporter.exportGlesSmokeTest]'s doc comment for why that's
+     * deliberately a bare skeleton right now, not a bug) through the GLES
+     * path, sourcing project/keyframes the same way [exportVideo] does so
+     * this is testing the real pose-resolution pipeline, not a synthetic
+     * stand-in. Not part of the real export pipeline. Remove this and its
+     * UI trigger once a later phase makes GLES the real export path.
      *
      * No thermal watcher here (unlike [exportVideo]/[exportPreview]) — a
-     * couple of seconds of encoding isn't a thermal-risk workload, so
-     * adding one would just be noise.
+     * few seconds of encoding isn't a thermal-risk workload, so adding one
+     * would just be noise.
      */
     fun exportGlesSmokeTest(context: Context) {
         if (exportJob != null) return   // a preview or a real export is already running
+        val project = _activeProject.value ?: return
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:GlesSmokeTest")
         exportJob = viewModelScope.launch {
-            wakeLock.acquire(2 * 60 * 1000L)   // 2 min ceiling — a 2s test clip should never remotely take this long
+            wakeLock.acquire(2 * 60 * 1000L)   // 2 min ceiling — a few seconds of encoding should never remotely take this long
             _exportProgress.value = 0f
             _exportEtaSec.value   = null
             _exportedFile.value   = emptyList()
             try {
-                val result = VideoExporter.exportGlesSmokeTest(context)
+                val compiled = compileTimeline(project.script)
+                val result = VideoExporter.exportGlesSmokeTest(
+                    context           = context,
+                    project           = project,
+                    keyframes         = compiled,
+                    amplitudeSettings = _amplitudeSettings.value
+                )
                 result.onSuccess {
                     _exportedFile.value = listOf(it)
-                    _message.emit("GLES smoke test complete: ${it.location}")
+                    _message.emit("GLES figure test complete: ${it.location}")
                 }.onFailure { e ->
-                    _message.emit("GLES smoke test failed (this is diagnostic info, not a real export problem): ${e.message}")
+                    _message.emit("GLES figure test failed (this is diagnostic info, not a real export problem): ${e.message}")
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                _message.emit("GLES smoke test cancelled")
+                _message.emit("GLES figure test cancelled")
                 throw e
             } finally {
                 _exportProgress.value = null

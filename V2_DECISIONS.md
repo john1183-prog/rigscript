@@ -1007,6 +1007,84 @@ approved by the person before implementing:**
     real device run, because the warning lived in a doc comment instead
     of in an assertion. The fix here is as much "add the assertion that
     should have existed from Phase 1" as it is "fix this one call site."
+- **GLES export rewrite — Phase 3 (mouth, eyes, eyebrows)**: brought the
+  GLES export path to parity with `RigRenderer.draw()`'s face rendering —
+  deterministic blink schedule, audio-driven mouth-shape/openness,
+  expression-biased resting geometry, eyebrows for WORRIED/ANGRY.
+  - **Shared-geometry extraction, not a second implementation.** Per this
+    project's own standing rule (see Phase 2's `computeFkMatrices`
+    precedent), the pure position/size math in `drawMouth`/`drawEyes`/
+    `drawEyebrows` was extracted into three new `RigRenderer` companion
+    functions (`computeMouthGeometry`, `computeEyeGeometry`,
+    `computeEyebrowGeometry`), returning plain data (`OvalGeometry`,
+    `EyeGeometry`, `EyebrowGeometry`, `LineSegment`). `RigRenderer.draw()`
+    now calls these and hands the result to `canvas.drawOval`/`drawLine`;
+    `GlesFigureFrame.fromFkMatrices` calls the exact same functions and
+    emits `DrawCommand`s instead. Verified by diffing the extraction
+    against the pre-existing Canvas code: every constant (0.42f anchor
+    fraction, the four `MouthShape` width/height fractions, the
+    expression width/position biases, `eyeVerticalOffsetNormalized`/
+    `eyeSpacingNormalized`/`eyeAspectRatio`, the blink flatten curve, the
+    eyebrow height/length/inner-lift constants) carried over unchanged —
+    this is a refactor of *where* the math lives, not a rewrite of what
+    it computes.
+  - **New `DrawCommand` types: `Oval` (shared by the mouth and each eye —
+    same shape, different size/position/color) and `Eyebrow` (kept
+    distinct from `BoneLine` despite identical geometry, matching this
+    class's own existing `Joint`/`Head` precedent of naming by meaning,
+    not by shape).**
+  - **New shader: gradient-corrected ellipse SDF, not the circle shader's
+    UV-scale trick.** The circle shader's technique (scale UV by `1/r`,
+    smoothstep `length(uv)`) doesn't extend cleanly to an ellipse: once
+    `rx != ry`, the AA band's SCREEN-pixel width varies around the
+    perimeter under a naive port of that same trick — exactly the class
+    of bug this file's history already caught twice (the circle-padding
+    bug, the line epsilon bug). Checked whether this would actually
+    matter for real shapes here, not just in the abstract: `MouthShape.
+    CLOSED` is `0.44f`×`0.05f` (~8.8:1) and a full blink flattens
+    `eyeRadiusY` to `~0.12×` its resting value — both are genuinely
+    eccentric, not near-circular, so the naive approach's distortion
+    would be visible on exactly the shapes this feature exists to draw.
+    `OVAL_FRAG` instead evaluates the implicit ellipse function
+    `f(x,y)=(x/rx)²+(y/ry)²-1` and divides by its gradient magnitude
+    per-fragment (a standard first-order approximation to true Euclidean
+    distance from an implicit function), keeping the AA band ~constant in
+    screen pixels at any eccentricity. Passes raw pixel offsets from the
+    oval's center as the varying (`a_local`), not a length-normalised UV
+    like the line/circle shaders — the gradient math needs real `rx`/`ry`
+    in pixel units to be well-defined.
+  - **Z-order**: mouth, then left/right eye, then eyebrows (if emitted),
+    inserted immediately after `Head` and before the next bone — matches
+    `RigRenderer.draw()`'s `showMouth`-then-`showEyes` call-site ordering
+    exactly, preserving the interleaving `GlesFigureFrame`'s own doc
+    comment has called out as load-bearing since Phase 2.
+  - **`exportGlesSmokeTest` gap closed**: it already resolved `mouthShape`
+    via `seekToWithAmplitude` (needed for lip-sync even pre-Phase-3), but
+    was discarding `mouthOpenness`/`eyeOpenness`/`expression` entirely —
+    `fromFkMatrices` had no parameters for them yet. Now reads
+    `engine.currentMouthShape`/`currentAmplitude`/`currentEyeOpenness`/
+    `currentExpression` right after `seekToWithAmplitude`, matching the
+    real `export()` function's `RigRenderer.draw()` call site
+    read-for-read.
+  - Not verified against a compiler or device from this environment, same
+    standing caveat as every prior phase — CI compiling this is the first
+    checkpoint; a real device showing correctly-shaped, correctly-colored,
+    correctly-blinking mouth/eyes is the second. The ellipse gradient math
+    in particular has not been visually confirmed at the extreme end of
+    `MouthShape.CLOSED`'s eccentricity — worth deliberately checking that
+    shape specifically on first device run, not just a mid-range mouth
+    shape that would look fine either way.
+  - Next up: shapes + shape glow (two-pass Gaussian), then text/captions/
+    reference-overlay via the texture-quad hybrid — per the phased plan
+    this rewrite has followed since before Phase 1.
+  - Also caught in the same pass, unrelated to the feature itself but
+    worth naming per this project's own standing practice: `MainViewModel.
+    exportGlesSmokeTest`'s doc comment, `VideoExporter.exportGlesSmokeTest`'s
+    doc comment, and the debug button's own user-facing label text in
+    `EditorScreen.kt` all still said "bones/head/joints only" / "bare
+    skeleton" — true as of Phase 2, false as of this phase. Fixed all
+    three; the `EditorScreen.kt` one is the one John would actually see
+    on-device, not just something living in a comment.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

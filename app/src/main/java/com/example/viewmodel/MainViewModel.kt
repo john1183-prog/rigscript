@@ -868,14 +868,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * PHASE 2 DIAGNOSTIC — GLES export rewrite. Renders ~3s of the ACTUAL
-     * active project's real timeline (bones/head/joints only — see
-     * [VideoExporter.exportGlesSmokeTest]'s doc comment for why that's
-     * deliberately a bare skeleton right now, not a bug) through the GLES
-     * path, sourcing project/keyframes the same way [exportVideo] does so
-     * this is testing the real pose-resolution pipeline, not a synthetic
-     * stand-in. Not part of the real export pipeline. Remove this and its
-     * UI trigger once a later phase makes GLES the real export path.
+     * GLES export rewrite diagnostic (Phase 1-3 — V2_DECISIONS.md). Renders
+     * ~3s of the ACTUAL active project's real timeline through the GLES
+     * path — bones/head/joints (Phase 2) plus mouth/eyes/eyebrows
+     * (Phase 3) — sourcing project/keyframes the same way [exportVideo]
+     * does so this is testing the real pose-resolution pipeline, not a
+     * synthetic stand-in. Still no overlays/captions/scene, so it's not yet
+     * a full preview of a real export. Not part of the real export
+     * pipeline. Remove this and its UI trigger once a later phase makes
+     * GLES the real export path.
      *
      * No thermal watcher here (unlike [exportVideo]/[exportPreview]) — a
      * few seconds of encoding isn't a thermal-risk workload, so adding one

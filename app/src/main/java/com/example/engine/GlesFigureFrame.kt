@@ -21,12 +21,11 @@ package com.example.engine
  * [DrawCommand] preserves the interleaving so [GlesFrameRenderer] can
  * just replay it faithfully rather than re-deriving the ordering.
  *
- * Phase 2 scope: bones + head + joints only. Mouth/eyes/eyebrows
- * (deferred, but per [RigRenderer.draw] belong INTERLEAVED right after
- * [DrawCommand.Head] in this same list, before the next bone, to
- * preserve this same z-order guarantee when they're added), overlays,
- * captions, scene shapes, and atmosphere are later phases — see
- * V2_DECISIONS.md.
+ * Phase 2 scope was bones + head + joints only. Phase 3 (V2_DECISIONS.md)
+ * added mouth/eyes/eyebrows, interleaved right after [DrawCommand.Head] in
+ * this same list, before the next bone, preserving this same z-order
+ * guarantee. Overlays, captions, scene shapes, and atmosphere remain later
+ * phases — see V2_DECISIONS.md.
  */
 data class GlesFigureFrame(
     /** Canvas pixel width this frame was computed for. */
@@ -51,6 +50,34 @@ data class GlesFigureFrame(
         data class Joint(val cx: Float, val cy: Float, val radius: Float, val color: Int) : DrawCommand()
 
         data class Head(val cx: Float, val cy: Float, val radius: Float, val color: Int) : DrawCommand()
+
+        /**
+         * Shared by the mouth and each eye — all three are the same shape
+         * (an axis-aligned oval), just different sizes/positions/colors, so
+         * one command type covers all of them rather than three near-
+         * identical ones. See [RigRenderer.computeMouthGeometry] /
+         * [RigRenderer.computeEyeGeometry] for how cx/cy/halfWidth/
+         * halfHeight are derived — this class only replays already-resolved
+         * geometry, same as every other [DrawCommand].
+         */
+        data class Oval(
+            val cx: Float, val cy: Float,
+            val halfWidth: Float, val halfHeight: Float,
+            val color: Int
+        ) : DrawCommand()
+
+        /**
+         * Geometrically identical to [BoneLine] (a round-capped line) but
+         * kept as its own type rather than reusing BoneLine — an eyebrow
+         * isn't a bone, and this class already draws that same distinction
+         * between [Joint] and [Head] despite both being circles. Only
+         * emitted for [Expression.WORRIED]/[Expression.ANGRY] — see
+         * [RigRenderer.computeEyebrowGeometry].
+         */
+        data class Eyebrow(
+            val sx: Float, val sy: Float, val ex: Float, val ey: Float,
+            val halfWidth: Float, val color: Int
+        ) : DrawCommand()
     }
 
     companion object {
@@ -71,7 +98,11 @@ data class GlesFigureFrame(
             canvasW: Int,
             canvasH: Int,
             scale: Float,
-            showJoints: Boolean
+            showJoints: Boolean,
+            mouthShape: Int,
+            mouthOpenness: Float,
+            eyeOpenness: Float,
+            expression: Int
         ): GlesFigureFrame {
             val rig    = StickFigureRig
             val bones  = rig.BONES
@@ -79,9 +110,14 @@ data class GlesFigureFrame(
             val minDim = minOf(canvasW, canvasH).toFloat()
             val pts    = FloatArray(4)
 
-            val boneColor  = (overrides.boneColor ?: appearance.boneColor).toInt()
-            val headColor  = (overrides.headColor ?: overrides.boneColor ?: appearance.headColor).toInt()
-            val jointColor = (overrides.jointColor ?: overrides.boneColor ?: appearance.jointColor).toInt()
+            val boneColor    = (overrides.boneColor ?: appearance.boneColor).toInt()
+            val headColor    = (overrides.headColor ?: overrides.boneColor ?: appearance.headColor).toInt()
+            val jointColor   = (overrides.jointColor ?: overrides.boneColor ?: appearance.jointColor).toInt()
+            // No boneColor fallback for these three — matches RigRenderer's
+            // own mouthPaint/eyePaint/eyebrowPaint.color assignments exactly.
+            val mouthColor   = (overrides.mouthColor ?: appearance.mouthColor).toInt()
+            val eyeColor     = (overrides.eyeColor ?: appearance.eyeColor).toInt()
+            val eyebrowColor = (overrides.eyebrowColor ?: appearance.eyebrowColor).toInt()
             val boneHalfWidth = appearance.boneStrokeNormalized * minDim * 0.5f
             val jointRadius   = appearance.jointRadiusNormalized * minDim
             val headScaleMultiplier = overrides.headScale ?: appearance.headScaleMultiplier
@@ -103,7 +139,33 @@ data class GlesFigureFrame(
                 if (bone.isHeadBone) {
                     val r = bone.headNormalizedRadius * scale * headScaleMultiplier
                     commands += DrawCommand.Head(endX, endY, r, headColor)
-                    // Mouth/eyes belong HERE in a later phase — see class doc comment.
+
+                    // Mouth/eyes/eyebrows, in that order — mirrors RigRenderer.draw's
+                    // showMouth-then-showEyes ordering exactly (see that function's
+                    // call site), inserted here so they land immediately after Head
+                    // and before the next bone, preserving the same z-order guarantee
+                    // this class's own doc comment calls out.
+                    if (appearance.showMouth) {
+                        val g = RigRenderer.computeMouthGeometry(
+                            endX, endY, startX, startY, r,
+                            mouthShape, mouthOpenness, expression, headScaleMultiplier
+                        )
+                        commands += DrawCommand.Oval(g.cx, g.cy, g.halfWidth, g.halfHeight, mouthColor)
+                    }
+                    if (appearance.showEyes) {
+                        val eyes = RigRenderer.computeEyeGeometry(
+                            endX, endY, startX, startY, r,
+                            eyeOpenness, expression, headScaleMultiplier, appearance
+                        )
+                        commands += DrawCommand.Oval(eyes.left.cx, eyes.left.cy, eyes.left.halfWidth, eyes.left.halfHeight, eyeColor)
+                        commands += DrawCommand.Oval(eyes.right.cx, eyes.right.cy, eyes.right.halfWidth, eyes.right.halfHeight, eyeColor)
+
+                        val brows = RigRenderer.computeEyebrowGeometry(eyes, expression)
+                        if (brows != null) {
+                            commands += DrawCommand.Eyebrow(brows.left.sx, brows.left.sy, brows.left.ex, brows.left.ey, brows.halfWidth, eyebrowColor)
+                            commands += DrawCommand.Eyebrow(brows.right.sx, brows.right.sy, brows.right.ex, brows.right.ey, brows.halfWidth, eyebrowColor)
+                        }
+                    }
                 } else {
                     commands += DrawCommand.BoneLine(startX, startY, endX, endY, boneHalfWidth, boneColor)
                 }

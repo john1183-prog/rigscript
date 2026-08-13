@@ -42,7 +42,12 @@ import java.util.concurrent.Executors
  * fixed epsilon in normalised space instead, which scaled the AA band with
  * segment length and would have looked inconsistent across e.g. the torso
  * vs. a finger-scale joint; caught and fixed on review, not on a device).
- * Text / captions / overlays / atmosphere / scene shapes are later phases.
+ * PHASE 3 (V2_DECISIONS.md) added mouth/eyes/eyebrows: ovals via a
+ * gradient-corrected ellipse SDF (see [drawOval]/[OVAL_FRAG] doc comments —
+ * this needed real per-fragment correction, not just the circle shader's
+ * technique, because the mouth/eye shapes are genuinely eccentric, not
+ * near-circular), eyebrows reusing the existing line primitive. Text /
+ * captions / overlays / atmosphere / scene shapes remain later phases.
  */
 class GlesFrameRenderer(private val outputSurface: Surface) {
 
@@ -71,6 +76,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
     private var lineCapProgram = 0
     private var circleProgram  = 0
+    private var ovalProgram    = 0
     private var vertexBuf: FloatBuffer = allocFloatBuffer(24)
 
     private companion object {
@@ -123,6 +129,50 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             void main() {
                 float dist  = length(v_uv);
                 float alpha = 1.0 - smoothstep(1.0 - u_aaWidth, 1.0 + u_aaWidth, dist);
+                gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);
+            }
+        """
+
+        // Ellipse SDF, Phase 3 (mouth/eyes — V2_DECISIONS.md). UNLIKE the circle
+        // shader above, this can't reuse a single UV-scale trick: an ellipse's
+        // boundary curvature varies by angle whenever rx != ry, and the mouth's
+        // CLOSED shape and a blinking eye both get genuinely eccentric (~8:1+).
+        // Naively scaling UV by 1/rx,1/ry and smoothstepping length(uv) — the
+        // direct ellipse analogue of the circle shader's technique — would give
+        // an AA band whose SCREEN-pixel width varies around the perimeter,
+        // exactly the class of bug this file's history already caught twice for
+        // the line and circle shaders (see class doc comment). Instead this
+        // evaluates the implicit ellipse function f(x,y)=(x/rx)²+(y/ry)²-1 and
+        // divides by its gradient magnitude per-fragment — a standard
+        // first-order approximation to true Euclidean distance from an implicit
+        // function — so the AA band stays ~constant in screen pixels at any
+        // eccentricity, not just near-circular ovals. a_local is a RAW PIXEL
+        // offset from the oval's center (not length-normalised like the line/
+        // circle shaders' UVs), since the gradient math needs real rx/ry in
+        // pixel units to be well-defined.
+        const val OVAL_VERT = """
+            attribute vec2 a_pos;
+            attribute vec2 a_local;
+            varying   vec2 v_local;
+            void main() { gl_Position = vec4(a_pos, 0.0, 1.0); v_local = a_local; }
+        """
+
+        const val OVAL_FRAG = """
+            precision mediump float;
+            uniform vec4  u_color;
+            uniform float u_rx;        // half-width, pixels
+            uniform float u_ry;        // half-height, pixels
+            uniform float u_aaHalfPx;  // desired AA half-band width, pixels (~1.0)
+            varying vec2  v_local;
+            void main() {
+                float ux = v_local.x / u_rx;
+                float uy = v_local.y / u_ry;
+                float f  = ux * ux + uy * uy - 1.0;
+                float gx = 2.0 * v_local.x / (u_rx * u_rx);
+                float gy = 2.0 * v_local.y / (u_ry * u_ry);
+                float gradLen = sqrt(gx * gx + gy * gy);
+                float dist  = f / max(gradLen, 0.0001);
+                float alpha = 1.0 - smoothstep(-u_aaHalfPx, u_aaHalfPx, dist);
                 gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);
             }
         """
@@ -183,6 +233,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
         lineCapProgram = buildProgram(LINE_VERT, LINE_FRAG)
         circleProgram  = buildProgram(CIRCLE_VERT, CIRCLE_FRAG)
+        ovalProgram    = buildProgram(OVAL_VERT, OVAL_FRAG)
 
         ownerThread = Thread.currentThread()   // this block runs on dispatcher — see ownerThread's doc comment
         initialized = true
@@ -216,6 +267,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         withContext(dispatcher) {
             if (lineCapProgram != 0) { GLES20.glDeleteProgram(lineCapProgram); lineCapProgram = 0 }
             if (circleProgram  != 0) { GLES20.glDeleteProgram(circleProgram);  circleProgram  = 0 }
+            if (ovalProgram    != 0) { GLES20.glDeleteProgram(ovalProgram);    ovalProgram    = 0 }
             if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
                 if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
@@ -299,6 +351,24 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                     is GlesFigureFrame.DrawCommand.Head -> {
                         val c = argbToGlColor(cmd.color)
                         drawCircle(cmd.cx, cmd.cy, cmd.radius, w, h, c[0], c[1], c[2], c[3] * frame.figureAlpha)
+                    }
+                    is GlesFigureFrame.DrawCommand.Oval -> {
+                        val c = argbToGlColor(cmd.color)
+                        drawOval(
+                            cmd.cx, cmd.cy, cmd.halfWidth, cmd.halfHeight, w, h,
+                            c[0], c[1], c[2], c[3] * frame.figureAlpha
+                        )
+                    }
+                    is GlesFigureFrame.DrawCommand.Eyebrow -> {
+                        // Geometrically identical to BoneLine — see that
+                        // DrawCommand's doc comment for why it's still a
+                        // distinct type. Reuses drawRoundCappedLine rather
+                        // than a separate primitive.
+                        val c = argbToGlColor(cmd.color)
+                        drawRoundCappedLine(
+                            cmd.sx, cmd.sy, cmd.ex, cmd.ey, cmd.halfWidth, w, h,
+                            c[0], c[1], c[2], c[3] * frame.figureAlpha
+                        )
                     }
                 }
             }
@@ -419,7 +489,61 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         drawQuad(data, aPos, aUv)
     }
 
-    /** Shared 6-vertex (2-triangle) interleaved [x,y,u,v] draw, used by both primitives above. */
+    /**
+     * Draws a filled oval via a quad + gradient-corrected ellipse SDF — see
+     * [OVAL_FRAG]'s doc comment for why this needs its own per-fragment
+     * gradient correction rather than [drawCircle]'s single-uniform-scalar
+     * approach: an ellipse's AA band width isn't constant around its
+     * perimeter under a naive UV-scale technique once [rx] and [ry] differ
+     * meaningfully, and the mouth/eye shapes this is built for do differ
+     * meaningfully (a closed mouth and a blinking eye are both ~8:1+
+     * eccentric). [marginPx] is a small constant, not proportional to
+     * [rx]/[ry] like [drawCircle]'s `pad` — this shader computes true pixel
+     * distance directly, so it doesn't need shape-size-proportional quad
+     * slack the way the UV-normalised circle shader does.
+     */
+    private fun drawOval(
+        cx: Float, cy: Float, rx: Float, ry: Float,
+        canvasW: Float, canvasH: Float,
+        red: Float, green: Float, blue: Float, alpha: Float
+    ) {
+        if (rx < 0.5f || ry < 0.5f) return
+
+        val aaHalfPx = 1f
+        val marginPx = aaHalfPx * 3f   // quad slack for the AA band to render into, unclipped
+        val padX = rx + marginPx
+        val padY = ry + marginPx
+
+        GLES20.glUseProgram(ovalProgram)
+        val aPos    = GLES20.glGetAttribLocation(ovalProgram, "a_pos")
+        val aLocal  = GLES20.glGetAttribLocation(ovalProgram, "a_local")
+        val uColor  = GLES20.glGetUniformLocation(ovalProgram, "u_color")
+        val uRx     = GLES20.glGetUniformLocation(ovalProgram, "u_rx")
+        val uRy     = GLES20.glGetUniformLocation(ovalProgram, "u_ry")
+        val uAaHalf = GLES20.glGetUniformLocation(ovalProgram, "u_aaHalfPx")
+        GLES20.glUniform4f(uColor, red, green, blue, alpha)
+        GLES20.glUniform1f(uRx, rx)
+        GLES20.glUniform1f(uRy, ry)
+        GLES20.glUniform1f(uAaHalf, aaHalfPx)
+
+        val l = cx - padX; val r2 = cx + padX
+        val t = cy - padY; val b2 = cy + padY
+
+        // a_local is the RAW PIXEL offset from (cx,cy) — see OVAL_FRAG's doc
+        // comment for why, unlike the line/circle shaders' length-normalised UVs.
+        val data = floatArrayOf(
+            toClipX(l,  canvasW), toClipY(t,  canvasH), -padX, -padY,
+            toClipX(r2, canvasW), toClipY(t,  canvasH),  padX, -padY,
+            toClipX(l,  canvasW), toClipY(b2, canvasH), -padX,  padY,
+            toClipX(r2, canvasW), toClipY(t,  canvasH),  padX, -padY,
+            toClipX(r2, canvasW), toClipY(b2, canvasH),  padX,  padY,
+            toClipX(l,  canvasW), toClipY(b2, canvasH), -padX,  padY
+        )
+
+        drawQuad(data, aPos, aLocal)
+    }
+
+    /** Shared 6-vertex (2-triangle) interleaved [x,y,u,v] draw, used by all three primitives above. */
     private fun drawQuad(data: FloatArray, aPosLoc: Int, aUvLoc: Int) {
         val buf = getVertexBuffer(data.size)
         buf.put(data).position(0)

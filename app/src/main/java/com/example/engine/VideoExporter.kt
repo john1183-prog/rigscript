@@ -439,10 +439,10 @@ object VideoExporter {
 
     } // end withContext(Dispatchers.Default)
 
-    // ── GLES export rewrite: Phase 2 diagnostic ─────────────────────────────────
+    // ── GLES export rewrite: diagnostic (Phase 1-3) ─────────────────────────────
 
     /**
-     * PHASE 2 DIAGNOSTIC — GLES export rewrite (see V2_DECISIONS.md).
+     * GLES export rewrite diagnostic (see V2_DECISIONS.md).
      *
      * Renders the first [durationSec] seconds of [project]'s REAL timeline —
      * same [PlaybackEngine], same envelope/blink/fidget loading, same
@@ -455,15 +455,16 @@ object VideoExporter {
      * have reintroduced exactly the parity risk the "export-only" decision
      * was contingent on mitigating — see V2_DECISIONS.md's History entry.
      *
-     * Phase 2 scope: bones, head, joints only — no mouth/eyes/overlays/
-     * captions/scene yet, so this will look like a bare skeleton even
-     * though the POSE itself (angles, position, scale) is the real one.
-     * That's expected, not a bug.
+     * Scope as of Phase 3: bones, head, joints, mouth, eyes, eyebrows — the
+     * full figure, correctly posed, colored, and blinking/lip-synced. Still
+     * no overlays/captions/scene/shapes-glow/text, so this is not yet a
+     * full preview of a real export.
      *
-     * Still deliberately NOT called from [export] — same reasoning as
-     * Phase 1: this can't render the full picture yet, so wiring it into a
-     * real user's export would visibly regress it. Remove this function and
-     * its UI trigger once a later phase makes GLES the real export path.
+     * Still deliberately NOT called from [export] — same reasoning as every
+     * prior phase: this can't render the full picture yet, so wiring it
+     * into a real user's export would visibly regress it. Remove this
+     * function and its UI trigger once a later phase makes GLES the real
+     * export path.
      *
      * On any EGL/GLES failure this returns [Result.failure] with no video
      * written, same as Phase 1 — a diagnostic should report failure
@@ -594,7 +595,17 @@ object VideoExporter {
 
                         RigRenderer.computeFkMatrices(engine.currentAngles, rootX, rootY, scale, matrices)
                         val glesFrame = GlesFigureFrame.fromFkMatrices(
-                            matrices, appearance, overrides, width, height, scale, showJoints)
+                            matrices, appearance, overrides, width, height, scale, showJoints,
+                            // Phase 3 (mouth/eyes — V2_DECISIONS.md): same four
+                            // engine.current* reads export()'s real RigRenderer.draw
+                            // call uses (see that call site) — this smoke test was
+                            // previously discarding all four after resolving them
+                            // via seekToWithAmplitude above.
+                            mouthShape    = engine.currentMouthShape,
+                            mouthOpenness = engine.currentAmplitude,
+                            eyeOpenness   = engine.currentEyeOpenness,
+                            expression    = engine.currentExpression
+                        )
 
                         val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
                         glesRenderer.drawFigureFrame(glesFrame, presentationTimeNs)

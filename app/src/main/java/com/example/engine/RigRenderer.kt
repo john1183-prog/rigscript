@@ -1017,35 +1017,13 @@ class RigRenderer {
         expression: Int,
         headScaleMultiplier: Float
     ) {
-        // The (nx-hx, ny-hy) vector's length is the head BONE's fixed FK
-        // length — it does NOT change with headScaleMultiplier, which only
-        // scales the drawn circle radius `r`. Multiplying the offset fraction
-        // by headScaleMultiplier here keeps the mouth anchored correctly
-        // relative to the visually-scaled circle instead of staying pinned to
-        // where the default-size head used to be. At the default multiplier
-        // (1.0) this is exactly the previous behavior — unchanged look.
-        val cx = hx + (nx - hx) * 0.42f * headScaleMultiplier
-        var cy = hy + (ny - hy) * 0.42f * headScaleMultiplier
-
-        val (wFrac, hFrac) = when (mouthShape) {
-            MouthShape.WIDE   -> 0.44f to 0.28f
-            MouthShape.NARROW -> 0.32f to 0.10f
-            MouthShape.CLOSED -> 0.44f to 0.05f
-            else              -> 0.42f to 0.14f   // MID
-        }
-
-        val widthMul: Float
-        val cyBiasFrac: Float
-        when (expression) {
-            Expression.HAPPY -> { widthMul = 1.12f; cyBiasFrac = -0.06f }
-            Expression.WORRIED, Expression.ANGRY -> { widthMul = 0.90f; cyBiasFrac = 0.05f }
-            else -> { widthMul = 1f; cyBiasFrac = 0f }
-        }
-        cy += cyBiasFrac * r
-
-        val hw = wFrac * r * widthMul
-        val hh = hFrac * r * (0.5f + 0.5f * mouthOpenness.coerceIn(0f, 1f))
-        canvas.drawOval(cx - hw, cy - hh, cx + hw, cy + hh, mouthPaint)
+        // Geometry now lives in computeMouthGeometry (companion, below) —
+        // shared with the GLES export path (Phase 3, V2_DECISIONS.md) so
+        // there's exactly one implementation of this math, not two. See that
+        // function's doc comment for the headScaleMultiplier-on-the-anchor
+        // reasoning that used to live here.
+        val g = computeMouthGeometry(hx, hy, nx, ny, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
+        canvas.drawOval(g.cx - g.halfWidth, g.cy - g.halfHeight, g.cx + g.halfWidth, g.cy + g.halfHeight, mouthPaint)
     }
 
     /**
@@ -1081,84 +1059,33 @@ class RigRenderer {
         headScaleMultiplier: Float,
         appearance: AppearanceSettings
     ) {
-        // Toward-neck interpolation, same technique as drawMouth but a smaller
-        // fraction — eyes sit higher on the face than the mouth's 0.42f.
-        // See drawMouth's doc comment for why headScaleMultiplier is applied here.
-        val cx = hx + (nx - hx) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
-        val cy = hy + (ny - hy) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
+        // Geometry now lives in computeEyeGeometry (companion, below) — see
+        // computeMouthGeometry's doc comment for why this is shared with the
+        // GLES export path rather than duplicated.
+        val eyes = computeEyeGeometry(hx, hy, nx, ny, r, openness, expression, headScaleMultiplier, appearance)
 
-        // Perpendicular to the head-neck axis, normalised — gives left/right
-        // eye separation that automatically follows head TILT, not just
-        // position, exactly like the mouth already does.
-        val rawPx = -(ny - hy)
-        val rawPy = (nx - hx)
-        val plen = kotlin.math.sqrt(rawPx * rawPx + rawPy * rawPy).let { if (it < 0.0001f) 1f else it }
-        val perpX = rawPx / plen
-        val perpY = rawPy / plen
-        val upX = -perpY
-        val upY = perpX
+        canvas.drawOval(
+            eyes.left.cx - eyes.left.halfWidth, eyes.left.cy - eyes.left.halfHeight,
+            eyes.left.cx + eyes.left.halfWidth, eyes.left.cy + eyes.left.halfHeight, eyePaint
+        )
+        canvas.drawOval(
+            eyes.right.cx - eyes.right.halfWidth, eyes.right.cy - eyes.right.halfHeight,
+            eyes.right.cx + eyes.right.halfWidth, eyes.right.cy + eyes.right.halfHeight, eyePaint
+        )
 
-        val eyeSpacing = appearance.eyeSpacingNormalized * r
-        val baseEyeRadius = when (expression) {
-            Expression.WIDE, Expression.HAPPY -> 0.20f * r
-            Expression.SQUINT                  -> 0.11f * r
-            else                                -> 0.15f * r
-        }
-        // Blink flattens toward a thin closed line rather than vanishing to
-        // zero height — same reasoning as MouthShape.CLOSED using a thin oval.
-        // eyeAspectRatio is applied ON TOP of the blink flattening (not
-        // instead of it) — at full openness this is the actual resting shape
-        // (oval if eyeAspectRatio != 1.0); mid-blink it flattens further from
-        // whatever that resting height is, same as before this setting existed.
-        val openFactor = openness.coerceIn(0f, 1f)
-        val eyeRadiusY = baseEyeRadius * appearance.eyeAspectRatio * (0.12f + 0.88f * openFactor)
-
-        val leftX  = cx - perpX * eyeSpacing
-        val leftY  = cy - perpY * eyeSpacing
-        val rightX = cx + perpX * eyeSpacing
-        val rightY = cy + perpY * eyeSpacing
-
-        canvas.drawOval(leftX - baseEyeRadius, leftY - eyeRadiusY, leftX + baseEyeRadius, leftY + eyeRadiusY, eyePaint)
-        canvas.drawOval(rightX - baseEyeRadius, rightY - eyeRadiusY, rightX + baseEyeRadius, rightY + eyeRadiusY, eyePaint)
-
-        if (expression == Expression.WORRIED || expression == Expression.ANGRY) {
-            drawEyebrows(canvas, leftX, leftY, rightX, rightY, perpX, perpY, upX, upY, baseEyeRadius, expression)
-        }
+        val brows = computeEyebrowGeometry(eyes, expression)
+        if (brows != null) drawEyebrows(canvas, brows)
     }
 
-    private fun drawEyebrows(
-        canvas: Canvas,
-        leftX: Float, leftY: Float, rightX: Float, rightY: Float,
-        perpX: Float, perpY: Float,
-        upX: Float, upY: Float,
-        eyeRadius: Float,
-        expression: Int
-    ) {
+    private fun drawEyebrows(canvas: Canvas, brows: EyebrowGeometry) {
         // Stroke width scales with eyeRadius (which itself scales with the
         // head's current drawn radius) rather than a fixed absolute value —
         // see the note where eyebrowPaint.color is set for why a fixed value
-        // looked wrong at non-default headScaleMultiplier.
-        eyebrowPaint.strokeWidth = eyeRadius * 0.35f
-        val browHeight = eyeRadius * 1.8f
-        val browHalfLen = eyeRadius * 1.0f
-        // WORRIED: inner end (toward the other eye) lifts — concerned slant.
-        // ANGRY: inner end drops — furrowed/stern slant.
-        val innerLift = eyeRadius * (if (expression == Expression.WORRIED) 0.55f else -0.55f)
-
-        canvas.drawLine(
-            leftX - perpX * browHalfLen + upX * browHeight,
-            leftY - perpY * browHalfLen + upY * browHeight,
-            leftX + perpX * browHalfLen + upX * (browHeight + innerLift),
-            leftY + perpY * browHalfLen + upY * (browHeight + innerLift),
-            eyebrowPaint
-        )
-        canvas.drawLine(
-            rightX + perpX * browHalfLen + upX * browHeight,
-            rightY + perpY * browHalfLen + upY * browHeight,
-            rightX - perpX * browHalfLen + upX * (browHeight + innerLift),
-            rightY - perpY * browHalfLen + upY * (browHeight + innerLift),
-            eyebrowPaint
-        )
+        // looked wrong at non-default headScaleMultiplier. halfWidth*2 here
+        // because Paint.strokeWidth is a full width, not a half-width.
+        eyebrowPaint.strokeWidth = brows.halfWidth * 2f
+        canvas.drawLine(brows.left.sx, brows.left.sy, brows.left.ex, brows.left.ey, eyebrowPaint)
+        canvas.drawLine(brows.right.sx, brows.right.sy, brows.right.ex, brows.right.ey, eyebrowPaint)
     }
 
     /**
@@ -1233,6 +1160,139 @@ class RigRenderer {
                     matrix.preRotate(angles[i])
                 }
             }
+        }
+
+        /** Center + half-extents of an oval, in the same canvas-pixel space [computeFkMatrices] outputs. */
+        data class OvalGeometry(val cx: Float, val cy: Float, val halfWidth: Float, val halfHeight: Float)
+
+        /** One straight segment, in canvas-pixel space. */
+        data class LineSegment(val sx: Float, val sy: Float, val ex: Float, val ey: Float)
+
+        /** Both eyes plus the perpendicular/"up" basis eyebrow geometry needs — see [computeEyebrowGeometry]. */
+        data class EyeGeometry(
+            val left: OvalGeometry, val right: OvalGeometry,
+            val perpX: Float, val perpY: Float, val upX: Float, val upY: Float
+        )
+
+        /** Both eyebrow line segments plus their shared half-width. */
+        data class EyebrowGeometry(val left: LineSegment, val right: LineSegment, val halfWidth: Float)
+
+        /**
+         * Pure geometry for the mouth oval — no Canvas/Paint dependency, so
+         * [drawMouth] (Canvas path) and [GlesFigureFrame.fromFkMatrices] (GLES
+         * path, Phase 3) share exactly one implementation of this math instead
+         * of risking the two drifting apart — same reasoning as
+         * [computeFkMatrices]'s own doc comment.
+         *
+         * hx,hy = head circle center (bone tip); nx,ny = neck point (bone
+         * origin); r = head's drawn radius (already includes
+         * headScaleMultiplier). See [drawMouth]'s own doc comment for why
+         * headScaleMultiplier is also applied to the anchor offset below, not
+         * just to r.
+         */
+        fun computeMouthGeometry(
+            hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
+            mouthShape: Int, mouthOpenness: Float, expression: Int,
+            headScaleMultiplier: Float
+        ): OvalGeometry {
+            val cx = hx + (nx - hx) * 0.42f * headScaleMultiplier
+            var cy = hy + (ny - hy) * 0.42f * headScaleMultiplier
+
+            val (wFrac, hFrac) = when (mouthShape) {
+                MouthShape.WIDE   -> 0.44f to 0.28f
+                MouthShape.NARROW -> 0.32f to 0.10f
+                MouthShape.CLOSED -> 0.44f to 0.05f
+                else              -> 0.42f to 0.14f   // MID
+            }
+
+            val widthMul: Float
+            val cyBiasFrac: Float
+            when (expression) {
+                Expression.HAPPY -> { widthMul = 1.12f; cyBiasFrac = -0.06f }
+                Expression.WORRIED, Expression.ANGRY -> { widthMul = 0.90f; cyBiasFrac = 0.05f }
+                else -> { widthMul = 1f; cyBiasFrac = 0f }
+            }
+            cy += cyBiasFrac * r
+
+            val hw = wFrac * r * widthMul
+            val hh = hFrac * r * (0.5f + 0.5f * mouthOpenness.coerceIn(0f, 1f))
+            return OvalGeometry(cx, cy, hw, hh)
+        }
+
+        /**
+         * Pure geometry for both eyes — see [computeMouthGeometry]'s doc
+         * comment for why this is shared rather than duplicated. Mirrors
+         * [drawEyes] exactly, including the perpendicular-to-head-neck-axis
+         * technique that makes eye separation follow head tilt for free.
+         */
+        fun computeEyeGeometry(
+            hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
+            openness: Float, expression: Int, headScaleMultiplier: Float,
+            appearance: AppearanceSettings
+        ): EyeGeometry {
+            val cx = hx + (nx - hx) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
+            val cy = hy + (ny - hy) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
+
+            val rawPx = -(ny - hy)
+            val rawPy = (nx - hx)
+            val plen = kotlin.math.sqrt(rawPx * rawPx + rawPy * rawPy).let { if (it < 0.0001f) 1f else it }
+            val perpX = rawPx / plen
+            val perpY = rawPy / plen
+            val upX = -perpY
+            val upY = perpX
+
+            val eyeSpacing = appearance.eyeSpacingNormalized * r
+            val baseEyeRadius = when (expression) {
+                Expression.WIDE, Expression.HAPPY -> 0.20f * r
+                Expression.SQUINT                  -> 0.11f * r
+                else                                -> 0.15f * r
+            }
+            val openFactor = openness.coerceIn(0f, 1f)
+            val eyeRadiusY = baseEyeRadius * appearance.eyeAspectRatio * (0.12f + 0.88f * openFactor)
+
+            val leftX  = cx - perpX * eyeSpacing
+            val leftY  = cy - perpY * eyeSpacing
+            val rightX = cx + perpX * eyeSpacing
+            val rightY = cy + perpY * eyeSpacing
+
+            return EyeGeometry(
+                left  = OvalGeometry(leftX, leftY, baseEyeRadius, eyeRadiusY),
+                right = OvalGeometry(rightX, rightY, baseEyeRadius, eyeRadiusY),
+                perpX = perpX, perpY = perpY, upX = upX, upY = upY
+            )
+        }
+
+        /**
+         * Pure geometry for the eyebrows — see [computeMouthGeometry]'s doc
+         * comment for why this is shared. Returns null for any expression
+         * other than WORRIED/ANGRY, mirroring [drawEyes]'s own condition for
+         * calling [drawEyebrows] at all — eyebrows aren't rig bones, they're
+         * synthetic and only drawn for those two expressions.
+         */
+        fun computeEyebrowGeometry(eyes: EyeGeometry, expression: Int): EyebrowGeometry? {
+            if (expression != Expression.WORRIED && expression != Expression.ANGRY) return null
+
+            val eyeRadius = eyes.left.halfWidth   // baseEyeRadius, same magnitude for both eyes
+            val browHeight  = eyeRadius * 1.8f
+            val browHalfLen = eyeRadius * 1.0f
+            val innerLift = eyeRadius * (if (expression == Expression.WORRIED) 0.55f else -0.55f)
+            val perpX = eyes.perpX; val perpY = eyes.perpY
+            val upX = eyes.upX; val upY = eyes.upY
+
+            val left = LineSegment(
+                eyes.left.cx - perpX * browHalfLen + upX * browHeight,
+                eyes.left.cy - perpY * browHalfLen + upY * browHeight,
+                eyes.left.cx + perpX * browHalfLen + upX * (browHeight + innerLift),
+                eyes.left.cy + perpY * browHalfLen + upY * (browHeight + innerLift)
+            )
+            val right = LineSegment(
+                eyes.right.cx + perpX * browHalfLen + upX * browHeight,
+                eyes.right.cy + perpY * browHalfLen + upY * browHeight,
+                eyes.right.cx - perpX * browHalfLen + upX * (browHeight + innerLift),
+                eyes.right.cy - perpY * browHalfLen + upY * (browHeight + innerLift)
+            )
+            // eyebrowPaint.strokeWidth = eyeRadius * 0.35f in the Canvas path — half of that for a half-width.
+            return EyebrowGeometry(left, right, eyeRadius * 0.175f)
         }
     }
 }

@@ -222,8 +222,8 @@ fun EditorScreen(
         else previewStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
-    // Same permission gate again, for the Phase 1 GLES export diagnostic —
-    // see MainViewModel.exportGlesSmokeTest's doc comment. Temporary;
+    // Same permission gate again, for the GLES export diagnostic — see
+    // MainViewModel.exportGlesSmokeTest's doc comment. Temporary;
     // remove alongside that function once later phases replace it.
     val glesTestStoragePermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -1239,7 +1239,7 @@ private fun ExportPanel(
             Text("Export Video")
         }
 
-        // GLES export rewrite, now on Phase 2 (V2_DECISIONS.md) — a plain
+        // GLES export rewrite, now on Phase 3 (V2_DECISIONS.md) — a plain
         // TextButton, deliberately not styled like the two real actions
         // above, since it doesn't render the actual animation yet. Remove
         // once later phases make GLES part of the real export path.
@@ -1247,7 +1247,7 @@ private fun ExportPanel(
         TextButton(onClick = onGlesSmokeTest, modifier = Modifier.fillMaxWidth()) {
             Text("GLES export test (debug)", fontSize = 12.sp)
         }
-        Text("Renders ~3s of the real timeline through the new GPU export path — bones/head/joints only so far, a Phase 2 check, not a real export.",
+        Text("Renders ~3s of the real timeline through the new GPU export path — full figure incl. mouth/eyes now, still no overlays/captions/scene, a Phase 3 check, not a real export.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
     }

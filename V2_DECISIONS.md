@@ -1119,6 +1119,45 @@ zoom in."
 
 ## Deferred, with rationale
 
+- **GLES Phase 3: mouth renders at bottom of head, opens downward below
+  it** — confirmed on first device run. The geometry in
+  `computeMouthGeometry` places the mouth anchor at
+  `hx + (nx - hx) * 0.42f * headScaleMultiplier` — i.e. 42% of the way
+  from the head tip toward the neck. In the Canvas path (which uses the
+  same extracted function as of Phase 3) that produces a mouth inside the
+  head because `RigRenderer.draw()` draws the head bone tip-up (neck at
+  bottom, crown at top), so "toward neck" is downward into the circle.
+  Whether the GLES coordinates invert the y-axis relative to Canvas
+  coordinates — the standard OpenGL clip-space vs. Canvas convention
+  mismatch — was not verified on-device before Phase 3 shipped. The fix
+  is likely a sign flip in `toClipY` or in the anchor offset direction
+  inside `computeMouthGeometry` for the GLES path; needs on-device
+  confirmation to determine which. Deferred deliberately — not fixing
+  blindly from this environment without a way to verify the result.
+
+- **`argbToNV12` performance regression in Canvas export path** —
+  identified across two commits: `dc1c11d` (smooth) → `88d7cb6` (no
+  longer smooth, 30–60 min for 8-min video). Root cause: `argbToNV12`
+  was rewritten from a simple synchronous loop into a `suspend` function
+  that splits each frame into 4 chunks and launches them as
+  `async(Dispatchers.Default)` coroutines. Three compounding problems:
+  (1) coroutine dispatch/continuation overhead is a large fraction of the
+  per-chunk work at 500K pixels/chunk; (2) `argbToNV12` is purely
+  memory-bound — read an `IntArray`, write a `ByteArray` — and
+  memory-bound workloads don't parallelize well on a shared mobile memory
+  bus; (3) launching into `Dispatchers.Default` from within an already-
+  running `Dispatchers.Default` context causes scheduling churn, not true
+  parallelism, on a 2–4 core device. The same commit range also fixed
+  `ExportSettings.dimensions()` so portrait 1080p exports now use the
+  correct 1080×1920 canvas (3× more pixels per frame), amplifying the
+  overhead further. Fix: revert `argbToNV12` to the single-threaded loop
+  — zero allocation, no suspension, no thread contention. The correct
+  code is at `dc1c11d` and doesn't need to be re-derived. Deferred
+  because the Canvas export path is slated to be replaced entirely by the
+  GLES Surface-input path; fixing a regression in code that's being
+  retired is lower priority than finishing the replacement. If the GLES
+  path takes longer than expected, revisit this first.
+
 - **Surface-input export (OpenGL ES / `createInputSurface()`)** —
   confirmed to need a full OpenGL ES rendering rewrite, not a light
   retarget of the existing `lockHardwareCanvas()` path. Was deferred

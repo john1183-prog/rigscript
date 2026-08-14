@@ -17,7 +17,7 @@ import java.nio.FloatBuffer
 import java.util.concurrent.Executors
 
 /**
- * GLES export rewrite — Phase 2 (see V2_DECISIONS.md).
+ * GLES export rewrite (see V2_DECISIONS.md).
  *
  * Owns one EGL context/surface pair bound to a [Surface] (in practice, a
  * [android.media.MediaCodec] Surface-input encoder's input surface) and a
@@ -46,8 +46,14 @@ import java.util.concurrent.Executors
  * gradient-corrected ellipse SDF (see [drawOval]/[OVAL_FRAG] doc comments —
  * this needed real per-fragment correction, not just the circle shader's
  * technique, because the mouth/eye shapes are genuinely eccentric, not
- * near-circular), eyebrows reusing the existing line primitive. Text /
- * captions / overlays / atmosphere / scene shapes remain later phases.
+ * near-circular), eyebrows reusing the existing line primitive.
+ * PHASE 4 added background/scene shapes/atmosphere: sky/ground bands and
+ * the background gradient, mountains/city/trees/clouds/stars, ground line,
+ * and fog/rain/snow — via [SOLID_FRAG] (see its own doc comment for why
+ * that's a plain interpolated fill, not an SDF, unlike everything above)
+ * plus the existing circle/line primitives reused as-is for trees/clouds/
+ * stars/snow/rain/ground-line. Text / captions / overlays remain later
+ * phases.
  */
 class GlesFrameRenderer(private val outputSurface: Surface) {
 
@@ -77,6 +83,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     private var lineCapProgram = 0
     private var circleProgram  = 0
     private var ovalProgram    = 0
+    private var solidProgram   = 0
     private var vertexBuf: FloatBuffer = allocFloatBuffer(24)
 
     private companion object {
@@ -181,6 +188,31 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             ByteBuffer.allocateDirect(floats * 4)
                 .order(ByteOrder.nativeOrder())
                 .asFloatBuffer()
+
+        // Flat/interpolated-color fill, Phase 4 (background/scene — V2_DECISIONS.md).
+        // Deliberately NOT an SDF like the three shaders above: those exist to hide
+        // a shape's edge inside a ~1px AA transition because the shape's OWN edge is
+        // the visible boundary a person looks at (a bone's silhouette, a joint,
+        // mouth/eye). Background bands, gradients, mountains, and buildings are the
+        // opposite case — large fills where a hard raster edge is not a visible
+        // defect (a mountain ridge doesn't need antialiasing softness to look right
+        // the way a joint circle does) — so a plain per-vertex color, linearly
+        // interpolated by the GPU, is correct and cheaper. Per-vertex (not a single
+        // uniform) color is what makes this one shader cover both a flat fill (same
+        // color at every vertex) and the background gradient (different top/bottom
+        // vertex colors) for free.
+        const val SOLID_VERT = """
+            attribute vec2 a_pos;
+            attribute vec4 a_color;
+            varying   vec4 v_color;
+            void main() { gl_Position = vec4(a_pos, 0.0, 1.0); v_color = a_color; }
+        """
+
+        const val SOLID_FRAG = """
+            precision mediump float;
+            varying vec4 v_color;
+            void main() { gl_FragColor = v_color; }
+        """
     }
 
     // ── EGL init / release ────────────────────────────────────────────────────
@@ -234,6 +266,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         lineCapProgram = buildProgram(LINE_VERT, LINE_FRAG)
         circleProgram  = buildProgram(CIRCLE_VERT, CIRCLE_FRAG)
         ovalProgram    = buildProgram(OVAL_VERT, OVAL_FRAG)
+        solidProgram   = buildProgram(SOLID_VERT, SOLID_FRAG)
 
         ownerThread = Thread.currentThread()   // this block runs on dispatcher — see ownerThread's doc comment
         initialized = true
@@ -268,6 +301,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             if (lineCapProgram != 0) { GLES20.glDeleteProgram(lineCapProgram); lineCapProgram = 0 }
             if (circleProgram  != 0) { GLES20.glDeleteProgram(circleProgram);  circleProgram  = 0 }
             if (ovalProgram    != 0) { GLES20.glDeleteProgram(ovalProgram);    ovalProgram    = 0 }
+            if (solidProgram   != 0) { GLES20.glDeleteProgram(solidProgram);   solidProgram   = 0 }
             if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
                 if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
@@ -295,7 +329,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         }
     }
 
-    // ── Phase 2: real figure rendering ────────────────────────────────────────
+    // ── Frame rendering (figure + background/scene/atmosphere) ─────────────────
 
     /**
      * Renders one [GlesFigureFrame] and presents it at [presentationTimeNs]
@@ -334,6 +368,50 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLES20.glClearColor(bg[0], bg[1], bg[2], bg[3])
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
+        // Background bands / gradient — plain solid is already fully handled
+        // by the glClear above, so this only draws SOMETHING EXTRA on top
+        // for the two other cases, mirroring RigRenderer.draw's own
+        // priority order (sky/ground bands > gradient > solid) exactly.
+        // UNLIKE Canvas's oversized (3x canvas) background rects, these are
+        // drawn exactly canvas-sized — correct for now because camera zoom/
+        // pan/shake isn't applied anywhere in the GLES path yet (a
+        // pre-existing gap from Phase 1, not something Phase 4 introduces —
+        // see V2_DECISIONS.md). Revisit sizing here whenever that gap is closed.
+        if (frame.skyColor != null || frame.groundColor != null) {
+            val sky    = frame.skyColor ?: frame.bgColor
+            val ground = frame.groundColor ?: frame.bgColor
+            val hz     = frame.canvasH * frame.horizonYFraction
+            drawSolidRect(0f, 0f, w, hz, sky, w, h)
+            drawSolidRect(0f, hz, w, h, ground, w, h)
+        } else if (frame.backgroundStyle == "gradient") {
+            drawSolidGradientRect(0f, 0f, w, h, frame.bgColor, frame.backgroundGradientColor, w, h)
+        }
+
+        // Scene shapes + stars — world-space, before the figure. See
+        // GlesFigureFrame.SceneDrawCommand's doc comment for why this is a
+        // separate list from drawCommands rather than folded into it.
+        for (cmd in frame.sceneCommands) {
+            when (cmd) {
+                is GlesFigureFrame.SceneDrawCommand.Polygon -> {
+                    val colors = IntArray(cmd.points.size / 2) { cmd.color }
+                    drawSolidFan(cmd.points, colors, w, h)
+                }
+                is GlesFigureFrame.SceneDrawCommand.Rect -> {
+                    drawSolidRect(cmd.l, cmd.t, cmd.r, cmd.b, cmd.color, w, h)
+                }
+                is GlesFigureFrame.SceneDrawCommand.Circle -> {
+                    val c = argbToGlColor(cmd.color)
+                    drawCircle(cmd.cx, cmd.cy, cmd.radius, w, h, c[0], c[1], c[2], c[3])
+                }
+            }
+        }
+
+        if (frame.showGroundLine) {
+            val groundY = frame.canvasH * frame.groundLineYFraction
+            val c = argbToGlColor(frame.groundLineColor)
+            drawRoundCappedLine(0f, groundY, w, groundY, 1f, w, h, c[0], c[1], c[2], c[3])
+        }
+
         if (frame.figureAlpha > 0.001f) {
             for (cmd in frame.drawCommands) {
                 when (cmd) {
@@ -370,6 +448,27 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                             c[0], c[1], c[2], c[3] * frame.figureAlpha
                         )
                     }
+                }
+            }
+        }
+
+        // Atmosphere (fog/rain/snow) — screen-space, drawn AFTER the figure
+        // (still before the swap below), matching RigRenderer.drawAtmosphere's
+        // own "after canvas.restore()" placement. Stars are NOT here — they're
+        // world-space and already emitted into sceneCommands above, matching
+        // Canvas's own before-figure placement for stars specifically.
+        for (cmd in frame.atmosphereCommands) {
+            when (cmd) {
+                is GlesFigureFrame.AtmosphereDrawCommand.FullscreenTint -> {
+                    drawSolidRect(0f, 0f, w, h, cmd.color, w, h)
+                }
+                is GlesFigureFrame.AtmosphereDrawCommand.Line -> {
+                    val c = argbToGlColor(cmd.color)
+                    drawRoundCappedLine(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.halfWidth, w, h, c[0], c[1], c[2], c[3])
+                }
+                is GlesFigureFrame.AtmosphereDrawCommand.Circle -> {
+                    val c = argbToGlColor(cmd.color)
+                    drawCircle(cmd.cx, cmd.cy, cmd.radius, w, h, c[0], c[1], c[2], c[3])
                 }
             }
         }
@@ -541,6 +640,63 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         )
 
         drawQuad(data, aPos, aLocal)
+    }
+
+    /**
+     * Draws a filled polygon as a GL_TRIANGLE_FAN from [xy]'s first vertex,
+     * with an independent per-vertex ARGB color in [colorsArgb] — see
+     * [SOLID_FRAG]'s doc comment for why this is a plain interpolated fill
+     * rather than an SDF like the three primitives above. [xy] is a flat
+     * (x0,y0,x1,y1,...) canvas-pixel array; `colorsArgb.size` must equal
+     * `xy.size / 2`. Reused for both a flat fill (same color repeated — see
+     * [drawSolidRect]) and a gradient (different colors — see
+     * [drawSolidGradientRect]) rather than having two shaders for what is,
+     * to the GPU, the same draw call with different vertex data.
+     */
+    private fun drawSolidFan(xy: FloatArray, colorsArgb: IntArray, canvasW: Float, canvasH: Float) {
+        val n = xy.size / 2
+        if (n < 3) return
+
+        GLES20.glUseProgram(solidProgram)
+        val aPos   = GLES20.glGetAttribLocation(solidProgram, "a_pos")
+        val aColor = GLES20.glGetAttribLocation(solidProgram, "a_color")
+
+        val stride = 6   // x, y, r, g, b, a per vertex
+        val buf = getVertexBuffer(n * stride)
+        for (i in 0 until n) {
+            val c = argbToGlColor(colorsArgb[i])
+            buf.put(toClipX(xy[i * 2], canvasW))
+            buf.put(toClipY(xy[i * 2 + 1], canvasH))
+            buf.put(c[0]); buf.put(c[1]); buf.put(c[2]); buf.put(c[3])
+        }
+        buf.position(0)
+
+        val strideBytes = stride * 4
+        GLES20.glEnableVertexAttribArray(aPos)
+        GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, strideBytes, buf)
+
+        val colorBuf = buf.duplicate().also { it.position(2) }
+        GLES20.glEnableVertexAttribArray(aColor)
+        GLES20.glVertexAttribPointer(aColor, 4, GLES20.GL_FLOAT, false, strideBytes, colorBuf)
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_FAN, 0, n)
+
+        GLES20.glDisableVertexAttribArray(aPos)
+        GLES20.glDisableVertexAttribArray(aColor)
+    }
+
+    /** Flat-filled axis-aligned rect via [drawSolidFan] with the same ARGB color at all 4 corners. */
+    private fun drawSolidRect(l: Float, t: Float, r: Float, b: Float, colorArgb: Int, canvasW: Float, canvasH: Float) {
+        drawSolidFan(floatArrayOf(l, t, r, t, r, b, l, b), intArrayOf(colorArgb, colorArgb, colorArgb, colorArgb), canvasW, canvasH)
+    }
+
+    /** Top-to-bottom linear gradient rect via [drawSolidFan] — [topColorArgb] at the top edge, [bottomColorArgb] at the bottom, GPU-interpolated in between. */
+    private fun drawSolidGradientRect(l: Float, t: Float, r: Float, b: Float, topColorArgb: Int, bottomColorArgb: Int, canvasW: Float, canvasH: Float) {
+        drawSolidFan(
+            floatArrayOf(l, t, r, t, r, b, l, b),
+            intArrayOf(topColorArgb, topColorArgb, bottomColorArgb, bottomColorArgb),
+            canvasW, canvasH
+        )
     }
 
     /** Shared 6-vertex (2-triangle) interleaved [x,y,u,v] draw, used by all three primitives above. */

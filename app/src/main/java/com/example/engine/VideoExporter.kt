@@ -439,7 +439,7 @@ object VideoExporter {
 
     } // end withContext(Dispatchers.Default)
 
-    // ── GLES export rewrite: diagnostic (Phase 1-3) ─────────────────────────────
+    // ── GLES export rewrite: diagnostic (Phase 1-4) ─────────────────────────────
 
     /**
      * GLES export rewrite diagnostic (see V2_DECISIONS.md).
@@ -455,10 +455,14 @@ object VideoExporter {
      * have reintroduced exactly the parity risk the "export-only" decision
      * was contingent on mitigating — see V2_DECISIONS.md's History entry.
      *
-     * Scope as of Phase 3: bones, head, joints, mouth, eyes, eyebrows — the
-     * full figure, correctly posed, colored, and blinking/lip-synced. Still
-     * no overlays/captions/scene/shapes-glow/text, so this is not yet a
-     * full preview of a real export.
+     * Scope as of Phase 4: bones, head, joints, mouth, eyes, eyebrows,
+     * background (solid/gradient/sky+ground), scene shapes (mountains/
+     * city/trees/clouds), stars, ground line, and atmosphere (fog/rain/
+     * snow) — the full figure AND backdrop, correctly posed/colored/
+     * blinking/lip-synced. Still no overlays/captions/shape-glow/text, and
+     * still no camera zoom/pan/shake anywhere in this path (a gap that
+     * predates Phase 4 — see V2_DECISIONS.md's Deferred section), so this
+     * is not yet a full preview of a real export.
      *
      * Still deliberately NOT called from [export] — same reasoning as every
      * prior phase: this can't render the full picture yet, so wiring it
@@ -601,10 +605,18 @@ object VideoExporter {
                             // call uses (see that call site) — this smoke test was
                             // previously discarding all four after resolving them
                             // via seekToWithAmplitude above.
-                            mouthShape    = engine.currentMouthShape,
-                            mouthOpenness = engine.currentAmplitude,
-                            eyeOpenness   = engine.currentEyeOpenness,
-                            expression    = engine.currentExpression
+                            mouthShape      = engine.currentMouthShape,
+                            mouthOpenness   = engine.currentAmplitude,
+                            eyeOpenness     = engine.currentEyeOpenness,
+                            expression      = engine.currentExpression,
+                            // Phase 4 (background/scene/atmosphere — V2_DECISIONS.md):
+                            // same five engine.current* reads, same reasoning.
+                            skyColor        = engine.currentSkyColor,
+                            groundColor     = engine.currentGroundColor,
+                            horizonY        = engine.currentHorizonY,
+                            sceneShape      = engine.currentSceneShape,
+                            sceneAtmosphere = engine.currentSceneAtmosphere,
+                            timeSec         = timeSec
                         )
 
                         val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps

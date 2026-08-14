@@ -24,22 +24,53 @@ package com.example.engine
  * Phase 2 scope was bones + head + joints only. Phase 3 (V2_DECISIONS.md)
  * added mouth/eyes/eyebrows, interleaved right after [DrawCommand.Head] in
  * this same list, before the next bone, preserving this same z-order
- * guarantee. Overlays, captions, scene shapes, and atmosphere remain later
- * phases — see V2_DECISIONS.md.
+ * guarantee. Phase 4 added background/scene shapes/atmosphere — see
+ * [SceneDrawCommand]/[AtmosphereDrawCommand] doc comments for why those are
+ * separate lists rather than folded into [drawCommands]. Overlays and
+ * captions remain later phases — see V2_DECISIONS.md.
  */
 data class GlesFigureFrame(
     /** Canvas pixel width this frame was computed for. */
     val canvasW: Int,
     /** Canvas pixel height this frame was computed for. */
     val canvasH: Int,
-    /** ARGB packed int (same representation as Android Color). */
+    /** ARGB packed int (same representation as Android Color). Plain solid background — used when neither sky/ground nor gradient apply. */
     val bgColor: Int,
+    /** Non-null together with [groundColor] when scripted sky/ground bands are active — see [RigRenderer.draw]'s own `skyColor != null || groundColor != null` check, mirrored exactly. */
+    val skyColor: Int?,
+    val groundColor: Int?,
+    /** "gradient" or anything else — same string appearance/overrides field [RigRenderer.draw] itself checks, only consulted when sky/ground are both null. */
+    val backgroundStyle: String,
+    /** Gradient end color (top = [bgColor], bottom = this) — only used when [backgroundStyle] == "gradient" and sky/ground are null. */
+    val backgroundGradientColor: Int,
+    /** Fraction of canvasH where sky meets ground / where scene-shape elements sit on — resolved the same `horizonY ?: groundLineYFraction` way [RigRenderer.draw] resolves it. NOT the same value the ground line itself uses — see [groundLineYFraction]. */
+    val horizonYFraction: Float,
+    /** World-space background elements, in draw order (scene shape shapes, then stars if active) — see [SceneDrawCommand] doc comment. */
+    val sceneCommands: List<SceneDrawCommand>,
+    val showGroundLine: Boolean,
+    val groundLineColor: Int,
+    /**
+     * Fraction of canvasH for the ground LINE specifically — plain
+     * `groundLineYFraction`, deliberately NOT falling back through
+     * [horizonYFraction]'s `horizonY ?:` resolution. [RigRenderer.draw]
+     * keeps these genuinely independent: the ground line's own y-position
+     * (`canvasH * groundLineYFraction`, see that call site) never consults
+     * a scripted `horizonY` override the way the sky/ground bands and scene
+     * shapes do — so a script setting `horizonY` without also moving
+     * `groundLineYFraction` is a deliberately-supported case (a background
+     * horizon that doesn't match a separately-positioned ground line), not
+     * a bug to be normalised away here.
+     */
+    val groundLineYFraction: Float,
 
     /** Ordered exactly like the Canvas path's per-bone-index loop — see class doc comment. */
     val drawCommands: List<DrawCommand>,
 
     /** 0f = fully transparent, 1f = fully opaque. Applied to the whole figure (all commands), not per-command. */
-    val figureAlpha: Float
+    val figureAlpha: Float,
+
+    /** Screen-space, drawn after the figure — see [AtmosphereDrawCommand] doc comment. */
+    val atmosphereCommands: List<AtmosphereDrawCommand>
 ) {
     sealed class DrawCommand {
         data class BoneLine(
@@ -80,6 +111,49 @@ data class GlesFigureFrame(
         ) : DrawCommand()
     }
 
+    /**
+     * World-space background/scene elements (mountains/city/trees/clouds,
+     * plus stars if [com.example.engine.SceneAtmosphere.STARS] is active) —
+     * see [RigRenderer.computeMountainPolygon] etc. Kept as a SEPARATE list
+     * from [DrawCommand] rather than merged into it: [DrawCommand]'s
+     * ordering guarantee is specifically about bone/head/face interleaving
+     * (see that class's doc comment), and scene elements have no such
+     * per-bone relationship — they're drawn as one block, entirely before
+     * the figure, matching [RigRenderer.draw]'s own separate code block for
+     * this (background → scene shape → stars, all before the FK/bone loop).
+     */
+    sealed class SceneDrawCommand {
+        /**
+         * A filled arbitrary polygon, drawn as a GL_TRIANGLE_FAN from
+         * [points]'s first vertex — see [RigRenderer.computeMountainPolygon]'s
+         * doc comment for why that's a correct triangulation for THIS shape
+         * specifically (star-shaped from its first point), not a general
+         * polygon fill. [points] is a flat (x0,y0,x1,y1,...) array. Not a
+         * data class — FloatArray breaks structural equals/hashCode, and
+         * this is only ever constructed-then-consumed, never compared.
+         */
+        class Polygon(val points: FloatArray, val color: Int) : SceneDrawCommand()
+
+        data class Rect(val l: Float, val t: Float, val r: Float, val b: Float, val color: Int) : SceneDrawCommand()
+
+        data class Circle(val cx: Float, val cy: Float, val radius: Float, val color: Int) : SceneDrawCommand()
+    }
+
+    /**
+     * Screen-space weather overlay (fog/rain/snow) — drawn AFTER the figure,
+     * matching [RigRenderer.drawAtmosphere]'s own "after canvas.restore()"
+     * placement. Kept separate from [SceneDrawCommand] because it's drawn at
+     * a different point in the overall frame, not because the shapes differ.
+     */
+    sealed class AtmosphereDrawCommand {
+        /** Fog only — always the full canvas, so no coordinates needed. */
+        data class FullscreenTint(val color: Int) : AtmosphereDrawCommand()
+
+        data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val halfWidth: Float, val color: Int) : AtmosphereDrawCommand()
+
+        data class Circle(val cx: Float, val cy: Float, val radius: Float, val color: Int) : AtmosphereDrawCommand()
+    }
+
     companion object {
         /**
          * Builds a [GlesFigureFrame] from the already-computed [matrices] array
@@ -102,7 +176,13 @@ data class GlesFigureFrame(
             mouthShape: Int,
             mouthOpenness: Float,
             eyeOpenness: Float,
-            expression: Int
+            expression: Int,
+            skyColor: Long?,
+            groundColor: Long?,
+            horizonY: Float?,
+            sceneShape: String,
+            sceneAtmosphere: String,
+            timeSec: Float
         ): GlesFigureFrame {
             val rig    = StickFigureRig
             val bones  = rig.BONES
@@ -176,13 +256,86 @@ data class GlesFigureFrame(
             }
 
             val bgColor = (overrides.bgColor ?: appearance.exportBgColor).toInt()
+            // These two are DELIBERATELY independent — see groundLineYFraction's
+            // own doc comment on the data class for why conflating them would
+            // be a real (if subtle) behavior change from the Canvas path.
+            val plainGroundLineYFraction = overrides.groundLineYFraction ?: appearance.groundLineYFraction
+            val horizonYFraction = horizonY ?: plainGroundLineYFraction
+
+            // Scene shapes + stars — see SceneDrawCommand's doc comment for
+            // why this is one flat list computed here rather than folded
+            // into the bone loop above. Mirrors RigRenderer.draw's own
+            // separate "background/scene" code block, including its exact
+            // draw order: scene shape shapes, THEN stars.
+            val sceneCommands = ArrayList<SceneDrawCommand>()
+            run {
+                val currentBoneColor = overrides.boneColor ?: appearance.boneColor
+                val sceneColor = RigRenderer.constrainSceneColor(currentBoneColor, currentBoneColor, alpha = 0x66)
+                when (sceneShape) {
+                    SceneShape.MOUNTAINS -> {
+                        val pts = RigRenderer.computeMountainPolygon(canvasW, canvasH, horizonYFraction, timeSec)
+                        sceneCommands += SceneDrawCommand.Polygon(pts, sceneColor)
+                    }
+                    SceneShape.CITY -> {
+                        for (b in RigRenderer.computeCityBuildings(canvasW, canvasH, horizonYFraction, timeSec)) {
+                            sceneCommands += SceneDrawCommand.Rect(b.l, b.t, b.r, b.b, sceneColor)
+                        }
+                    }
+                    SceneShape.TREES -> {
+                        for (t in RigRenderer.computeTreePositions(canvasW, canvasH, horizonYFraction, timeSec)) {
+                            sceneCommands += SceneDrawCommand.Circle(t.canopy.cx, t.canopy.cy, t.canopy.halfWidth, sceneColor)
+                            sceneCommands += SceneDrawCommand.Rect(t.trunk.l, t.trunk.t, t.trunk.r, t.trunk.b, sceneColor)
+                        }
+                    }
+                    SceneShape.CLOUDS -> {
+                        for (cloud in RigRenderer.computeCloudPositions(canvasW, canvasH, horizonYFraction, timeSec)) {
+                            for (puff in cloud) sceneCommands += SceneDrawCommand.Circle(puff.cx, puff.cy, puff.halfWidth, sceneColor)
+                        }
+                    }
+                }
+                if (sceneAtmosphere == SceneAtmosphere.STARS) {
+                    for (s in RigRenderer.computeStarPositions(canvasW, canvasH, timeSec)) {
+                        val starColor = (s.alpha.toInt().coerceIn(0, 255) shl 24) or 0xFFFFFF
+                        sceneCommands += SceneDrawCommand.Circle(s.cx, s.cy, s.r, starColor)
+                    }
+                }
+            }
+
+            // Atmosphere (fog/rain/snow) — screen-space, drawn AFTER the
+            // figure by the renderer, see AtmosphereDrawCommand doc comment.
+            val atmosphereCommands = ArrayList<AtmosphereDrawCommand>()
+            when (sceneAtmosphere) {
+                SceneAtmosphere.FOG -> {
+                    atmosphereCommands += AtmosphereDrawCommand.FullscreenTint(0x33FFFFFFL.toInt())
+                }
+                SceneAtmosphere.RAIN -> {
+                    for (d in RigRenderer.computeRainDrops(canvasW, canvasH, timeSec)) {
+                        atmosphereCommands += AtmosphereDrawCommand.Line(d.x1, d.y1, d.x2, d.y2, 1f, 0x66AACCFFL.toInt())
+                    }
+                }
+                SceneAtmosphere.SNOW -> {
+                    for (f in RigRenderer.computeSnowFlakes(canvasW, canvasH, timeSec)) {
+                        atmosphereCommands += AtmosphereDrawCommand.Circle(f.cx, f.cy, f.halfWidth, 0xCCFFFFFFL.toInt())
+                    }
+                }
+            }
 
             return GlesFigureFrame(
-                canvasW      = canvasW,
-                canvasH      = canvasH,
-                bgColor      = bgColor,
-                drawCommands = commands,
-                figureAlpha  = (overrides.opacity ?: 1f).coerceIn(0f, 1f)
+                canvasW                 = canvasW,
+                canvasH                 = canvasH,
+                bgColor                 = bgColor,
+                skyColor                = skyColor?.toInt(),
+                groundColor             = groundColor?.toInt(),
+                backgroundStyle         = overrides.backgroundStyle ?: appearance.backgroundStyle,
+                backgroundGradientColor = (overrides.backgroundGradientColor ?: appearance.backgroundGradientColor).toInt(),
+                horizonYFraction        = horizonYFraction,
+                sceneCommands           = sceneCommands,
+                showGroundLine          = overrides.showGroundLine ?: appearance.showGroundLine,
+                groundLineColor         = (overrides.groundLineColor ?: appearance.groundLineColor).toInt(),
+                groundLineYFraction     = plainGroundLineYFraction,
+                drawCommands            = commands,
+                figureAlpha             = (overrides.opacity ?: 1f).coerceIn(0f, 1f),
+                atmosphereCommands      = atmosphereCommands
             )
         }
     }

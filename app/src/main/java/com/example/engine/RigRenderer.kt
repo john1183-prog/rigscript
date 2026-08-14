@@ -414,7 +414,6 @@ class RigRenderer {
      * from the opposite edge is never visible popping in.
      */
     private fun drawSceneShape(canvas: Canvas, w: Int, h: Int, horizonYFraction: Float, shape: String, appearance: AppearanceSettings, timeSec: Float, overrides: FigureOverrides) {
-        val horizonPx = h * horizonYFraction
         // Clash-avoidance clamps scene-shape color against the figure's
         // CURRENT color, not the project's static default — otherwise, once
         // boneColor becomes script-overridable, this check would keep
@@ -423,88 +422,36 @@ class RigRenderer {
         // clamp for the rest of the video.
         val currentBoneColor = overrides.boneColor ?: appearance.boneColor
         sceneShapePaint.color = constrainSceneColor(currentBoneColor, currentBoneColor, alpha = 0x66)
+        // Geometry now lives in the compute* companion functions below —
+        // shared with the GLES export path (Phase 4, V2_DECISIONS.md), same
+        // reasoning as computeMouthGeometry's doc comment (Phase 3).
         when (shape) {
             SceneShape.MOUNTAINS -> {
-                val sway = kotlin.math.sin(timeSec * 0.05f) * w * 0.015f
-                val peakCount = 4
-                val peakW = w.toFloat() / (peakCount - 1)
+                val pts = computeMountainPolygon(w, h, horizonYFraction, timeSec)
                 val path = Path()
-                path.moveTo(-w * 0.2f + sway, horizonPx)
-                for (i in 0 until peakCount) {
-                    val x = -w * 0.2f + i * peakW * 1.4f + sway
-                    val peakHeight = horizonPx * (0.35f + 0.15f * ((i * 37) % 3))
-                    path.lineTo(x + peakW * 0.7f, horizonPx - peakHeight)
-                    path.lineTo(x + peakW * 1.4f, horizonPx)
-                }
-                path.lineTo(w * 1.2f + sway, horizonPx)
-                path.lineTo(w * 1.2f + sway, horizonPx + h * 0.01f)
-                path.lineTo(-w * 0.2f + sway, horizonPx + h * 0.01f)
+                path.moveTo(pts[0], pts[1])
+                var i = 2
+                while (i < pts.size) { path.lineTo(pts[i], pts[i + 1]); i += 2 }
                 path.close()
                 canvas.drawPath(path, sceneShapePaint)
             }
             SceneShape.CITY -> {
-                val sway = kotlin.math.sin(timeSec * 0.08f + 1f) * w * 0.01f
-                val buildingCount = 8
-                val bw = w.toFloat() / buildingCount
-                for (i in 0 until buildingCount) {
-                    val bh = horizonPx * (0.25f + 0.35f * ((i * 53) % 5) / 5f)
-                    val x = i * bw + sway
-                    canvas.drawRect(x, horizonPx - bh, x + bw * 0.8f, horizonPx, sceneShapePaint)
+                for (b in computeCityBuildings(w, h, horizonYFraction, timeSec)) {
+                    canvas.drawRect(b.l, b.t, b.r, b.b, sceneShapePaint)
                 }
             }
             SceneShape.TREES -> {
-                val treeCount = 6
-                val spacing = w.toFloat() / treeCount
-                for (i in 0 until treeCount) {
-                    val r = horizonPx * (0.10f + 0.04f * ((i * 29) % 3))
-                    // Per-tree phase offset (i * 0.9) so trees sway out of
-                    // sync with each other rather than all in lockstep.
-                    val sway = kotlin.math.sin(timeSec * 0.6f + i * 0.9f) * (r * 0.12f)
-                    val cx = spacing * i + spacing * 0.5f + sway
-                    canvas.drawCircle(cx, horizonPx - r, r, sceneShapePaint)
-                    canvas.drawRect(cx - r * 0.08f, horizonPx - r, cx + r * 0.08f, horizonPx, sceneShapePaint)
+                for (t in computeTreePositions(w, h, horizonYFraction, timeSec)) {
+                    canvas.drawCircle(t.canopy.cx, t.canopy.cy, t.canopy.r, sceneShapePaint)
+                    canvas.drawRect(t.trunk.l, t.trunk.t, t.trunk.r, t.trunk.b, sceneShapePaint)
                 }
             }
             SceneShape.CLOUDS -> {
-                val cloudCount = 4
-                val spacing = w.toFloat() / cloudCount
-                val driftSpeed = w * 0.008f   // px/sec — slow, continuous, one direction
-                val span = w + spacing        // wrap span leaves one cloud-spacing of margin off-screen on each side
-                for (i in 0 until cloudCount) {
-                    val baseCx = spacing * i + spacing * 0.5f
-                    val cx = wrapCoord(baseCx + timeSec * driftSpeed, span) - spacing * 0.5f
-                    val cy = horizonPx * (0.15f + 0.10f * ((i * 41) % 3))
-                    val r = w * 0.05f
-                    canvas.drawCircle(cx - r, cy, r, sceneShapePaint)
-                    canvas.drawCircle(cx + r * 0.6f, cy - r * 0.3f, r * 0.8f, sceneShapePaint)
-                    canvas.drawCircle(cx + r * 1.4f, cy, r * 0.7f, sceneShapePaint)
+                for (c in computeCloudPositions(w, h, horizonYFraction, timeSec)) {
+                    for (puff in c) canvas.drawCircle(puff.cx, puff.cy, puff.r, sceneShapePaint)
                 }
             }
         }
-    }
-
-    /** Positive-only modulo (Kotlin's `%` can return negative for a negative dividend, which a wrap coordinate must never do). */
-    private fun wrapCoord(x: Float, span: Float): Float {
-        val wrapped = x % span
-        return if (wrapped < 0f) wrapped + span else wrapped
-    }
-
-    /**
-     * Enforces a minimum 50° hue separation from [figureColor] and caps
-     * saturation at 0.45 — a scripted scene colour should never visually
-     * compete with or blend into the figure. Not reliant on AI prompt
-     * guidance; enforced here unconditionally. See V2_DECISIONS.md.
-     */
-    private fun constrainSceneColor(base: Long, figureColor: Long, alpha: Int = 0xFF): Int {
-        val baseHsv = FloatArray(3)
-        Color.colorToHSV((base or 0xFF000000L).toInt(), baseHsv)
-        val figHsv = FloatArray(3)
-        Color.colorToHSV((figureColor or 0xFF000000L).toInt(), figHsv)
-        var hueDiff = kotlin.math.abs(baseHsv[0] - figHsv[0])
-        if (hueDiff > 180f) hueDiff = 360f - hueDiff
-        if (hueDiff < 50f) baseHsv[0] = (figHsv[0] + 50f) % 360f
-        baseHsv[1] = baseHsv[1].coerceAtMost(0.45f)
-        return Color.HSVToColor(alpha, baseHsv)
     }
 
     /**
@@ -524,25 +471,14 @@ class RigRenderer {
             SceneAtmosphere.RAIN -> {
                 atmospherePaint.color = 0x66AACCFFL.toInt()
                 atmospherePaint.strokeWidth = 2f
-                val cols = 24
-                val speed = 900f // px/sec, purely deterministic from timeSec
-                for (i in 0 until cols) {
-                    val baseX = (i.toFloat() / cols) * w
-                    val x = (baseX + (i * 17) % 40) 
-                    val y = ((timeSec * speed) + i * 53f).let { it % (h + 40f) } - 20f
-                    canvas.drawLine(x, y, x - 8f, y + 20f, atmospherePaint)
+                for (d in computeRainDrops(w, h, timeSec)) {
+                    canvas.drawLine(d.x1, d.y1, d.x2, d.y2, atmospherePaint)
                 }
             }
             SceneAtmosphere.SNOW -> {
                 atmospherePaint.color = 0xCCFFFFFFL.toInt()
-                val flakes = 30
-                val speed = 120f
-                for (i in 0 until flakes) {
-                    val baseX = (i.toFloat() / flakes) * w
-                    val drift = kotlin.math.sin(timeSec * 0.6f + i) * 15f
-                    val x = baseX + drift
-                    val y = ((timeSec * speed) + i * 71f).let { it % (h + 20f) } - 10f
-                    canvas.drawCircle(x, y, 3f, atmospherePaint)
+                for (f in computeSnowFlakes(w, h, timeSec)) {
+                    canvas.drawCircle(f.cx, f.cy, f.r, atmospherePaint)
                 }
             }
         }
@@ -556,15 +492,10 @@ class RigRenderer {
      * twinkle as before this split, unchanged.
      */
     private fun drawStars(canvas: Canvas, w: Int, h: Int, timeSec: Float) {
-        atmospherePaint.color = 0xDDFFFFFFL.toInt()
-        val stars = 40
-        for (i in 0 until stars) {
-            // Fixed pseudo-random grid — stars don't move, just a light static-time twinkle.
-            val x = ((i * 6151) % w.coerceAtLeast(1)).toFloat()
-            val y = ((i * 3079) % (h / 2).coerceAtLeast(1)).toFloat()
-            val twinkle = 0.5f + 0.5f * kotlin.math.sin(timeSec * 2f + i)
-            atmospherePaint.alpha = (140 + 100 * twinkle).toInt().coerceIn(0, 255)
-            canvas.drawCircle(x, y, 2f, atmospherePaint)
+        for (s in computeStarPositions(w, h, timeSec)) {
+            atmospherePaint.color = 0xFFFFFFFF.toInt()
+            atmospherePaint.alpha = s.alpha.toInt().coerceIn(0, 255)
+            canvas.drawCircle(s.cx, s.cy, s.r, atmospherePaint)
         }
         atmospherePaint.alpha = 255
     }
@@ -1293,6 +1224,172 @@ class RigRenderer {
             )
             // eyebrowPaint.strokeWidth = eyeRadius * 0.35f in the Canvas path — half of that for a half-width.
             return EyebrowGeometry(left, right, eyeRadius * 0.175f)
+        }
+
+        /** Axis-aligned rect, in canvas-pixel space. */
+        data class RectGeom(val l: Float, val t: Float, val r: Float, val b: Float)
+
+        /** A tree's canopy (circle) and trunk (thin rect). */
+        data class TreeGeom(val canopy: OvalGeometry, val trunk: RectGeom)
+
+        /** One star: position, radius, and its already-twinkle-resolved alpha (0-255). */
+        data class StarGeom(val cx: Float, val cy: Float, val r: Float, val alpha: Float)
+
+        /** One rain streak, as a line segment. */
+        data class RainDrop(val x1: Float, val y1: Float, val x2: Float, val y2: Float)
+
+        /**
+         * Enforces a minimum 50° hue separation from [figureColor] and caps
+         * saturation at 0.45 — a scripted scene colour should never visually
+         * compete with or blend into the figure. Not reliant on AI prompt
+         * guidance; enforced here unconditionally. See V2_DECISIONS.md. Moved
+         * here (Phase 4) from instance scope for the same reason as every
+         * other compute* function in this object — shared by the GLES path.
+         */
+        fun constrainSceneColor(base: Long, figureColor: Long, alpha: Int = 0xFF): Int {
+            val baseHsv = FloatArray(3)
+            android.graphics.Color.colorToHSV((base or 0xFF000000L).toInt(), baseHsv)
+            val figHsv = FloatArray(3)
+            android.graphics.Color.colorToHSV((figureColor or 0xFF000000L).toInt(), figHsv)
+            var hueDiff = kotlin.math.abs(baseHsv[0] - figHsv[0])
+            if (hueDiff > 180f) hueDiff = 360f - hueDiff
+            if (hueDiff < 50f) baseHsv[0] = (figHsv[0] + 50f) % 360f
+            baseHsv[1] = baseHsv[1].coerceAtMost(0.45f)
+            return android.graphics.Color.HSVToColor(alpha, baseHsv)
+        }
+
+        /** Positive-only modulo (Kotlin's `%` can return negative for a negative dividend, which a wrap coordinate must never do). */
+        fun wrapCoord(x: Float, span: Float): Float {
+            val wrapped = x % span
+            return if (wrapped < 0f) wrapped + span else wrapped
+        }
+
+        /**
+         * Mountain skyline as a single closed polygon, returned as a flat
+         * (x0,y0,x1,y1,...) array in the exact order the original
+         * [android.graphics.Path] built it — a flat bottom rect with a
+         * zigzag ridge on top. Both consumers draw it as a FAN from point 0
+         * (Canvas: [android.graphics.Path.close] on a moveTo/lineTo chain
+         * IS a fan under the hood for a simple polygon; GLES: explicit
+         * GL_TRIANGLE_FAN) — this is a correct triangulation because the
+         * polygon is star-shaped from its bottom-left corner (a flat base
+         * under a monotonic ridge), not a general-purpose polygon
+         * triangulator. Worth knowing if a future shape here is ever
+         * concave from that corner - this specific shape isn't.
+         */
+        fun computeMountainPolygon(w: Int, h: Int, horizonYFraction: Float, timeSec: Float): FloatArray {
+            val horizonPx = h * horizonYFraction
+            val sway = kotlin.math.sin(timeSec * 0.05f) * w * 0.015f
+            val peakCount = 4
+            val peakW = w.toFloat() / (peakCount - 1)
+            val pts = ArrayList<Float>((peakCount * 4 + 6))
+            pts.add(-w * 0.2f + sway); pts.add(horizonPx)
+            for (i in 0 until peakCount) {
+                val x = -w * 0.2f + i * peakW * 1.4f + sway
+                val peakHeight = horizonPx * (0.35f + 0.15f * ((i * 37) % 3))
+                pts.add(x + peakW * 0.7f); pts.add(horizonPx - peakHeight)
+                pts.add(x + peakW * 1.4f); pts.add(horizonPx)
+            }
+            pts.add(w * 1.2f + sway); pts.add(horizonPx)
+            pts.add(w * 1.2f + sway); pts.add(horizonPx + h * 0.01f)
+            pts.add(-w * 0.2f + sway); pts.add(horizonPx + h * 0.01f)
+            return pts.toFloatArray()
+        }
+
+        fun computeCityBuildings(w: Int, h: Int, horizonYFraction: Float, timeSec: Float): List<RectGeom> {
+            val horizonPx = h * horizonYFraction
+            val sway = kotlin.math.sin(timeSec * 0.08f + 1f) * w * 0.01f
+            val buildingCount = 8
+            val bw = w.toFloat() / buildingCount
+            val list = ArrayList<RectGeom>(buildingCount)
+            for (i in 0 until buildingCount) {
+                val bh = horizonPx * (0.25f + 0.35f * ((i * 53) % 5) / 5f)
+                val x = i * bw + sway
+                list += RectGeom(x, horizonPx - bh, x + bw * 0.8f, horizonPx)
+            }
+            return list
+        }
+
+        fun computeTreePositions(w: Int, h: Int, horizonYFraction: Float, timeSec: Float): List<TreeGeom> {
+            val horizonPx = h * horizonYFraction
+            val treeCount = 6
+            val spacing = w.toFloat() / treeCount
+            val list = ArrayList<TreeGeom>(treeCount)
+            for (i in 0 until treeCount) {
+                val r = horizonPx * (0.10f + 0.04f * ((i * 29) % 3))
+                // Per-tree phase offset (i * 0.9) so trees sway out of
+                // sync with each other rather than all in lockstep.
+                val sway = kotlin.math.sin(timeSec * 0.6f + i * 0.9f) * (r * 0.12f)
+                val cx = spacing * i + spacing * 0.5f + sway
+                list += TreeGeom(
+                    canopy = OvalGeometry(cx, horizonPx - r, r, r),
+                    trunk  = RectGeom(cx - r * 0.08f, horizonPx - r, cx + r * 0.08f, horizonPx)
+                )
+            }
+            return list
+        }
+
+        /** Each cloud is 3 overlapping puffs (circles); outer list = one entry per cloud. */
+        fun computeCloudPositions(w: Int, h: Int, horizonYFraction: Float, timeSec: Float): List<List<OvalGeometry>> {
+            val horizonPx = h * horizonYFraction
+            val cloudCount = 4
+            val spacing = w.toFloat() / cloudCount
+            val driftSpeed = w * 0.008f   // px/sec — slow, continuous, one direction
+            val span = w + spacing        // wrap span leaves one cloud-spacing of margin off-screen on each side
+            val list = ArrayList<List<OvalGeometry>>(cloudCount)
+            for (i in 0 until cloudCount) {
+                val baseCx = spacing * i + spacing * 0.5f
+                val cx = wrapCoord(baseCx + timeSec * driftSpeed, span) - spacing * 0.5f
+                val cy = horizonPx * (0.15f + 0.10f * ((i * 41) % 3))
+                val r = w * 0.05f
+                list += listOf(
+                    OvalGeometry(cx - r, cy, r, r),
+                    OvalGeometry(cx + r * 0.6f, cy - r * 0.3f, r * 0.8f, r * 0.8f),
+                    OvalGeometry(cx + r * 1.4f, cy, r * 0.7f, r * 0.7f)
+                )
+            }
+            return list
+        }
+
+        fun computeStarPositions(w: Int, h: Int, timeSec: Float): List<StarGeom> {
+            val stars = 40
+            val list = ArrayList<StarGeom>(stars)
+            for (i in 0 until stars) {
+                // Fixed pseudo-random grid — stars don't move, just a light static-time twinkle.
+                val x = ((i * 6151) % w.coerceAtLeast(1)).toFloat()
+                val y = ((i * 3079) % (h / 2).coerceAtLeast(1)).toFloat()
+                val twinkle = 0.5f + 0.5f * kotlin.math.sin(timeSec * 2f + i)
+                val alpha = (140 + 100 * twinkle).coerceIn(0f, 255f)
+                list += StarGeom(x, y, 2f, alpha)
+            }
+            return list
+        }
+
+        fun computeRainDrops(w: Int, h: Int, timeSec: Float): List<RainDrop> {
+            val cols = 24
+            val speed = 900f // px/sec, purely deterministic from timeSec
+            val list = ArrayList<RainDrop>(cols)
+            for (i in 0 until cols) {
+                val baseX = (i.toFloat() / cols) * w
+                val x = (baseX + (i * 17) % 40)
+                val y = ((timeSec * speed) + i * 53f).let { it % (h + 40f) } - 20f
+                list += RainDrop(x, y, x - 8f, y + 20f)
+            }
+            return list
+        }
+
+        fun computeSnowFlakes(w: Int, h: Int, timeSec: Float): List<OvalGeometry> {
+            val flakes = 30
+            val speed = 120f
+            val list = ArrayList<OvalGeometry>(flakes)
+            for (i in 0 until flakes) {
+                val baseX = (i.toFloat() / flakes) * w
+                val drift = kotlin.math.sin(timeSec * 0.6f + i) * 15f
+                val x = baseX + drift
+                val y = ((timeSec * speed) + i * 71f).let { it % (h + 20f) } - 10f
+                list += OvalGeometry(x, y, 3f, 3f)
+            }
+            return list
         }
     }
 }

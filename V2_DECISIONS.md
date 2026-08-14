@@ -1085,6 +1085,82 @@ approved by the person before implementing:**
     skeleton" — true as of Phase 2, false as of this phase. Fixed all
     three; the `EditorScreen.kt` one is the one John would actually see
     on-device, not just something living in a comment.
+- **GLES export rewrite — Phase 4 (background, scene shapes, atmosphere)**:
+  brought the GLES export path to parity with `RigRenderer.draw()`'s
+  background/scene/atmosphere rendering — solid/gradient/sky+ground
+  background, mountains/city/trees/clouds, stars, ground line, fog/rain/
+  snow. Same shared-geometry-extraction discipline as Phase 3: the pure
+  math in `drawSceneShape`/`drawAtmosphere`/`drawStars`/`constrainSceneColor`
+  moved into new `RigRenderer` companion functions (`computeMountainPolygon`,
+  `computeCityBuildings`, `computeTreePositions`, `computeCloudPositions`,
+  `computeStarPositions`, `computeRainDrops`, `computeSnowFlakes`,
+  `constrainSceneColor` itself relocated from instance scope), returning
+  plain data (`RectGeom`, `TreeGeom`, `StarGeom`, `RainDrop`, reusing
+  `OvalGeometry` for circles since a circle is just an oval with equal
+  half-extents). Every extracted constant verified unchanged against the
+  pre-existing Canvas code via diff, same verification standard as Phase 3.
+  - **`GlesFigureFrame` gains two new command lists, not one merged into
+    `drawCommands`**: `sceneCommands` (world-space — mountains/city/trees/
+    clouds, then stars, all before the figure) and `atmosphereCommands`
+    (screen-space — fog/rain/snow, after the figure). Kept separate from
+    `drawCommands` because that list's ordering guarantee is specifically
+    about bone/head/face interleaving (see its own doc comment) — scene/
+    atmosphere elements have no such per-bone relationship, matching
+    `RigRenderer.draw()`'s own structurally separate code blocks for this.
+  - **One new shader (`SOLID_VERT`/`SOLID_FRAG`), not four.** Deliberately
+    NOT an SDF like the line/circle/oval shaders: those exist to hide a
+    shape's own edge inside a ~1px AA transition because that edge is what
+    a person actually looks at (a bone's silhouette, a joint, mouth/eye).
+    Background bands, gradients, mountains, and buildings are the opposite
+    case — large fills where a hard raster edge isn't a visible defect — so
+    a plain per-vertex-color fill, GPU-interpolated, is correct and
+    cheaper. Per-vertex (not a single uniform) color is what makes this one
+    shader cover both a flat fill (same color at every vertex) and the
+    background gradient (different top/bottom vertex colors) for free —
+    one shader, two callers (`drawSolidRect`/`drawSolidGradientRect`), both
+    routed through one `drawSolidFan` primitive using `GL_TRIANGLE_FAN`.
+    Trees/clouds/stars/snow (circles) and rain/ground-line (lines) needed
+    no new primitives at all — they reuse `drawCircle`/`drawRoundCappedLine`
+    exactly as Phase 2 left them.
+  - **Mountain polygon triangulated as a `GL_TRIANGLE_FAN` from its first
+    vertex** — correct specifically because this shape (flat base under a
+    monotonic zigzag ridge) is star-shaped from that corner, not because
+    fan-from-first-vertex is a general polygon triangulator. Documented as
+    such at the `Polygon` `DrawCommand` and `computeMountainPolygon` doc
+    comments so a future concave scene shape doesn't reuse this trick
+    somewhere it'd actually be wrong.
+  - **Found and fixed a real subtlety, not just ported the math**:
+    `groundLineYFraction` (the ground line's own y-position) and
+    `horizonYFraction` (sky/ground band boundary + scene-shape anchor,
+    resolved as `horizonY ?: groundLineYFraction`) are DELIBERATELY
+    independent in `RigRenderer.draw()` — the ground line never consults a
+    scripted `horizonY` override the way the background/scene elements do.
+    An early draft of `GlesFigureFrame`'s new fields conflated these into
+    one value, which would have silently misaligned the ground line from
+    the sky/ground boundary the first time a script set `horizonY` without
+    also moving `groundLineYFraction`. Caught on review (reasoned through
+    against the Canvas call sites directly, not seen rendered) before it
+    shipped; `GlesFigureFrame` now carries both as separate fields with a
+    doc comment explaining why they must stay that way.
+  - **GLES background/scene primitives are drawn exactly canvas-sized**,
+    not oversized (3x canvas) the way Canvas's are. This is correct only
+    because camera zoom/pan/shake isn't applied anywhere in the GLES path
+    yet — a pre-existing gap from Phase 1, not something this phase
+    introduces, but one this phase's background work is now sized against.
+    Logged as its own Deferred entry (see below) with what fixing it
+    properly would require, rather than silently sizing around a gap that
+    isn't written down anywhere.
+  - `exportGlesSmokeTest` gap closed the same way as Phase 3's: it now
+    reads `engine.currentSkyColor`/`currentGroundColor`/`currentHorizonY`/
+    `currentSceneShape`/`currentSceneAtmosphere` and the frame's own
+    `timeSec`, matching `export()`'s real call site read-for-read.
+  - Not verified against a compiler or device from this environment, same
+    standing caveat as every prior phase.
+  - Next up: overlay shapes + shape glow (two-pass Gaussian, the
+    `OverlayResolver`/`BlurMaskFilter`-based motion-graphics layer system —
+    a distinct feature from this phase's `SceneShape` background elements,
+    worth being explicit about so a future session doesn't conflate the
+    two), then text/captions/reference-overlay via the texture-quad hybrid.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 
@@ -1118,6 +1194,31 @@ zoom in."
   been done yet, not blocked.
 
 ## Deferred, with rationale
+
+- **GLES export path has no camera zoom/pan/shake anywhere, Phase 1 through
+  Phase 4** — `RigRenderer.draw()`'s `cameraZoom`/`cameraPanX`/`cameraPanY`/
+  `cameraShakeIntensity` params are read from `engine.current*` and applied
+  in the real `export()` call site (`canvas.save()` + `canvas.scale()` +
+  `canvas.translate()`, wrapping background through figure), but
+  `GlesFigureFrame.fromFkMatrices`/`exportGlesSmokeTest` have never taken
+  or applied any of the four. Not something Phase 4 introduced — it's been
+  true since Phase 1's FK matrices were first computed straight from
+  `rootX`/`rootY`/`scale` with no transform layered on top. It became more
+  visible in Phase 4 specifically because Canvas's background/scene
+  rendering draws everything OVERSIZED (3x canvas) precisely to stay
+  covered under a zoomed/panned camera — GLES's Phase 4 background/scene
+  primitives are drawn exactly canvas-sized instead, which is correct
+  ONLY as long as this gap remains (see `drawFigureFrame`'s own comment at
+  the background-drawing call site). Fixing this properly means: (1)
+  computing a camera transform matrix the same way `canvas.scale`+
+  `canvas.translate` do, (2) applying it to every FK bone matrix before
+  `fromFkMatrices` reads endpoints out of them, AND (3) re-sizing the
+  Phase 4 background/scene primitives to the oversized convention Canvas
+  already uses, all three as one unit — doing only part of this would
+  make GLES either not respect camera moves at all (current state, at
+  least consistent) or respect them for the figure but not the backdrop
+  (worse — a visibly broken combination Canvas never produces). Deferred
+  as one unit for that reason, not fixed piecemeal here.
 
 - **GLES Phase 3: mouth renders at bottom of head, opens downward below
   it** — confirmed on first device run. The geometry in

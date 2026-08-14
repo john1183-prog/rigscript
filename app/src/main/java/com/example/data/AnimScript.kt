@@ -203,11 +203,33 @@ data class AnimScript(
          * opposed to the same-slot/overlapping-time case it's meant to
          * flag. See V2_DECISIONS.md's "Motion graphics overlay layers"
          * section.
+         *
+         * The first two events also carry sceneShape/sceneAtmosphere/sky-
+         * ground/ground-line fields (Phase 4 — V2_DECISIONS.md) — city+rain
+         * at night, transitioning to mountains+snow at the wave beat —
+         * specifically so `VideoExporter.exportGlesSmokeTest`'s fixed ~3s
+         * window (see that function) shows a real scene TRANSITION, not
+         * just one static backdrop, without altering this script's existing
+         * pose/expression/timing narrative anywhere. sceneShape/
+         * sceneAtmosphere strings match SceneShape/SceneAtmosphere's
+         * constants in com.example.engine — written as raw string literals
+         * here rather than imported, since this data class deliberately
+         * has no dependency on that package. Deliberately NOT touching
+         * cameraZoom/cameraPanX/cameraPanY/cameraShake in this window: the
+         * GLES export path doesn't apply any camera transform yet (a
+         * pre-existing gap — see V2_DECISIONS.md's Deferred section), so a
+         * camera field set here would do nothing in the smoke test and
+         * could read as a bug rather than an untouched feature.
          */
         val DEMO = AnimScript(
             events = listOf(
-                ScriptEvent(0.0f,  "stand_straight", 0.4f, "ease_out"),
-                ScriptEvent(1.5f,  "wave",           0.6f, "spring", expression = "happy"),
+                ScriptEvent(0.0f,  "stand_straight", 0.4f, "ease_out",
+                    sceneShape = "city", sceneAtmosphere = "rain",
+                    skyColor = 0xFF16213EL, groundColor = 0xFF0F3443L, horizonY = 0.72f,
+                    showGroundLine = true, groundLineColor = 0xFF4FC3F7L),
+                ScriptEvent(1.5f,  "wave",           0.6f, "spring", expression = "happy",
+                    sceneShape = "mountains", sceneAtmosphere = "snow",
+                    skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f),
                 ScriptEvent(3.5f,  "explain",        0.7f, "ease_in_out"),
                 ScriptEvent(6.0f,  "present",        0.6f, "ease_out",
                     // Figure transform (V2) — shifts left and grows slightly,

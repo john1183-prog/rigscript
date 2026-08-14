@@ -442,13 +442,13 @@ class RigRenderer {
             }
             SceneShape.TREES -> {
                 for (t in computeTreePositions(w, h, horizonYFraction, timeSec)) {
-                    canvas.drawCircle(t.canopy.cx, t.canopy.cy, t.canopy.r, sceneShapePaint)
+                    canvas.drawCircle(t.canopy.cx, t.canopy.cy, t.canopy.halfWidth, sceneShapePaint)
                     canvas.drawRect(t.trunk.l, t.trunk.t, t.trunk.r, t.trunk.b, sceneShapePaint)
                 }
             }
             SceneShape.CLOUDS -> {
                 for (c in computeCloudPositions(w, h, horizonYFraction, timeSec)) {
-                    for (puff in c) canvas.drawCircle(puff.cx, puff.cy, puff.r, sceneShapePaint)
+                    for (puff in c) canvas.drawCircle(puff.cx, puff.cy, puff.halfWidth, sceneShapePaint)
                 }
             }
         }
@@ -478,7 +478,7 @@ class RigRenderer {
             SceneAtmosphere.SNOW -> {
                 atmospherePaint.color = 0xCCFFFFFFL.toInt()
                 for (f in computeSnowFlakes(w, h, timeSec)) {
-                    canvas.drawCircle(f.cx, f.cy, f.r, atmospherePaint)
+                    canvas.drawCircle(f.cx, f.cy, f.halfWidth, atmospherePaint)
                 }
             }
         }

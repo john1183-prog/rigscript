@@ -1156,6 +1156,15 @@ approved by the person before implementing:**
     `timeSec`, matching `export()`'s real call site read-for-read.
   - Not verified against a compiler or device from this environment, same
     standing caveat as every prior phase.
+  - CI compile failure caught on first real run (`OvalGeometry` has
+    `halfWidth`/`halfHeight`, not `r` — three call sites in the Canvas-path
+    refactor used the wrong field name; the GLES-path consumers of the
+    same `compute*` functions already had it right, which is why this
+    only surfaced on one side). Fixed same-day, see the follow-up commit.
+  - **Confirmed working on John's actual device** after the fix — full
+    figure plus background/scene/atmosphere rendering correctly through
+    the GLES smoke test, using the updated `AnimScript.DEMO`'s city+rain
+    → mountains+snow transition.
   - Next up: overlay shapes + shape glow (two-pass Gaussian, the
     `OverlayResolver`/`BlurMaskFilter`-based motion-graphics layer system —
     a distinct feature from this phase's `SceneShape` background elements,

@@ -1027,6 +1027,39 @@ class RigRenderer {
         var y = 0f; while (y <= h) { canvas.drawLine(0f, y, w.toFloat(), y, gridPaint); y += step }
     }
 
+    /**
+     * One piece of a resolved overlay's LOCAL-space shape geometry (before
+     * position/rotation/scale is applied) — an overlay shape can be more
+     * than one part (e.g. "cross" = 2 [Rect]s, "arrow" = 1 [Line] + 1
+     * [Triangle]), which is why [computeOverlayShapeParts] returns a list
+     * rather than a single value. All coordinates are canvas-pixel units
+     * relative to the layer's own local origin (0,0) — exactly the space
+     * [drawGmsOverlay]'s `canvas.translate`/`rotate`/`scale` already puts
+     * the Canvas in before calling [drawShapePart]; the GLES path applies
+     * the equivalent transform explicitly via [localToWorld] instead.
+     *
+     * Deliberately a DIRECT nested class of [RigRenderer], NOT nested
+     * inside its `companion object` below — a class nested inside a
+     * companion object is not accessible as `RigRenderer.LocalShapePart`
+     * from another file the way a companion FUNCTION like
+     * [computeOverlayShapeParts] is; it needs full `RigRenderer.Companion.
+     * LocalShapePart` qualification instead, which every other GLES
+     * DrawCommand-style sealed class in this codebase (see
+     * `GlesFigureFrame.DrawCommand` etc.) deliberately avoids by living
+     * directly in the class, not its companion. This one didn't, at first
+     * — CI's compile step (not this sandbox, which has no Kotlin compiler)
+     * caught it as "Unresolved reference" from `GlesFigureFrame.kt`. Fixed
+     * by moving it here, matching the pattern everywhere else already
+     * gets right.
+     */
+    sealed class LocalShapePart {
+        data class Rect(val cx: Float, val cy: Float, val halfW: Float, val halfH: Float) : LocalShapePart()
+        data class Circle(val cx: Float, val cy: Float, val radius: Float) : LocalShapePart()
+        /** [halfWidth] is HALF the stroke width — see call sites for why (Paint.strokeWidth is a full width, not a half-width). */
+        data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val halfWidth: Float) : LocalShapePart()
+        data class Triangle(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val x3: Float, val y3: Float) : LocalShapePart()
+    }
+
     companion object {
         /**
          * Pure FK matrix computation — no Canvas/Paint dependency, so [draw]
@@ -1362,26 +1395,6 @@ class RigRenderer {
                 list += OvalGeometry(x, y, 3f, 3f)
             }
             return list
-        }
-
-        /**
-         * One piece of a resolved overlay's LOCAL-space shape geometry
-         * (before position/rotation/scale is applied) — an overlay shape can
-         * be more than one part (e.g. "cross" = 2 [Rect]s, "arrow" = 1 [Line]
-         * + 1 [Triangle]), which is why [computeOverlayShapeParts] returns a
-         * list rather than a single value. All coordinates are canvas-pixel
-         * units relative to the layer's own local origin (0,0) — exactly the
-         * space [RigRenderer.drawGmsOverlay]'s `canvas.translate`/`rotate`/
-         * `scale` already puts the Canvas in before calling
-         * [RigRenderer.drawShapePart]; the GLES path applies the equivalent
-         * transform explicitly via [localToWorld] instead.
-         */
-        sealed class LocalShapePart {
-            data class Rect(val cx: Float, val cy: Float, val halfW: Float, val halfH: Float) : LocalShapePart()
-            data class Circle(val cx: Float, val cy: Float, val radius: Float) : LocalShapePart()
-            /** [halfWidth] is HALF the stroke width — see call sites for why (Paint.strokeWidth is a full width, not a half-width). */
-            data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val halfWidth: Float) : LocalShapePart()
-            data class Triangle(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val x3: Float, val y3: Float) : LocalShapePart()
         }
 
         /**

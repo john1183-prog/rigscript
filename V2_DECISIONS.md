@@ -1250,6 +1250,22 @@ approved by the person before implementing:**
     deliberately testing a glow-enabled shape AND a gradient rect/cross
     specifically on first device run, not just confirming the figure
     still renders.
+  - **Two CI compile failures caught on real runs, both fixed same-day**:
+    (1) `GlesFigureFrame`'s tree-canopy/cloud-puff/snowflake circle draws
+    used `.r` on an `OvalGeometry` result — that field doesn't exist,
+    only `halfWidth`/`halfHeight` do. The GLES-path consumers of the same
+    `compute*` functions already had it right; only the Canvas-path
+    refactor had the typo, which is why it only surfaced on one side.
+    (2) `LocalShapePart` was declared nested INSIDE `RigRenderer`'s
+    `companion object`, which Kotlin does not expose as
+    `RigRenderer.LocalShapePart` from another file — only companion
+    FUNCTIONS get that unqualified-access shorthand, not companion-nested
+    CLASSES. Every other `DrawCommand`-style sealed class in this
+    codebase already avoided this by living directly in its class, not
+    the class's companion; `LocalShapePart` just didn't follow that
+    pattern when first written. Fixed by moving it to match. Both errors
+    were things this sandbox's lack of a Kotlin compiler could never have
+    caught — exactly the gap CI exists to cover, and did.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

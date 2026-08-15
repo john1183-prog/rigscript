@@ -271,6 +271,23 @@ data class AnimScript(
                     enterStyle = "pop", enterEase = "back", enterDuration = 0.4f,
                     exitStyle = "fade", exitDuration = 0.3f
                 ),
+                // GLES verification — a gradient+glow rect active early
+                // (0.3-2.6s, inside VideoExporter.exportGlesSmokeTest's
+                // fixed ~3s window), so this specific combination is
+                // actually visible in the debug export rather than only
+                // existing at 15s in accent_underline below, which the
+                // smoke test never reaches. Doubles as legitimate demo
+                // content — a lower-third accent at video open is a
+                // normal real element, not just a synthetic test shape —
+                // and previews the same visual idea accent_underline pays
+                // off properly later, same color pairing.
+                OverlayLayer(
+                    id = "intro_badge", type = "shape", shape = "rect",
+                    startSec = 0.3f, endSec = 2.6f, slot = "lower",
+                    width = 0.32f, height = 0.025f, color = 0xFFFF7043L, gradientColor = 0xFFFFEE58L,
+                    glow = true, glowRadius = 0.015f,
+                    enterStyle = "slideup", exitStyle = "fade"
+                ),
                 OverlayLayer(
                     id = "accent_underline", type = "shape", shape = "rect",
                     startSec = 15.0f, endSec = 16.8f, slot = "lower",

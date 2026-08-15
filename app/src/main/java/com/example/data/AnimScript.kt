@@ -214,23 +214,42 @@ data class AnimScript(
          * sceneAtmosphere strings match SceneShape/SceneAtmosphere's
          * constants in com.example.engine — written as raw string literals
          * here rather than imported, since this data class deliberately
-         * has no dependency on that package. Deliberately NOT touching
-         * cameraZoom/cameraPanX/cameraPanY/cameraShake in this window: the
-         * GLES export path doesn't apply any camera transform yet (a
-         * pre-existing gap — see V2_DECISIONS.md's Deferred section), so a
-         * camera field set here would do nothing in the smoke test and
-         * could read as a bug rather than an untouched feature.
+         * has no dependency on that package. Those same first two events
+         * now also carry a small cameraZoom/cameraPanX/cameraPanY move plus
+         * a cameraShake burst on the wave beat (camera phase —
+         * V2_DECISIONS.md) — small and clearly within GLES's 0.1x zoom
+         * floor and typical pan range, not a stress-test extreme, since the
+         * point is confirming the transform reads correctly against the
+         * figure/scene/overlays already in frame, not finding its edge
+         * cases. Pan is explicitly reset to 0 at the 3.5s explain event, just
+         * after this window, so it doesn't linger into the rest of the
+         * timeline's own already-careful state resets (figureX/figureScale
+         * at 19.9s, boneColor/bgColor at 24.0s) — camera zoom was already
+         * being reset that way at 17.5s for the existing 15s/21.5s beats,
+         * this just extends the same discipline to pan.
          */
         val DEMO = AnimScript(
             events = listOf(
                 ScriptEvent(0.0f,  "stand_straight", 0.4f, "ease_out",
                     sceneShape = "city", sceneAtmosphere = "rain",
                     skyColor = 0xFF16213EL, groundColor = 0xFF0F3443L, horizonY = 0.72f,
-                    showGroundLine = true, groundLineColor = 0xFF4FC3F7L),
+                    showGroundLine = true, groundLineColor = 0xFF4FC3F7L,
+                    // Camera phase (V2_DECISIONS.md) — small opening zoom-in
+                    // + pan, inside the smoke test window.
+                    cameraZoom = 1.15f, cameraPanX = -0.06f),
                 ScriptEvent(1.5f,  "wave",           0.6f, "spring", expression = "happy",
                     sceneShape = "mountains", sceneAtmosphere = "snow",
-                    skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f),
-                ScriptEvent(3.5f,  "explain",        0.7f, "ease_in_out"),
+                    skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f,
+                    // Zoom settles back to 1x, pan shifts vertically, and a
+                    // shake burst lands on the wave beat — exercises all
+                    // four camera fields together within the same ~3s
+                    // window the scene-shape transition already covers.
+                    cameraZoom = 1f, cameraPanY = 0.04f, cameraShake = 0.35f),
+                ScriptEvent(3.5f,  "explain",        0.7f, "ease_in_out",
+                    // Reset pan back to center just after the smoke test
+                    // window — same discipline the 17.5s event already
+                    // applies to cameraZoom for the later 15s/21.5s beats.
+                    cameraPanX = 0f, cameraPanY = 0f),
                 ScriptEvent(6.0f,  "present",        0.6f, "ease_out",
                     // Figure transform (V2) — shifts left and grows slightly,
                     // distinct from camera zoom. Exercises figureX/figureScale.

@@ -435,22 +435,42 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
         // Background bands / gradient — plain solid is already fully handled
-        // by the glClear above, so this only draws SOMETHING EXTRA on top
+        // by the glClear above (a hardware clear of the whole render target,
+        // unaffected by any camera concept, so it needs no change here even
+        // now that camera exists), so this only draws SOMETHING EXTRA on top
         // for the two other cases, mirroring RigRenderer.draw's own
         // priority order (sky/ground bands > gradient > solid) exactly.
-        // UNLIKE Canvas's oversized (3x canvas) background rects, these are
-        // drawn exactly canvas-sized — correct for now because camera zoom/
-        // pan/shake isn't applied anywhere in the GLES path yet (a
-        // pre-existing gap from Phase 1, not something Phase 4 introduces —
-        // see V2_DECISIONS.md). Revisit sizing here whenever that gap is closed.
+        //
+        // Camera phase (V2_DECISIONS.md): oversized (3x canvas, centred) AND
+        // camera-transformed, same as RigRenderer.draw's own
+        // `-canvasW..2*canvasW` safety rect — this is the one piece of
+        // background geometry GlesFigureFrame doesn't pre-resolve; see its
+        // cameraZoom/offsetX/offsetY doc comment for why.
+        val camera = RigRenderer.CameraTransform(frame.cameraZoom, frame.cameraOffsetX, frame.cameraOffsetY)
+        val bgL = camera.tx(-w);      val bgR = camera.tx(2f * w)
+        val bgT = camera.ty(-h);      val bgB = camera.ty(2f * h)
         if (frame.skyColor != null || frame.groundColor != null) {
             val sky    = frame.skyColor ?: frame.bgColor
             val ground = frame.groundColor ?: frame.bgColor
-            val hz     = frame.canvasH * frame.horizonYFraction
-            drawSolidRect(0f, 0f, w, hz, sky, w, h)
-            drawSolidRect(0f, hz, w, h, ground, w, h)
+            val hz     = camera.ty(frame.canvasH * frame.horizonYFraction)
+            drawSolidRect(bgL, bgT, bgR, hz, sky, w, h)
+            drawSolidRect(bgL, hz, bgR, bgB, ground, w, h)
         } else if (frame.backgroundStyle == "gradient") {
-            drawSolidGradientRect(0f, 0f, w, h, frame.bgColor, frame.backgroundGradientColor, w, h)
+            // drawSolidGradientRect interpolates linearly across WHATEVER
+            // bounds it's given — stretching it straight across the
+            // oversized bgT..bgB span would wash the actual gradient out
+            // to near-flat within the visible frame (only a sliver of that
+            // huge span is ever on-screen). Canvas avoids this because its
+            // LinearGradient is defined over the fixed 0..canvasH range
+            // with Shader.TileMode.CLAMP extending the endpoint colors flat
+            // beyond it — replicated here with an explicit 3-rect
+            // decomposition: solid/gradient/solid, split at the
+            // camera-transformed original top (y=0) and bottom (y=canvasH).
+            val top0 = camera.ty(0f)
+            val bot0 = camera.ty(h)
+            drawSolidRect(bgL, bgT, bgR, top0, frame.bgColor, w, h)
+            drawSolidGradientRect(bgL, top0, bgR, bot0, frame.bgColor, frame.backgroundGradientColor, w, h)
+            drawSolidRect(bgL, bot0, bgR, bgB, frame.backgroundGradientColor, w, h)
         }
 
         // Scene shapes + stars — world-space, before the figure. See
@@ -473,9 +493,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         }
 
         if (frame.showGroundLine) {
-            val groundY = frame.canvasH * frame.groundLineYFraction
+            // Camera-transformed Y, oversized X span (bgL/bgR from above) —
+            // same reasoning as RigRenderer.draw's own
+            // `canvas.drawLine(-canvasW, groundY, canvasW*2, groundY, ...)`.
+            val groundY = camera.ty(frame.canvasH * frame.groundLineYFraction)
             val c = argbToGlColor(frame.groundLineColor)
-            drawRoundCappedLine(0f, groundY, w, groundY, 1f, w, h, c[0], c[1], c[2], c[3])
+            drawRoundCappedLine(bgL, groundY, bgR, groundY, 1f, w, h, c[0], c[1], c[2], c[3])
         }
 
         // Behind-the-figure overlay shapes — see GlesFigureFrame.OverlayShapeDraw

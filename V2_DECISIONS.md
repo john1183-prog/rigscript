@@ -1267,6 +1267,99 @@ approved by the person before implementing:**
     were things this sandbox's lack of a Kotlin compiler could never have
     caught — exactly the gap CI exists to cover, and did.
 
+- **GLES export rewrite — camera phase (zoom/pan/shake)**: brought
+  `cameraZoom`/`cameraPanX`/`cameraPanY`/`cameraShakeIntensity` into the
+  GLES path — the biggest architectural gap called out at the end of the
+  overlay shapes + glow entry above. Applied to everything `RigRenderer.draw`
+  applies it to (figure, scene shapes, ground line, behind/front overlays)
+  and NOT to atmosphere, matching Canvas's own screen-space placement for
+  fog/rain/snow exactly.
+  - **Closed-form affine, verified before writing any Kotlin.** Canvas gets
+    camera for free via `canvas.scale(zoom,zoom,cw/2,ch/2)` +
+    `canvas.translate(tx,ty)` (a real matrix stack); GLES has no
+    equivalent, so every already-resolved position/size has to be
+    transformed explicitly. Derived by hand: `screenX = worldX*zoom +
+    offsetX` where `offsetX = cw/2*(1-zoom) + panX*cw + shakeX` (same
+    for Y; sizes/radii scale by `zoom` alone). Cross-checked against a
+    Python simulation of Android's actual `Matrix` preConcat composition
+    (translate→scale→translate for the pivot, then translate again) across
+    5 zoom/pan/shake/canvas-size combinations — max absolute error
+    `4.5e-13` (floating-point noise), not an approximation.
+  - **New shared `RigRenderer` companion members**: `CameraTransform`
+    (`zoom`/`offsetX`/`offsetY`, with `tx`/`ty`/`tLen` helpers),
+    `computeCameraShakeOffset` (the deterministic sin/cos jitter, now
+    shared — this one has to match Canvas bit-for-bit, not just visually,
+    or a shaken clip would visibly diverge between preview and export),
+    `computeCameraTransform`. `RigRenderer.draw`'s own inline
+    shake-computation lines were refactored to call
+    `computeCameraShakeOffset` — pure extract-method, verified as a
+    same-formula/same-inputs/same-outputs diff, not a behavior change.
+  - **Transform applied ONCE, at the very end, over already-resolved
+    world-space geometry** — not threaded through the bone loop or the
+    overlay parenting/local-to-world math, which all stay in pre-camera
+    "world" pixel space exactly as before this phase. This matters beyond
+    tidiness: overlay bone-parenting anchors are fractions of pre-camera
+    bone positions, and in Canvas an overlay's world position is worked
+    out in plain canvas-pixel space, only implicitly picking up whatever
+    camera transform is active on the canvas at actual draw time. Applying
+    camera any earlier in GLES (e.g. inside the bone loop) would risk a
+    parented overlay's offset getting double-transformed. New
+    `transformDrawCommand`/`transformSceneCommand`/`transformOverlayShapeDraw`
+    functions in `GlesFigureFrame` do this final pass over `drawCommands`,
+    `sceneCommands`, `behindOverlays`, and `frontOverlays`.
+  - **Background quad is the one exception** — `GlesFigureFrame` doesn't
+    pre-resolve it. `GlesFrameRenderer` now builds its own oversized (3x
+    canvas, matching Canvas's `-canvasW..2*canvasW` safety margin) and
+    camera-transformed background rect, reconstructing
+    `RigRenderer.CameraTransform` from three new plain-float fields
+    (`cameraZoom`/`cameraOffsetX`/`cameraOffsetY`) that `GlesFigureFrame`
+    now carries specifically for this.
+  - **Gradient background needed a 3-rect decomposition, not just
+    stretching the existing 2-color quad over the oversized bounds** —
+    caught while designing this, before writing it the naive way, not
+    after. `drawSolidGradientRect` interpolates linearly across whatever
+    `t`/`b` it's given; feeding it the oversized `bgT..bgB` span directly
+    would have stretched the whole color transition across a mostly
+    off-screen range, washing the visible gradient out to near-flat.
+    Canvas avoids this because its `LinearGradient` is defined over the
+    fixed `0..canvasH` range with `Shader.TileMode.CLAMP` extending the
+    endpoint colors flat beyond it. Replicated with three stacked
+    `drawSolidRect`/`drawSolidGradientRect`/`drawSolidRect` calls split at
+    the camera-transformed original top (`y=0`) and bottom (`y=canvasH`) —
+    solid above, real gradient across the original span, solid below.
+  - **Ground line**: camera-transformed Y, and horizontally oversized
+    using the same `bgL`/`bgR` bounds as the background, matching
+    `RigRenderer.draw`'s own `-canvasW..2*canvasW` line span.
+  - **`glowRadiusPx` scaled by `zoom` too**, for the same "camera zoom
+    scales everything uniformly" reasoning as figure/scene sizes — NOT
+    yet verified on-device in combination with an actual zoomed shot.
+    Flagged explicitly rather than silently assumed correct: neither glow
+    nor camera individually has on-device confirmation yet as of this
+    phase, so their combination is two unverified things stacked, not one.
+  - **Three stale doc comments/UI text found and fixed in the same
+    session**, all still claiming camera wasn't implemented anywhere in
+    the GLES path: `exportGlesSmokeTest`'s own doc comment and
+    `MainViewModel`'s mirrored one (both still said "Phase 4" scope and
+    "still no camera... anywhere"), plus `EditorScreen`'s debug-button
+    caption — which was ALSO already stale about overlays before this
+    session touched camera at all (said "still no overlays/captions"
+    when the overlay shapes + glow phase had already shipped a phase
+    earlier). All three fixed to reflect actual current scope: camera
+    done, overlay shapes/glow done, only captions and text/figure
+    overlays remain.
+  - `exportGlesSmokeTest` had the same "resolved-then-discarded" pattern
+    as Phase 3/4's original wiring gaps: `engine.currentCameraZoom`/
+    `PanX`/`PanY`/`currentShakeIntensity` were already being resolved
+    every frame via `seekToWithAmplitude` (the Canvas `renderer.draw` call
+    in `export()` already reads all four), just never passed into
+    `fromFkMatrices`. Now threaded through.
+  - Not verified against a compiler or device from this environment, same
+    standing caveat as every prior phase — the gradient 3-rect
+    decomposition and the glow-radius zoom-scaling are the two most likely
+    candidates for a subtle on-device surprise, worth testing deliberately
+    (a zoomed/panned shot with a background gradient, and separately one
+    with a glowing overlay) rather than just confirming the figure moves.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -1300,8 +1393,9 @@ zoom in."
 
 ## Deferred, with rationale
 
-- **GLES export path has no camera zoom/pan/shake anywhere, Phase 1 through
-  Phase 4** — `RigRenderer.draw()`'s `cameraZoom`/`cameraPanX`/`cameraPanY`/
+- **RESOLVED (camera phase, see History above) — GLES export path has no
+  camera zoom/pan/shake anywhere, Phase 1 through Phase 4** —
+  `RigRenderer.draw()`'s `cameraZoom`/`cameraPanX`/`cameraPanY`/
   `cameraShakeIntensity` params are read from `engine.current*` and applied
   in the real `export()` call site (`canvas.save()` + `canvas.scale()` +
   `canvas.translate()`, wrapping background through figure), but

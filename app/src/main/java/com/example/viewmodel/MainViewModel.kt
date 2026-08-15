@@ -868,17 +868,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * GLES export rewrite diagnostic (Phase 1-4 — V2_DECISIONS.md). Renders
-     * ~3s of the ACTUAL active project's real timeline through the GLES
-     * path — bones/head/joints (Phase 2), mouth/eyes/eyebrows (Phase 3),
-     * background/scene shapes/atmosphere (Phase 4) — sourcing project/
-     * keyframes the same way [exportVideo] does so this is testing the real
-     * pose-resolution pipeline, not a synthetic stand-in. Still no
-     * overlays/captions, and still no camera zoom/pan/shake anywhere in
-     * this path (see V2_DECISIONS.md's Deferred section), so it's not yet
-     * a full preview of a real export. Not part of the real export
-     * pipeline. Remove this and its UI trigger once a later phase makes
-     * GLES the real export path.
+     * GLES export rewrite diagnostic (V2_DECISIONS.md). Renders ~3s of the
+     * ACTUAL active project's real timeline through the GLES path —
+     * bones/head/joints, mouth/eyes/eyebrows, background/scene shapes/
+     * atmosphere, `type == "shape"` overlays with glow, and camera
+     * zoom/pan/shake — sourcing project/keyframes the same way
+     * [exportVideo] does so this is testing the real pose-resolution
+     * pipeline, not a synthetic stand-in. Still no captions or
+     * text/figure overlays (see V2_DECISIONS.md's Deferred section), so
+     * it's not yet a full preview of a real export. Not part of the real
+     * export pipeline. Remove this and its UI trigger once a later phase
+     * makes GLES the real export path.
      *
      * No thermal watcher here (unlike [exportVideo]/[exportPreview]) — a
      * few seconds of encoding isn't a thermal-risk workload, so adding one

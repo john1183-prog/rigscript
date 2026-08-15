@@ -455,14 +455,17 @@ object VideoExporter {
      * have reintroduced exactly the parity risk the "export-only" decision
      * was contingent on mitigating — see V2_DECISIONS.md's History entry.
      *
-     * Scope as of Phase 4: bones, head, joints, mouth, eyes, eyebrows,
-     * background (solid/gradient/sky+ground), scene shapes (mountains/
-     * city/trees/clouds), stars, ground line, and atmosphere (fog/rain/
-     * snow) — the full figure AND backdrop, correctly posed/colored/
-     * blinking/lip-synced. Still no overlays/captions/shape-glow/text, and
-     * still no camera zoom/pan/shake anywhere in this path (a gap that
-     * predates Phase 4 — see V2_DECISIONS.md's Deferred section), so this
-     * is not yet a full preview of a real export.
+     * Scope as of the camera phase: bones, head, joints, mouth, eyes,
+     * eyebrows, background (solid/gradient/sky+ground), scene shapes
+     * (mountains/city/trees/clouds), stars, ground line, atmosphere (fog/
+     * rain/snow), `type == "shape"` overlay layers with true two-pass
+     * Gaussian blur glow, and camera zoom/pan/shake (applied to everything
+     * above except atmosphere, which stays screen-space — matching
+     * [RigRenderer.draw] exactly) — the full figure AND backdrop, correctly
+     * posed/colored/blinking/lip-synced/panned. Still no captions or
+     * `type == "text"`/`"figure"` overlays or particle trails (see
+     * V2_DECISIONS.md's Deferred section), so this is not yet a full
+     * preview of a real export.
      *
      * Still deliberately NOT called from [export] — same reasoning as every
      * prior phase: this can't render the full picture yet, so wiring it
@@ -623,6 +626,17 @@ object VideoExporter {
                             sceneShape      = engine.currentSceneShape,
                             sceneAtmosphere = engine.currentSceneAtmosphere,
                             timeSec         = timeSec,
+                            // Camera phase (V2_DECISIONS.md): same four
+                            // engine.current* reads the Canvas renderer.draw
+                            // call above already uses — this smoke test was
+                            // previously resolving these via
+                            // seekToWithAmplitude and then discarding all
+                            // four, same pattern as the Phase 3/4 fixes
+                            // above it.
+                            cameraZoom            = engine.currentCameraZoom,
+                            cameraPanX            = engine.currentCameraPanX,
+                            cameraPanY            = engine.currentCameraPanY,
+                            cameraShakeIntensity  = engine.currentShakeIntensity,
                             // Overlay shapes (V2_DECISIONS.md): matches export()'s
                             // own RigRenderer.draw call site — engine.currentOverlays
                             // is time-resolved but NOT yet parented; fromFkMatrices

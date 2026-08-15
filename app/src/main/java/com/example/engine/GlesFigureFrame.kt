@@ -39,6 +39,23 @@ data class GlesFigureFrame(
     val canvasW: Int,
     /** Canvas pixel height this frame was computed for. */
     val canvasH: Int,
+    /**
+     * Camera zoom/pan/shake (V2_DECISIONS.md, camera phase), already
+     * resolved into [RigRenderer.CameraTransform]'s zoom/offsetX/offsetY
+     * form. Every coordinate in [drawCommands]/[sceneCommands]/
+     * [behindOverlays]/[frontOverlays]/[groundLineYFraction] below is
+     * ALREADY camera-transformed by [fromFkMatrices] — these three raw
+     * values are NOT for re-transforming any of that. They exist only so
+     * [GlesFrameRenderer] can build its own oversized background quad
+     * (mirroring [RigRenderer.draw]'s `-canvasW..2*canvasW` safety margin,
+     * which has no equivalent field here since it isn't geometry this class
+     * otherwise resolves). [atmosphereCommands] deliberately stay
+     * untouched by any of this — screen-space, matching
+     * [RigRenderer.drawAtmosphere]'s own placement.
+     */
+    val cameraZoom: Float,
+    val cameraOffsetX: Float,
+    val cameraOffsetY: Float,
     /** ARGB packed int (same representation as Android Color). Plain solid background — used when neither sky/ground nor gradient apply. */
     val bgColor: Int,
     /** Non-null together with [groundColor] when scripted sky/ground bands are active — see [RigRenderer.draw]'s own `skyColor != null || groundColor != null` check, mirrored exactly. */
@@ -235,6 +252,13 @@ data class GlesFigureFrame(
             sceneShape: String,
             sceneAtmosphere: String,
             timeSec: Float,
+            // Camera phase (V2_DECISIONS.md) — defaults match RigRenderer.draw's
+            // own defaults exactly, so a caller that doesn't pass these renders
+            // identically to before this phase existed.
+            cameraZoom: Float = 1f,
+            cameraPanX: Float = 0f,
+            cameraPanY: Float = 0f,
+            cameraShakeIntensity: Float = 0f,
             overlays: List<TimeResolvedOverlay> = emptyList()
         ): GlesFigureFrame {
             val rig    = StickFigureRig
@@ -242,6 +266,16 @@ data class GlesFigureFrame(
             val n      = rig.BONE_COUNT
             val minDim = minOf(canvasW, canvasH).toFloat()
             val pts    = FloatArray(4)
+
+            // Camera transform (V2_DECISIONS.md, camera phase) — computed
+            // once, applied at the very end to every already-resolved
+            // command list below (NOT threaded through the bone/overlay
+            // loops themselves, which stay in pre-camera "world" space
+            // exactly as before this phase — see transformDrawCommand's
+            // doc comment for why that ordering matters for overlay
+            // parenting specifically).
+            val (shakeX, shakeY) = RigRenderer.computeCameraShakeOffset(timeSec, cameraShakeIntensity, minDim)
+            val camera = RigRenderer.computeCameraTransform(canvasW, canvasH, cameraZoom, cameraPanX, cameraPanY, shakeX, shakeY)
 
             val boneColor    = (overrides.boneColor ?: appearance.boneColor).toInt()
             val headColor    = (overrides.headColor ?: overrides.boneColor ?: appearance.headColor).toInt()
@@ -398,22 +432,115 @@ data class GlesFigureFrame(
             return GlesFigureFrame(
                 canvasW                 = canvasW,
                 canvasH                 = canvasH,
+                cameraZoom              = camera.zoom,
+                cameraOffsetX           = camera.offsetX,
+                cameraOffsetY           = camera.offsetY,
                 bgColor                 = bgColor,
                 skyColor                = skyColor?.toInt(),
                 groundColor             = groundColor?.toInt(),
                 backgroundStyle         = overrides.backgroundStyle ?: appearance.backgroundStyle,
                 backgroundGradientColor = (overrides.backgroundGradientColor ?: appearance.backgroundGradientColor).toInt(),
                 horizonYFraction        = horizonYFraction,
-                sceneCommands           = sceneCommands,
+                // Camera-transformed here — everything drawn from these
+                // lists is already in final screen space by the time
+                // GlesFrameRenderer sees it. See the cameraZoom/offsetX/
+                // offsetY doc comment above for the one exception
+                // (the background quad).
+                sceneCommands           = sceneCommands.map { transformSceneCommand(it, camera) },
                 showGroundLine          = overrides.showGroundLine ?: appearance.showGroundLine,
                 groundLineColor         = (overrides.groundLineColor ?: appearance.groundLineColor).toInt(),
                 groundLineYFraction     = plainGroundLineYFraction,
-                behindOverlays          = behindOverlays,
-                drawCommands            = commands,
+                behindOverlays          = behindOverlays.map { transformOverlayShapeDraw(it, camera) },
+                drawCommands            = commands.map { transformDrawCommand(it, camera) },
                 figureAlpha             = (overrides.opacity ?: 1f).coerceIn(0f, 1f),
-                frontOverlays           = frontOverlays,
+                frontOverlays           = frontOverlays.map { transformOverlayShapeDraw(it, camera) },
+                // NOT camera-transformed — screen-space atmosphere, unchanged
+                // from before this phase. See class doc comment.
                 atmosphereCommands      = atmosphereCommands
             )
+        }
+
+        /**
+         * Applies [cam] to one already-resolved [DrawCommand]. Called once,
+         * at the very end of [fromFkMatrices], over the whole figure —
+         * NOT threaded through the bone loop itself, which stays in
+         * pre-camera "world" pixel space exactly as it was before the
+         * camera phase. See [transformOverlayShapeDraw]'s doc comment for
+         * why that ordering (resolve everything in world space, apply
+         * camera once at the end) matters beyond just being tidy.
+         */
+        private fun transformDrawCommand(cmd: DrawCommand, cam: RigRenderer.CameraTransform): DrawCommand = when (cmd) {
+            is DrawCommand.BoneLine -> cmd.copy(
+                sx = cam.tx(cmd.sx), sy = cam.ty(cmd.sy),
+                ex = cam.tx(cmd.ex), ey = cam.ty(cmd.ey),
+                halfWidth = cam.tLen(cmd.halfWidth)
+            )
+            is DrawCommand.Joint -> cmd.copy(cx = cam.tx(cmd.cx), cy = cam.ty(cmd.cy), radius = cam.tLen(cmd.radius))
+            is DrawCommand.Head  -> cmd.copy(cx = cam.tx(cmd.cx), cy = cam.ty(cmd.cy), radius = cam.tLen(cmd.radius))
+            is DrawCommand.Oval  -> cmd.copy(
+                cx = cam.tx(cmd.cx), cy = cam.ty(cmd.cy),
+                halfWidth = cam.tLen(cmd.halfWidth), halfHeight = cam.tLen(cmd.halfHeight)
+            )
+            is DrawCommand.Eyebrow -> cmd.copy(
+                sx = cam.tx(cmd.sx), sy = cam.ty(cmd.sy),
+                ex = cam.tx(cmd.ex), ey = cam.ty(cmd.ey),
+                halfWidth = cam.tLen(cmd.halfWidth)
+            )
+        }
+
+        /** Same reasoning as [transformDrawCommand] — applied once, at the end, over the whole list. */
+        private fun transformSceneCommand(cmd: SceneDrawCommand, cam: RigRenderer.CameraTransform): SceneDrawCommand = when (cmd) {
+            is SceneDrawCommand.Polygon -> {
+                val pts = FloatArray(cmd.points.size)
+                var i = 0
+                while (i < cmd.points.size) {
+                    pts[i] = cam.tx(cmd.points[i]); pts[i + 1] = cam.ty(cmd.points[i + 1]); i += 2
+                }
+                SceneDrawCommand.Polygon(pts, cmd.color)
+            }
+            is SceneDrawCommand.Rect   -> SceneDrawCommand.Rect(cam.tx(cmd.l), cam.ty(cmd.t), cam.tx(cmd.r), cam.ty(cmd.b), cmd.color)
+            is SceneDrawCommand.Circle -> SceneDrawCommand.Circle(cam.tx(cmd.cx), cam.ty(cmd.cy), cam.tLen(cmd.radius), cmd.color)
+        }
+
+        /**
+         * Applies [cam] to one already-built [OverlayShapeDraw] — called
+         * AFTER [buildOverlayShapeDraw] has already resolved parenting and
+         * done its own local-to-world transform (position/rotation/scale),
+         * never before. Parenting anchors ([RigRenderer.localToWorld]'s
+         * `originX`/`originY` in that function) are deliberately computed
+         * from PRE-camera bone-anchor fractions — mirroring how, in
+         * [RigRenderer.draw], an overlay's world position is worked out in
+         * plain canvas-pixel space and only THEN implicitly carried through
+         * whatever camera transform is active on the canvas at actual draw
+         * time. Applying camera here, once, after all of that, keeps GLES
+         * doing the same two-stage resolution in the same order — parent
+         * first in world space, then move the whole world together — rather
+         * than risking a parented overlay's offset itself getting
+         * double-transformed if camera were threaded any earlier.
+         * [glowRadiusPx] is scaled by zoom too, for the same "camera zoom
+         * scales everything uniformly" reasoning as [DrawCommand] sizes —
+         * NOT yet verified on-device in combination with an actual zoomed
+         * shot (glow itself isn't on-device-confirmed as of this phase
+         * either — see V2_DECISIONS.md's Deferred section).
+         */
+        private fun transformOverlayShapeDraw(overlay: OverlayShapeDraw, cam: RigRenderer.CameraTransform): OverlayShapeDraw {
+            val transformed = overlay.commands.map { cmd ->
+                when (cmd) {
+                    is OverlayDrawCommand.Polygon -> {
+                        val pts = FloatArray(cmd.points.size)
+                        var i = 0
+                        while (i < cmd.points.size) {
+                            pts[i] = cam.tx(cmd.points[i]); pts[i + 1] = cam.ty(cmd.points[i + 1]); i += 2
+                        }
+                        OverlayDrawCommand.Polygon(pts, cmd.colors)
+                    }
+                    is OverlayDrawCommand.Circle -> OverlayDrawCommand.Circle(cam.tx(cmd.cx), cam.ty(cmd.cy), cam.tLen(cmd.radius), cmd.color)
+                    is OverlayDrawCommand.Line   -> OverlayDrawCommand.Line(
+                        cam.tx(cmd.x1), cam.ty(cmd.y1), cam.tx(cmd.x2), cam.ty(cmd.y2), cam.tLen(cmd.halfWidth), cmd.color
+                    )
+                }
+            }
+            return overlay.copy(commands = transformed, glowRadiusPx = cam.tLen(overlay.glowRadiusPx))
         }
 
         /**

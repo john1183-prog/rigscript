@@ -130,17 +130,13 @@ class RigRenderer {
         // reads as an actual camera move over the whole scene, not just the
         // character scaling in place against a fixed backdrop.
         val zoom = cameraZoom.coerceAtLeast(0.1f)
-        val shakeMag = cameraShakeIntensity.coerceIn(0f, 1f) * minDim * 0.03f
-        // Deterministic pseudo-random jitter as a function of currentTimeSec —
-        // NOT kotlin.random.Random, which would make preview and the exported
-        // file diverge on every frame with shake active (export re-samples at
-        // its own timestamps via seekToWithAmplitude, so a stateful/live RNG
-        // can never match what preview showed at the same timeSec). Two
-        // different frequencies for X/Y so the offset isn't just diagonal.
-        // Same "seed everything from timeSec, never from a live RNG" principle
-        // PlaybackEngine already applies to blink/fidget scheduling.
-        val shakeX = if (shakeMag > 0f) sin(currentTimeSec * 137.5f) * shakeMag else 0f
-        val shakeY = if (shakeMag > 0f) (cos(currentTimeSec * 93.7f) ) * shakeMag else 0f
+        // Extracted to the shared computeCameraShakeOffset (companion object,
+        // camera phase — V2_DECISIONS.md) so the GLES path computes this
+        // identical jitter instead of risking its own copy drifting from
+        // this one — see that function's doc comment for why this
+        // particular piece of math has to match bit-for-bit. Pure
+        // extract-method: same formula, same inputs, same outputs as before.
+        val (shakeX, shakeY) = computeCameraShakeOffset(currentTimeSec, cameraShakeIntensity, minDim)
 
         canvas.save()
         canvas.scale(zoom, zoom, canvasW / 2f, canvasH / 2f)
@@ -1096,6 +1092,65 @@ class RigRenderer {
                     matrix.preRotate(angles[i])
                 }
             }
+        }
+
+        /**
+         * Camera pan/zoom/shake, as a single already-composed affine
+         * transform: `screenX = worldX * zoom + offsetX` (same for Y). Pure
+         * pixel-space arithmetic, no Canvas/Matrix dependency, so the GLES
+         * path (camera phase, V2_DECISIONS.md) can apply it directly to
+         * already-resolved geometry instead of relying on a matrix stack
+         * the way [draw] does via `canvas.scale`/`canvas.translate`.
+         *
+         * Verified algebraically equivalent to [draw]'s own
+         * `canvas.scale(zoom,zoom,cw/2,ch/2)` + `canvas.translate(tx,ty)`
+         * composition (with `tx,ty` divided by zoom, per that call site's
+         * own comment) via a Python matrix-stack simulation before this was
+         * written — see V2_DECISIONS.md's History entry for the camera
+         * phase for the derivation and the cross-check.
+         */
+        data class CameraTransform(val zoom: Float, val offsetX: Float, val offsetY: Float) {
+            fun tx(worldX: Float) = worldX * zoom + offsetX
+            fun ty(worldY: Float) = worldY * zoom + offsetY
+            /** For radii/half-widths/stroke widths — camera zoom scales sizes uniformly, same as it scales position deltas. */
+            fun tLen(worldLen: Float) = worldLen * zoom
+        }
+
+        /**
+         * Deterministic pseudo-random shake jitter as a function of
+         * [timeSec] — NOT [kotlin.random.Random], which would make preview
+         * and an export diverge on every frame with shake active (export
+         * re-samples at its own timestamps, so a stateful/live RNG can
+         * never match what preview showed at the same timeSec). Shared by
+         * [draw] (Canvas) and the GLES path so both compute the identical
+         * offset — unlike most geometry in this file, this one MUST match
+         * bit-for-bit, not just visually: any drift here is a preview/export
+         * mismatch a user could actually notice on a shaken clip, not just
+         * an internal inconsistency.
+         */
+        fun computeCameraShakeOffset(timeSec: Float, shakeIntensity: Float, minDim: Float): Pair<Float, Float> {
+            val shakeMag = shakeIntensity.coerceIn(0f, 1f) * minDim * 0.03f
+            if (shakeMag <= 0f) return 0f to 0f
+            // Two different frequencies for X/Y so the offset isn't just diagonal.
+            return sin(timeSec * 137.5f) * shakeMag to cos(timeSec * 93.7f) * shakeMag
+        }
+
+        /**
+         * Builds the [CameraTransform] for one frame. [shakeX]/[shakeY] are
+         * passed in already-resolved (from [computeCameraShakeOffset])
+         * rather than recomputed here, so a caller that also needs the raw
+         * shake offset for something else never has to call
+         * [computeCameraShakeOffset] twice in the same frame.
+         */
+        fun computeCameraTransform(
+            canvasW: Int, canvasH: Int,
+            cameraZoom: Float, cameraPanX: Float, cameraPanY: Float,
+            shakeX: Float, shakeY: Float
+        ): CameraTransform {
+            val zoom = cameraZoom.coerceAtLeast(0.1f)
+            val offsetX = canvasW / 2f * (1f - zoom) + cameraPanX * canvasW + shakeX
+            val offsetY = canvasH / 2f * (1f - zoom) + cameraPanY * canvasH + shakeY
+            return CameraTransform(zoom, offsetX, offsetY)
         }
 
         /** Center + half-extents of an oval, in the same canvas-pixel space [computeFkMatrices] outputs. */

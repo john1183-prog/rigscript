@@ -592,10 +592,14 @@ class RigRenderer {
     }
 
     private fun combinedAlpha(baseColor: Int, opacity: Float): Int =
-        (Color.alpha(baseColor) * opacity).toInt().coerceIn(0, 255)
+        combinedAlphaChannel(baseColor, opacity)
 
     private fun drawGmsShape(canvas: Canvas, w: Int, h: Int, minDim: Float, layer: ResolvedOverlay) {
         val baseColor = layer.color.toInt()
+        // Geometry now lives in computeOverlayShapeParts (companion, below) —
+        // shared with the GLES export path (overlay shapes — V2_DECISIONS.md),
+        // same reasoning as computeMouthGeometry's doc comment (Phase 3).
+        val parts = computeOverlayShapeParts(layer, w, h, minDim)
 
         if (layer.glow) {
             gmsGlowPaint.color = layer.glowColor.toInt()
@@ -603,7 +607,7 @@ class RigRenderer {
             gmsGlowPaint.maskFilter = android.graphics.BlurMaskFilter(
                 (layer.glowRadius * minDim).coerceAtLeast(1f), android.graphics.BlurMaskFilter.Blur.NORMAL
             )
-            drawShapeGeometry(canvas, w, h, minDim, layer, gmsGlowPaint)
+            for (part in parts) drawShapePart(canvas, part, gmsGlowPaint)
             gmsGlowPaint.maskFilter = null
         }
 
@@ -616,66 +620,34 @@ class RigRenderer {
         } else null
         gmsShapePaint.color = baseColor
         gmsShapePaint.alpha = combinedAlpha(baseColor, layer.opacity)
-        drawShapeGeometry(canvas, w, h, minDim, layer, gmsShapePaint)
+        for (part in parts) drawShapePart(canvas, part, gmsShapePaint)
     }
 
-    private fun drawShapeGeometry(canvas: Canvas, w: Int, h: Int, minDim: Float, layer: ResolvedOverlay, paint: Paint) {
-        when (layer.shape) {
-            "circle" -> {
-                canvas.drawCircle(0f, 0f, (layer.radius ?: 0.1f) * minDim, paint)
-            }
-            "line" -> {
+    /** Draws one already-computed [LocalShapePart] — the Canvas-specific half of what used to be [drawShapeGeometry]'s per-shape when-branch. */
+    private fun drawShapePart(canvas: Canvas, part: LocalShapePart, paint: Paint) {
+        when (part) {
+            is LocalShapePart.Circle -> canvas.drawCircle(part.cx, part.cy, part.radius, paint)
+            is LocalShapePart.Rect -> canvas.drawRect(
+                part.cx - part.halfW, part.cy - part.halfH, part.cx + part.halfW, part.cy + part.halfH, paint
+            )
+            is LocalShapePart.Line -> {
                 val prevStyle = paint.style
                 paint.style = Paint.Style.STROKE
                 paint.strokeCap = Paint.Cap.ROUND
-                paint.strokeWidth = (layer.height ?: 0.01f) * h
-                val halfLen = (layer.width ?: 0.2f) * w / 2f
-                canvas.drawLine(-halfLen, 0f, halfLen, 0f, paint)
+                paint.strokeWidth = part.halfWidth * 2f
+                canvas.drawLine(part.x1, part.y1, part.x2, part.y2, paint)
                 paint.style = prevStyle
             }
-            "arrow" -> {
-                // Points along +X in local space -- RigRenderer.drawGmsOverlay
-                // already rotated the canvas to rotationDeg (velocity
-                // direction, for a physics-driven arrow) before calling here.
+            is LocalShapePart.Triangle -> {
                 val prevStyle = paint.style
-                val strokeW = (layer.height ?: 0.012f) * h
-                val halfLen = (layer.width ?: 0.2f) * w / 2f
-                val headLen = strokeW * 3f
-                val headHalfW = strokeW * 2f
-                paint.style = Paint.Style.STROKE
-                paint.strokeCap = Paint.Cap.ROUND
-                paint.strokeWidth = strokeW
-                canvas.drawLine(-halfLen, 0f, halfLen - headLen, 0f, paint)
                 paint.style = Paint.Style.FILL
-                val head = android.graphics.Path()
-                head.moveTo(halfLen, 0f)
-                head.lineTo(halfLen - headLen, -headHalfW)
-                head.lineTo(halfLen - headLen, headHalfW)
-                head.close()
-                canvas.drawPath(head, paint)
+                val path = android.graphics.Path()
+                path.moveTo(part.x1, part.y1)
+                path.lineTo(part.x2, part.y2)
+                path.lineTo(part.x3, part.y3)
+                path.close()
+                canvas.drawPath(path, paint)
                 paint.style = prevStyle
-            }
-            "cross" -> {
-                // Traditional Latin-cross proportions: crossbar sits about
-                // a third of the way down from the top, and spans about
-                // 60% of the total height — reuses width/height (arm
-                // thickness / overall height) rather than adding new
-                // fields, same "reuse what's there" approach as every
-                // other shape. Added directly in response to a real
-                // AI-generated script: a single rotated rect can only
-                // ever be one bar, never an actual cross.
-                val thickness = (layer.width ?: 0.03f) * w
-                val totalHeight = (layer.height ?: 0.2f) * h
-                val armSpan = totalHeight * 0.6f
-                val vertHalf = totalHeight / 2f
-                val crossbarY = -vertHalf + totalHeight * 0.32f
-                canvas.drawRect(-thickness / 2f, -vertHalf, thickness / 2f, vertHalf, paint)
-                canvas.drawRect(-armSpan / 2f, crossbarY - thickness / 2f, armSpan / 2f, crossbarY + thickness / 2f, paint)
-            }
-            else -> { // "rect"
-                val halfW = (layer.width ?: 0.3f) * w / 2f
-                val halfH = (layer.height ?: 0.15f) * h / 2f
-                canvas.drawRect(-halfW, -halfH, halfW, halfH, paint)
             }
         }
     }
@@ -1391,5 +1363,111 @@ class RigRenderer {
             }
             return list
         }
+
+        /**
+         * One piece of a resolved overlay's LOCAL-space shape geometry
+         * (before position/rotation/scale is applied) — an overlay shape can
+         * be more than one part (e.g. "cross" = 2 [Rect]s, "arrow" = 1 [Line]
+         * + 1 [Triangle]), which is why [computeOverlayShapeParts] returns a
+         * list rather than a single value. All coordinates are canvas-pixel
+         * units relative to the layer's own local origin (0,0) — exactly the
+         * space [RigRenderer.drawGmsOverlay]'s `canvas.translate`/`rotate`/
+         * `scale` already puts the Canvas in before calling
+         * [RigRenderer.drawShapePart]; the GLES path applies the equivalent
+         * transform explicitly via [localToWorld] instead.
+         */
+        sealed class LocalShapePart {
+            data class Rect(val cx: Float, val cy: Float, val halfW: Float, val halfH: Float) : LocalShapePart()
+            data class Circle(val cx: Float, val cy: Float, val radius: Float) : LocalShapePart()
+            /** [halfWidth] is HALF the stroke width — see call sites for why (Paint.strokeWidth is a full width, not a half-width). */
+            data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val halfWidth: Float) : LocalShapePart()
+            data class Triangle(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val x3: Float, val y3: Float) : LocalShapePart()
+        }
+
+        /**
+         * Pure geometry for a resolved overlay's shape — no Canvas/Paint
+         * dependency, shared between [RigRenderer.drawGmsShape] (Canvas) and
+         * the GLES export path (overlay shapes — V2_DECISIONS.md), same
+         * reasoning as [computeMouthGeometry]'s doc comment. Every constant
+         * here is unchanged from the pre-extraction Canvas code — this is a
+         * relocation of the math, not a rewrite of it.
+         */
+        fun computeOverlayShapeParts(layer: ResolvedOverlay, w: Int, h: Int, minDim: Float): List<LocalShapePart> {
+            return when (layer.shape) {
+                "circle" -> listOf(LocalShapePart.Circle(0f, 0f, (layer.radius ?: 0.1f) * minDim))
+                "line" -> {
+                    val strokeHalfWidth = (layer.height ?: 0.01f) * h / 2f
+                    val halfLen = (layer.width ?: 0.2f) * w / 2f
+                    listOf(LocalShapePart.Line(-halfLen, 0f, halfLen, 0f, strokeHalfWidth))
+                }
+                "arrow" -> {
+                    // Points along +X in local space — the caller has already
+                    // rotated to rotationDeg (velocity direction, for a
+                    // physics-driven arrow) before this geometry is applied.
+                    val strokeW = (layer.height ?: 0.012f) * h
+                    val halfLen = (layer.width ?: 0.2f) * w / 2f
+                    val headLen = strokeW * 3f
+                    val headHalfW = strokeW * 2f
+                    listOf(
+                        LocalShapePart.Line(-halfLen, 0f, halfLen - headLen, 0f, strokeW / 2f),
+                        LocalShapePart.Triangle(halfLen, 0f, halfLen - headLen, -headHalfW, halfLen - headLen, headHalfW)
+                    )
+                }
+                "cross" -> {
+                    // Traditional Latin-cross proportions: crossbar sits about
+                    // a third of the way down from the top, and spans about
+                    // 60% of the total height — reuses width/height (arm
+                    // thickness / overall height) rather than adding new
+                    // fields, same "reuse what's there" approach as every
+                    // other shape. Added directly in response to a real
+                    // AI-generated script: a single rotated rect can only
+                    // ever be one bar, never an actual cross.
+                    val thickness = (layer.width ?: 0.03f) * w
+                    val totalHeight = (layer.height ?: 0.2f) * h
+                    val armSpan = totalHeight * 0.6f
+                    val vertHalf = totalHeight / 2f
+                    val crossbarY = -vertHalf + totalHeight * 0.32f
+                    listOf(
+                        LocalShapePart.Rect(0f, 0f, thickness / 2f, vertHalf),
+                        LocalShapePart.Rect(0f, crossbarY, armSpan / 2f, thickness / 2f)
+                    )
+                }
+                else -> { // "rect"
+                    val halfW = (layer.width ?: 0.3f) * w / 2f
+                    val halfH = (layer.height ?: 0.15f) * h / 2f
+                    listOf(LocalShapePart.Rect(0f, 0f, halfW, halfH))
+                }
+            }
+        }
+
+        /**
+         * Transforms a LOCAL-space point (canvas-pixel units, relative to a
+         * layer's own origin) into WORLD canvas-pixel space, given that
+         * layer's resolved origin/rotation/scale — the explicit-math GLES
+         * equivalent of `canvas.translate(originX, originY)` +
+         * `canvas.rotate(rotationDeg)` + `canvas.scale(scale, scale)`,
+         * applied in that same order (scale, then rotate, then translate,
+         * reading right-to-left through the matrix composition Canvas
+         * builds). Standard 2D rotation matrix; not yet visually confirmed
+         * on-device for a NON-ZERO rotation specifically (0° rotation is the
+         * overwhelmingly common case and is trivially correct either way) —
+         * same "believe the device over the reasoning" discipline this file
+         * already applies elsewhere.
+         */
+        fun localToWorld(lx: Float, ly: Float, originX: Float, originY: Float, rotationDeg: Float, scale: Float): Pair<Float, Float> {
+            val sx = lx * scale
+            val sy = ly * scale
+            if (rotationDeg == 0f) return (originX + sx) to (originY + sy)
+            val rad = Math.toRadians(rotationDeg.toDouble())
+            val cosR = kotlin.math.cos(rad).toFloat()
+            val sinR = kotlin.math.sin(rad).toFloat()
+            val rx = sx * cosR - sy * sinR
+            val ry = sx * sinR + sy * cosR
+            return (originX + rx) to (originY + ry)
+        }
+
+        /** Shared by [RigRenderer.combinedAlpha] and the GLES overlay path — see that function's doc comment for why this moved here (Phase 3/4 precedent). */
+        fun combinedAlphaChannel(baseColor: Int, opacity: Float): Int =
+            (android.graphics.Color.alpha(baseColor) * opacity).toInt().coerceIn(0, 255)
     }
 }

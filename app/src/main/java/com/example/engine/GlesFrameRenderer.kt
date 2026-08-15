@@ -84,7 +84,22 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     private var circleProgram  = 0
     private var ovalProgram    = 0
     private var solidProgram   = 0
+    private var blurProgram    = 0
     private var vertexBuf: FloatBuffer = allocFloatBuffer(24)
+
+    /**
+     * Offscreen ping-pong pair for overlay-shape glow's two-pass Gaussian
+     * blur — see [drawGlowShape]'s doc comment. Allocated lazily on first
+     * use (canvas dimensions aren't known at [init] time — [drawFigureFrame]
+     * receives them per-call), sized to exactly [glowFboW]x[glowFboH] and
+     * reallocated only if that size ever changes.
+     */
+    private var glowFboA = 0
+    private var glowTexA = 0
+    private var glowFboB = 0
+    private var glowTexB = 0
+    private var glowFboW = 0
+    private var glowFboH = 0
 
     private companion object {
 
@@ -213,6 +228,49 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             varying vec4 v_color;
             void main() { gl_FragColor = v_color; }
         """
+
+        // Separable Gaussian blur, overlay shape glow (V2_DECISIONS.md). Samples
+        // [u_tex] with a fixed 9-tap normalised kernel along ONE axis at a time
+        // (u_texelStep is (step,0) for the horizontal pass, (0,step) for the
+        // vertical pass — see drawGlowShape) — running this shader twice, once
+        // per axis, IS a full 2D Gaussian blur: a 2D Gaussian is separable into
+        // the product of two 1D Gaussians, which is the whole reason two cheap
+        // 1D passes are used instead of one expensive 2D one. Weights are the
+        // standard normalised 9-tap set (sums to 1.0), NOT a continuously
+        // variable true-sigma kernel — u_texelStep's magnitude is instead scaled
+        // on the Kotlin side to approximate the requested glowRadius, same
+        // "fixed-shape, scaled approximation" spirit as this file's other
+        // documented approximations (see OVAL_FRAG's doc comment for the
+        // precedent). CRITICAL for a correct-looking result at partial alpha:
+        // [u_tex] must hold PREMULTIPLIED-alpha color — see drawGlowShape's doc
+        // comment for exactly why and how that's arranged without needing to
+        // touch the SDF shaders that render INTO the source texture.
+        const val BLUR_VERT = """
+            attribute vec2 a_pos;
+            attribute vec2 a_uv;
+            varying   vec2 v_uv;
+            void main() { gl_Position = vec4(a_pos, 0.0, 1.0); v_uv = a_uv; }
+        """
+
+        const val BLUR_FRAG = """
+            precision mediump float;
+            uniform sampler2D u_tex;
+            uniform vec2 u_texelStep;
+            varying vec2 v_uv;
+            void main() {
+                vec4 sum = vec4(0.0);
+                sum += texture2D(u_tex, v_uv - 4.0 * u_texelStep) * 0.0162162162;
+                sum += texture2D(u_tex, v_uv - 3.0 * u_texelStep) * 0.0540540541;
+                sum += texture2D(u_tex, v_uv - 2.0 * u_texelStep) * 0.1216216216;
+                sum += texture2D(u_tex, v_uv - 1.0 * u_texelStep) * 0.1945945946;
+                sum += texture2D(u_tex, v_uv)                     * 0.2270270270;
+                sum += texture2D(u_tex, v_uv + 1.0 * u_texelStep) * 0.1945945946;
+                sum += texture2D(u_tex, v_uv + 2.0 * u_texelStep) * 0.1216216216;
+                sum += texture2D(u_tex, v_uv + 3.0 * u_texelStep) * 0.0540540541;
+                sum += texture2D(u_tex, v_uv + 4.0 * u_texelStep) * 0.0162162162;
+                gl_FragColor = sum;
+            }
+        """
     }
 
     // ── EGL init / release ────────────────────────────────────────────────────
@@ -267,6 +325,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         circleProgram  = buildProgram(CIRCLE_VERT, CIRCLE_FRAG)
         ovalProgram    = buildProgram(OVAL_VERT, OVAL_FRAG)
         solidProgram   = buildProgram(SOLID_VERT, SOLID_FRAG)
+        blurProgram    = buildProgram(BLUR_VERT, BLUR_FRAG)
 
         ownerThread = Thread.currentThread()   // this block runs on dispatcher — see ownerThread's doc comment
         initialized = true
@@ -302,6 +361,13 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             if (circleProgram  != 0) { GLES20.glDeleteProgram(circleProgram);  circleProgram  = 0 }
             if (ovalProgram    != 0) { GLES20.glDeleteProgram(ovalProgram);    ovalProgram    = 0 }
             if (solidProgram   != 0) { GLES20.glDeleteProgram(solidProgram);   solidProgram   = 0 }
+            if (blurProgram    != 0) { GLES20.glDeleteProgram(blurProgram);    blurProgram    = 0 }
+            if (glowFboA != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboA), 0); glowFboA = 0 }
+            if (glowFboB != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboB), 0); glowFboB = 0 }
+            if (glowTexA != 0) { GLES20.glDeleteTextures(1, intArrayOf(glowTexA), 0); glowTexA = 0 }
+            if (glowTexB != 0) { GLES20.glDeleteTextures(1, intArrayOf(glowTexB), 0); glowTexB = 0 }
+            glowFboW = 0
+            glowFboH = 0
             if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
                 if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
@@ -412,6 +478,15 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             drawRoundCappedLine(0f, groundY, w, groundY, 1f, w, h, c[0], c[1], c[2], c[3])
         }
 
+        // Behind-the-figure overlay shapes — see GlesFigureFrame.OverlayShapeDraw
+        // doc comment. Glow (if any) drawn first via the offscreen blur passes,
+        // THEN the crisp shape on top of it — matching RigRenderer.drawGmsShape's
+        // own glow-then-crisp order exactly.
+        for (overlay in frame.behindOverlays) {
+            if (overlay.glow) drawGlowShape(overlay, frame.canvasW, frame.canvasH, w, h)
+            drawOverlayCommands(overlay.commands, w, h, colorOverride = null)
+        }
+
         if (frame.figureAlpha > 0.001f) {
             for (cmd in frame.drawCommands) {
                 when (cmd) {
@@ -450,6 +525,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                     }
                 }
             }
+        }
+
+        // Front-of-figure overlay shapes — same glow-then-crisp order as behindOverlays.
+        for (overlay in frame.frontOverlays) {
+            if (overlay.glow) drawGlowShape(overlay, frame.canvasW, frame.canvasH, w, h)
+            drawOverlayCommands(overlay.commands, w, h, colorOverride = null)
         }
 
         // Atmosphere (fog/rain/snow) — screen-space, drawn AFTER the figure
@@ -716,6 +797,161 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
         GLES20.glDisableVertexAttribArray(aPosLoc)
         GLES20.glDisableVertexAttribArray(aUvLoc)
+    }
+
+    // ── Overlay shapes + glow ────────────────────────────────────────────────
+
+    /**
+     * Draws a resolved overlay shape's already-world-space geometry via the
+     * existing primitives — [drawSolidFan] for [GlesFigureFrame.OverlayDrawCommand.Polygon],
+     * [drawCircle] for [Circle][GlesFigureFrame.OverlayDrawCommand.Circle],
+     * [drawRoundCappedLine] for [Line][GlesFigureFrame.OverlayDrawCommand.Line].
+     * No new shader needed for the crisp draw — only glow needed new
+     * infrastructure (FBOs + blur). [colorOverride], when non-null, replaces
+     * every command's own baked-in color — used ONLY for the glow pass (see
+     * [drawGlowShape]), where every part of the shape must be a single flat
+     * glow color regardless of any gradient the CRISP draw would otherwise
+     * show (matching [RigRenderer.drawGmsShape]: the glow pass uses
+     * `gmsGlowPaint`, a plain solid-color paint, never the gradient shader
+     * the crisp pass conditionally sets).
+     */
+    private fun drawOverlayCommands(commands: List<GlesFigureFrame.OverlayDrawCommand>, canvasW: Float, canvasH: Float, colorOverride: Int?) {
+        for (cmd in commands) {
+            when (cmd) {
+                is GlesFigureFrame.OverlayDrawCommand.Polygon -> {
+                    val colors = if (colorOverride != null) IntArray(cmd.colors.size) { colorOverride } else cmd.colors
+                    drawSolidFan(cmd.points, colors, canvasW, canvasH)
+                }
+                is GlesFigureFrame.OverlayDrawCommand.Circle -> {
+                    val c = argbToGlColor(colorOverride ?: cmd.color)
+                    drawCircle(cmd.cx, cmd.cy, cmd.radius, canvasW, canvasH, c[0], c[1], c[2], c[3])
+                }
+                is GlesFigureFrame.OverlayDrawCommand.Line -> {
+                    val c = argbToGlColor(colorOverride ?: cmd.color)
+                    drawRoundCappedLine(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.halfWidth, canvasW, canvasH, c[0], c[1], c[2], c[3])
+                }
+            }
+        }
+    }
+
+    /** Allocates/reallocates the glow ping-pong FBO pair to exactly [w]x[h], skipping the work entirely if already that size. */
+    private fun ensureGlowFbos(w: Int, h: Int) {
+        if (glowFboW == w && glowFboH == h && glowFboA != 0) return
+        if (glowFboA != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboA), 0); GLES20.glDeleteTextures(1, intArrayOf(glowTexA), 0) }
+        if (glowFboB != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboB), 0); GLES20.glDeleteTextures(1, intArrayOf(glowTexB), 0) }
+
+        val (fboA, texA) = createFboTexture(w, h)
+        val (fboB, texB) = createFboTexture(w, h)
+        glowFboA = fboA; glowTexA = texA
+        glowFboB = fboB; glowTexB = texB
+        glowFboW = w; glowFboH = h
+    }
+
+    private fun createFboTexture(w: Int, h: Int): Pair<Int, Int> {
+        val texArr = IntArray(1)
+        GLES20.glGenTextures(1, texArr, 0)
+        val tex = texArr[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex)
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, w, h, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+
+        val fboArr = IntArray(1)
+        GLES20.glGenFramebuffers(1, fboArr, 0)
+        val fbo = fboArr[0]
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbo)
+        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, tex, 0)
+        val status = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)
+        check(status == GLES20.GL_FRAMEBUFFER_COMPLETE) {
+            "Glow FBO incomplete, status=0x${Integer.toHexString(status)}"
+        }
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        return fbo to tex
+    }
+
+    /** One full-[-1,1]-clip-space-quad blur pass, sampling [srcTex] — see [BLUR_FRAG]'s doc comment. UV is derived from clip position directly (u,v = (clipX+1)/2, (clipY+1)/2) so this is a correct round-trip regardless of GL's internal texture-storage orientation convention — see [drawGlowShape]'s doc comment for why that self-consistency, not matching any external convention, is what actually matters here. */
+    private fun drawBlurPass(srcTex: Int, texelStepU: Float, texelStepV: Float) {
+        GLES20.glUseProgram(blurProgram)
+        val aPos = GLES20.glGetAttribLocation(blurProgram, "a_pos")
+        val aUv  = GLES20.glGetAttribLocation(blurProgram, "a_uv")
+        val uTex = GLES20.glGetUniformLocation(blurProgram, "u_tex")
+        val uStep = GLES20.glGetUniformLocation(blurProgram, "u_texelStep")
+
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, srcTex)
+        GLES20.glUniform1i(uTex, 0)
+        GLES20.glUniform2f(uStep, texelStepU, texelStepV)
+
+        val data = floatArrayOf(
+            -1f,  1f, 0f, 1f,
+             1f,  1f, 1f, 1f,
+            -1f, -1f, 0f, 0f,
+             1f,  1f, 1f, 1f,
+             1f, -1f, 1f, 0f,
+            -1f, -1f, 0f, 0f
+        )
+        drawQuad(data, aPos, aUv)
+    }
+
+    /**
+     * Two-pass Gaussian blur for one overlay shape's glow — see [BLUR_FRAG]'s
+     * doc comment for the separable-blur reasoning and the fixed-tap
+     * approximation. Three passes:
+     * 1. Draw [overlay]'s geometry, recolored to the layer's glow color,
+     *    into [glowFboA], CLEARED TO TRANSPARENT first. Using the ordinary
+     *    (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA) blend function while
+     *    blending onto a transparent-cleared target is what naturally
+     *    produces PREMULTIPLIED-alpha color in the stored texture — that's
+     *    a mathematical fact of that blend equation applied to a zero
+     *    destination (`dst' = src.rgb*src.a + dst.rgb*(1-src.a)`, and at
+     *    `dst=(0,0,0,0)` that's just `src.rgb*src.a`), not a separate
+     *    premultiply step bolted on. This matters because blurring STRAIGHT
+     *    (non-premultiplied) alpha produces visible dark fringing at soft
+     *    edges — averaging a fully-transparent texel's largely-meaningless
+     *    RGB with an opaque neighbour's RGB pulls the result toward black
+     *    wherever alpha ramps down, which is exactly what a blurred glow's
+     *    edge does everywhere. Premultiplied data doesn't have this
+     *    problem: RGB is already zero wherever alpha is zero, so blending/
+     *    blurring it linearly is well-behaved.
+     * 2. Horizontal blur, [glowFboA] → [glowFboB], blending OFF (a pure
+     *    texture convolution, not a composite — direct overwrite).
+     * 3. Vertical blur, [glowFboB] → whichever framebuffer is CURRENTLY
+     *    bound (the real target — background/scene already drawn into it),
+     *    blending ON but with the blend function switched to premultiplied
+     *    (GL_ONE, GL_ONE_MINUS_SRC_ALPHA) for this ONE draw call, then
+     *    restored to the standard (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+     *    used everywhere else in this class. Using the standard blend
+     *    function here would double-apply the alpha darkening already
+     *    baked into the premultiplied source, since it would multiply
+     *    already-premultiplied RGB by alpha a second time.
+     * The crisp (non-blurred) shape is drawn separately, on top, by the
+     * caller — see [drawFigureFrame]'s overlay loop.
+     */
+    private fun drawGlowShape(overlay: GlesFigureFrame.OverlayShapeDraw, canvasW: Int, canvasH: Int, w: Float, h: Float) {
+        ensureGlowFbos(canvasW, canvasH)
+        val stepPx = (overlay.glowRadiusPx / 4f).coerceAtLeast(0.1f)
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, glowFboA)
+        GLES20.glViewport(0, 0, canvasW, canvasH)
+        GLES20.glClearColor(0f, 0f, 0f, 0f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        drawOverlayCommands(overlay.commands, w, h, colorOverride = overlay.glowColor)
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, glowFboB)
+        GLES20.glViewport(0, 0, canvasW, canvasH)
+        GLES20.glClearColor(0f, 0f, 0f, 0f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        GLES20.glDisable(GLES20.GL_BLEND)
+        drawBlurPass(glowTexA, stepPx / canvasW, 0f)
+        GLES20.glEnable(GLES20.GL_BLEND)
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        GLES20.glViewport(0, 0, canvasW, canvasH)
+        GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        drawBlurPass(glowTexB, 0f, stepPx / canvasH)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

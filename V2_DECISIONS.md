@@ -1170,6 +1170,86 @@ approved by the person before implementing:**
     a distinct feature from this phase's `SceneShape` background elements,
     worth being explicit about so a future session doesn't conflate the
     two), then text/captions/reference-overlay via the texture-quad hybrid.
+- **GLES export rewrite — overlay shapes + glow**: brought `type ==
+  "shape"` overlay layers (rect/circle/line/arrow/cross) into the GLES
+  path, including parenting-to-bone and a TRUE two-pass Gaussian blur
+  glow (not an SDF approximation — see the decision point discussed and
+  confirmed with John before starting).
+  - **`OverlayResolver` needed zero extraction** — it already has no
+    `android.graphics` dependency, so `resolveTimeBased`/`applyParenting`
+    are called directly by the GLES path, the same functions Canvas
+    calls. Only the actual DRAWING logic (`RigRenderer.drawGmsShape`'s
+    per-shape geometry) needed extracting, into new `RigRenderer`
+    companion functions `computeOverlayShapeParts` (returns local-space
+    `LocalShapePart`s: `Rect`/`Circle`/`Line`/`Triangle` — a shape can be
+    more than one part, e.g. "cross" = 2 rects, "arrow" = 1 line + 1
+    triangle) and `localToWorld` (explicit rotation-matrix math — the
+    GLES equivalent of Canvas's `translate`/`rotate`/`scale` calls, whose
+    exact composition order was verified against the real call site, not
+    assumed, before writing the formula).
+  - **Found and fixed two real bugs during this file's own review, before
+    either shipped**: (1) an overlay-shape gradient's reference point was
+    initially compared against each rect PART's own local center, but
+    Canvas's `LinearGradient` is set up ONCE per overlay and reused for
+    BOTH rects of a "cross" — verified against the actual call site,
+    which showed the gradient is anchored at the overall layer origin
+    (y=0), not each part's center; a naive binary top/bottom split would
+    also have made a "cross" crossbar show a much stronger gradient
+    transition than Canvas actually renders (the crossbar sits in a
+    narrow slice away from y=0, so it should show only a subtle color
+    shift) — fixed with a proper per-vertex linear interpolation against
+    the correct `halfSpan`, giving pixel-accurate parity rather than a
+    coarser approximation. (2) A stray orphaned brace from a `str_replace`
+    edit, caught by the routine balance-check, not a logic bug but
+    recorded per this project's standing practice of logging what was
+    caught, not just the final correct version.
+  - **Glow: true two-pass Gaussian blur, with a new FBO ping-pong pair**
+    (`glowFboA`/`glowFboB`, lazily allocated to the exact canvas size).
+    Three passes: (1) shape drawn glow-colored into `glowFboA`, cleared
+    to transparent first; (2) horizontal blur `glowFboA`→`glowFboB`,
+    blending off; (3) vertical blur `glowFboB`→ whatever framebuffer is
+    currently bound, blending on with a PREMULTIPLIED blend function for
+    that one draw call only. The premultiplied-alpha handling is real,
+    not incidental: blending the shape onto a transparent-cleared FBO
+    with the ordinary blend function naturally produces premultiplied
+    color in the stored texture (a mathematical consequence of blending
+    onto a zero destination), and blurring that data linearly is
+    well-behaved — blurring STRAIGHT (non-premultiplied) alpha instead
+    would produce visible dark fringing at every soft edge. This
+    reasoning is written out in full at `drawGlowShape`'s doc comment;
+    worth reading before touching this code, not just trusting the
+    summary here.
+  - **Blur kernel is a fixed 9-tap normalised Gaussian**, not a
+    continuously variable true-sigma kernel — the requested glow radius
+    scales the texel step between taps rather than the kernel shape
+    itself. Same "fixed-shape, scaled approximation" spirit as the
+    Phase 3 ellipse SDF, documented the same way for the same reason:
+    said plainly, not left for someone else to discover by comparing
+    against Canvas's `BlurMaskFilter` output.
+  - **Gradient scope, deliberately narrow**: only "rect"/"cross" overlay
+    shapes support a gradient in GLES (per-vertex color on the polygon,
+    same technique as the Phase 4 background gradient) — "circle"/
+    "line"/"arrow" render solid-color only even if the script sets a
+    gradient. Not an oversight: a circle has no natural top/bottom for a
+    linear gradient without a second shader capability, and a gradient
+    across a thin stroke would be barely visible in practice. A real
+    scope cut, named as one.
+  - **Scope, deliberately narrow overall**: only `type == "shape"`.
+    `type == "text"`/`"figure"` overlays, particle trails, and captions
+    all remain unimplemented in GLES.
+  - `exportGlesSmokeTest` gained a real, previously-missing piece, not
+    just a wiring gap like Phase 3/4's: it never called
+    `loadOverlayLayers` at all, so `engine.currentOverlays` would always
+    have returned empty regardless of what the script actually had. Now
+    calls `it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))`
+    during setup, matching `export()`'s real call exactly.
+  - Not verified against a compiler or device from this environment, same
+    standing caveat as every prior phase. The premultiplied-alpha glow
+    compositing and the gradient-lerp fix are both real candidates for a
+    subtle visual bug that would only show up on-device — worth
+    deliberately testing a glow-enabled shape AND a gradient rect/cross
+    specifically on first device run, not just confirming the figure
+    still renders.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

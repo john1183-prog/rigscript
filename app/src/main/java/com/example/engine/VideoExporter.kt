@@ -503,6 +503,12 @@ object VideoExporter {
                 it.amplitudeSettings = amplitudeSettings
                 it.loadBlinkSchedule(project.script.blinkEvents, durationSec)
                 it.loadFidgetSchedule(envelope, envFps)
+                // Overlay shapes (V2_DECISIONS.md): matches export()'s own
+                // setup exactly, same TimelineCompiler.extractOverlayLayers
+                // call — this smoke test previously never loaded overlay
+                // layers at all, so engine.currentOverlays would always have
+                // returned empty regardless of what the script actually had.
+                it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
             }
 
             val totalFrames = (durationSec * fps).toInt().coerceAtLeast(1)
@@ -616,7 +622,15 @@ object VideoExporter {
                             horizonY        = engine.currentHorizonY,
                             sceneShape      = engine.currentSceneShape,
                             sceneAtmosphere = engine.currentSceneAtmosphere,
-                            timeSec         = timeSec
+                            timeSec         = timeSec,
+                            // Overlay shapes (V2_DECISIONS.md): matches export()'s
+                            // own RigRenderer.draw call site — engine.currentOverlays
+                            // is time-resolved but NOT yet parented; fromFkMatrices
+                            // applies parenting itself using bone anchors it builds
+                            // during its own bone loop (mirrors RigRenderer.draw's
+                            // own needsBoneAnchors + applyParenting call, just folded
+                            // into the existing loop instead of a separate pre-pass).
+                            overlays        = engine.currentOverlays
                         )
 
                         val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps

@@ -26,8 +26,13 @@ package com.example.engine
  * this same list, before the next bone, preserving this same z-order
  * guarantee. Phase 4 added background/scene shapes/atmosphere — see
  * [SceneDrawCommand]/[AtmosphereDrawCommand] doc comments for why those are
- * separate lists rather than folded into [drawCommands]. Overlays and
- * captions remain later phases — see V2_DECISIONS.md.
+ * separate lists rather than folded into [drawCommands]. OVERLAY SHAPES
+ * (V2_DECISIONS.md) added `type == "shape"` overlay layers (rect/circle/
+ * line/arrow/cross), parented-to-bone or not, with true two-pass Gaussian
+ * blur glow — see [OverlayShapeDraw] doc comment. Scoped deliberately
+ * narrow: `type == "text"`/`"figure"` overlays, particle trails, and
+ * captions all remain unimplemented in GLES — see V2_DECISIONS.md for the
+ * exact boundary and why.
  */
 data class GlesFigureFrame(
     /** Canvas pixel width this frame was computed for. */
@@ -63,11 +68,17 @@ data class GlesFigureFrame(
      */
     val groundLineYFraction: Float,
 
+    /** Behind the figure — see [OverlayShapeDraw] doc comment. Drawn after the ground line, before [drawCommands]. */
+    val behindOverlays: List<OverlayShapeDraw>,
+
     /** Ordered exactly like the Canvas path's per-bone-index loop — see class doc comment. */
     val drawCommands: List<DrawCommand>,
 
     /** 0f = fully transparent, 1f = fully opaque. Applied to the whole figure (all commands), not per-command. */
     val figureAlpha: Float,
+
+    /** In front of the figure — see [OverlayShapeDraw] doc comment. Drawn after [drawCommands], before [atmosphereCommands]. */
+    val frontOverlays: List<OverlayShapeDraw>,
 
     /** Screen-space, drawn after the figure — see [AtmosphereDrawCommand] doc comment. */
     val atmosphereCommands: List<AtmosphereDrawCommand>
@@ -154,6 +165,47 @@ data class GlesFigureFrame(
         data class Circle(val cx: Float, val cy: Float, val radius: Float, val color: Int) : AtmosphereDrawCommand()
     }
 
+    /**
+     * One piece of a resolved overlay SHAPE's geometry, already transformed
+     * into WORLD canvas-pixel space (position/rotation/scale baked in via
+     * [RigRenderer.localToWorld]) — unlike [RigRenderer.LocalShapePart],
+     * which [RigRenderer.computeOverlayShapeParts] returns in LOCAL space.
+     * [Polygon.colors] is per-vertex (not a single color) specifically so a
+     * gradient rect/cross can be represented the same way the Phase 4
+     * background gradient is — see [GlesFrameRenderer.SOLID_FRAG]'s doc
+     * comment. Circle/Line overlay shapes do NOT support a gradient in this
+     * phase (a known, documented simplification — see the "shape overlay
+     * scope" note in V2_DECISIONS.md); [Circle] only carries one color.
+     */
+    sealed class OverlayDrawCommand {
+        /** Not a data class — see [SceneDrawCommand.Polygon]'s identical reasoning (FloatArray breaks structural equals/hashCode; never compared, only consumed). */
+        class Polygon(val points: FloatArray, val colors: IntArray) : OverlayDrawCommand()
+
+        data class Circle(val cx: Float, val cy: Float, val radius: Float, val color: Int) : OverlayDrawCommand()
+
+        data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val halfWidth: Float, val color: Int) : OverlayDrawCommand()
+    }
+
+    /**
+     * One resolved overlay shape layer, ready to draw. [commands] is the
+     * CRISP geometry (base color/gradient already baked in per-command) —
+     * drawn directly to screen. [glow] mirrors [RigRenderer.drawGmsShape]'s
+     * `if (layer.glow)` branch: when true, the SAME geometry is drawn a
+     * second time, colored [glowColor] (opacity already folded in — see
+     * [RigRenderer.combinedAlphaChannel]'s `opacity * 0.6f` call site),
+     * blurred by [glowRadiusPx] (canvas pixels, matching the Canvas path's
+     * `BlurMaskFilter` radius exactly), and composited BEHIND [commands] —
+     * see [GlesFrameRenderer]'s two-pass Gaussian blur implementation for
+     * why this needs to be a separate draw pass through an offscreen
+     * texture rather than something the SDF shaders can do inline.
+     */
+    data class OverlayShapeDraw(
+        val commands: List<OverlayDrawCommand>,
+        val glow: Boolean,
+        val glowColor: Int,
+        val glowRadiusPx: Float
+    )
+
     companion object {
         /**
          * Builds a [GlesFigureFrame] from the already-computed [matrices] array
@@ -182,7 +234,8 @@ data class GlesFigureFrame(
             horizonY: Float?,
             sceneShape: String,
             sceneAtmosphere: String,
-            timeSec: Float
+            timeSec: Float,
+            overlays: List<TimeResolvedOverlay> = emptyList()
         ): GlesFigureFrame {
             val rig    = StickFigureRig
             val bones  = rig.BONES
@@ -203,6 +256,14 @@ data class GlesFigureFrame(
             val headScaleMultiplier = overrides.headScale ?: appearance.headScaleMultiplier
 
             val commands = ArrayList<DrawCommand>(n * 2)
+            // Only built when something actually needs it (a parentBone-
+            // attached overlay) — mirrors RigRenderer.draw's own
+            // needsBoneAnchors optimization exactly, just folded into this
+            // existing loop instead of a separate pre-pass, since endX/endY
+            // are already being computed here for every bone regardless.
+            val needsBoneAnchors = overlays.any { it.parentBone != null }
+            val boneAnchors: MutableMap<String, Pair<Float, Float>>? =
+                if (needsBoneAnchors) HashMap(n) else null
 
             for (i in 0 until n) {
                 val bone = bones[i]
@@ -215,6 +276,8 @@ data class GlesFigureFrame(
 
                 val startX = pts[0]; val startY = pts[1]
                 val endX   = pts[2]; val endY   = pts[3]
+
+                if (boneAnchors != null) boneAnchors[bone.id] = (endX / canvasW) to (endY / canvasH)
 
                 if (bone.isHeadBone) {
                     val r = bone.headNormalizedRadius * scale * headScaleMultiplier
@@ -254,6 +317,18 @@ data class GlesFigureFrame(
                     commands += DrawCommand.Joint(startX, startY, jointRadius, jointColor)
                 }
             }
+
+            // Overlay shapes — see OverlayShapeDraw doc comment for scope
+            // (type=="shape" only) and V2_DECISIONS.md for the full boundary.
+            // applyParenting mirrors RigRenderer.draw's own call exactly,
+            // same function, same boneAnchors semantics (built above, inline
+            // in the bone loop rather than as a separate pre-pass).
+            val resolvedOverlays = if (overlays.isNotEmpty())
+                OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
+            else emptyList()
+            val (behindResolved, frontResolved) = resolvedOverlays.partition { !it.inFrontOfFigure }
+            val behindOverlays = behindResolved.mapNotNull { buildOverlayShapeDraw(it, canvasW, canvasH, minDim) }
+            val frontOverlays  = frontResolved.mapNotNull { buildOverlayShapeDraw(it, canvasW, canvasH, minDim) }
 
             val bgColor = (overrides.bgColor ?: appearance.exportBgColor).toInt()
             // These two are DELIBERATELY independent — see groundLineYFraction's
@@ -333,10 +408,126 @@ data class GlesFigureFrame(
                 showGroundLine          = overrides.showGroundLine ?: appearance.showGroundLine,
                 groundLineColor         = (overrides.groundLineColor ?: appearance.groundLineColor).toInt(),
                 groundLineYFraction     = plainGroundLineYFraction,
+                behindOverlays          = behindOverlays,
                 drawCommands            = commands,
                 figureAlpha             = (overrides.opacity ?: 1f).coerceIn(0f, 1f),
+                frontOverlays           = frontOverlays,
                 atmosphereCommands      = atmosphereCommands
             )
+        }
+
+        /**
+         * Builds one [OverlayShapeDraw] from a fully-resolved overlay, or
+         * null if it's invisible (`opacity <= 0.001f`, matching
+         * [RigRenderer.drawGmsOverlay]'s own early-return) or not a
+         * `type == "shape"` layer — text/figure overlays aren't implemented
+         * in GLES yet, see class doc comment.
+         *
+         * Applies the position/rotation/scale transform explicitly via
+         * [RigRenderer.localToWorld] — the GLES equivalent of
+         * [RigRenderer.drawGmsOverlay]'s `canvas.translate`/`rotate`/`scale`.
+         *
+         * GRADIENT SCOPE: only "rect" and "cross" shapes get a gradient here
+         * (per-vertex color on the [OverlayDrawCommand.Polygon], same
+         * technique as the Phase 4 background gradient) — "circle"/"line"/
+         * "arrow" render solid-color only even if [ResolvedOverlay.gradientColor]
+         * is set. A documented simplification, not an oversight: circles
+         * have no natural "top/bottom" for a linear gradient the way a rect
+         * does without a second shader capability, and a gradient across a
+         * thin stroke (line/arrow) would be barely visible in practice —
+         * see V2_DECISIONS.md for the full reasoning.
+         */
+        private fun buildOverlayShapeDraw(layer: ResolvedOverlay, canvasW: Int, canvasH: Int, minDim: Float): OverlayShapeDraw? {
+            if (layer.opacity <= 0.001f || layer.type != "shape") return null
+
+            val originX = canvasW * layer.x
+            val originY = canvasH * layer.y
+            val baseColor = layer.color.toInt()
+            val crispAlpha = RigRenderer.combinedAlphaChannel(baseColor, layer.opacity)
+            val crispColor = (crispAlpha shl 24) or (baseColor and 0xFFFFFF)
+            val gradientEndColor = layer.gradientColor?.toInt()?.let { g ->
+                (RigRenderer.combinedAlphaChannel(g, layer.opacity) shl 24) or (g and 0xFFFFFF)
+            }
+            val supportsGradient = layer.shape == "rect" || layer.shape == "cross" || layer.shape.isEmpty()
+
+            val parts = RigRenderer.computeOverlayShapeParts(layer, canvasW, canvasH, minDim)
+            val commands = ArrayList<OverlayDrawCommand>(parts.size)
+            for (part in parts) {
+                when (part) {
+                    is RigRenderer.LocalShapePart.Circle -> {
+                        val (wx, wy) = RigRenderer.localToWorld(part.cx, part.cy, originX, originY, layer.rotationDeg, layer.scale)
+                        commands += OverlayDrawCommand.Circle(wx, wy, part.radius * layer.scale, crispColor)
+                    }
+                    is RigRenderer.LocalShapePart.Line -> {
+                        val (wx1, wy1) = RigRenderer.localToWorld(part.x1, part.y1, originX, originY, layer.rotationDeg, layer.scale)
+                        val (wx2, wy2) = RigRenderer.localToWorld(part.x2, part.y2, originX, originY, layer.rotationDeg, layer.scale)
+                        commands += OverlayDrawCommand.Line(wx1, wy1, wx2, wy2, part.halfWidth * layer.scale, crispColor)
+                    }
+                    is RigRenderer.LocalShapePart.Triangle -> {
+                        val (wx1, wy1) = RigRenderer.localToWorld(part.x1, part.y1, originX, originY, layer.rotationDeg, layer.scale)
+                        val (wx2, wy2) = RigRenderer.localToWorld(part.x2, part.y2, originX, originY, layer.rotationDeg, layer.scale)
+                        val (wx3, wy3) = RigRenderer.localToWorld(part.x3, part.y3, originX, originY, layer.rotationDeg, layer.scale)
+                        commands += OverlayDrawCommand.Polygon(
+                            floatArrayOf(wx1, wy1, wx2, wy2, wx3, wy3),
+                            intArrayOf(crispColor, crispColor, crispColor)
+                        )
+                    }
+                    is RigRenderer.LocalShapePart.Rect -> {
+                        val corners = floatArrayOf(
+                            part.cx - part.halfW, part.cy - part.halfH,
+                            part.cx + part.halfW, part.cy - part.halfH,
+                            part.cx + part.halfW, part.cy + part.halfH,
+                            part.cx - part.halfW, part.cy + part.halfH
+                        )
+                        val worldPts = FloatArray(8)
+                        val colors = IntArray(4)
+                        // halfSpan matches RigRenderer.drawGmsShape's own
+                        // non-circle gradient branch exactly: (layer.height ?:
+                        // 0.15f) * canvasH / 2f — canvasH, not minDim. The
+                        // gradient's LinearGradient(0,-halfSpan,0,halfSpan) is
+                        // set ONCE per overlay and reused for BOTH rects of a
+                        // "cross" (verified against that exact call site, not
+                        // assumed), so a crossbar sitting in a narrow slice
+                        // away from y=0 should show a proportionally SUBTLE
+                        // color shift, not a full base-to-gradient sweep
+                        // across its own small height — a per-vertex lerp
+                        // against the correct halfSpan gets this right; an
+                        // earlier draft did a binary "which side of y=0" split
+                        // per-corner instead, which would have made the
+                        // crossbar show a much stronger transition than
+                        // Canvas actually renders. Caught on review, not
+                        // shipped.
+                        val halfSpan = (layer.height ?: 0.15f) * canvasH / 2f
+                        for (v in 0 until 4) {
+                            val (wx, wy) = RigRenderer.localToWorld(corners[v * 2], corners[v * 2 + 1], originX, originY, layer.rotationDeg, layer.scale)
+                            worldPts[v * 2] = wx; worldPts[v * 2 + 1] = wy
+                            colors[v] = if (gradientEndColor != null && supportsGradient && halfSpan > 0.001f) {
+                                val t = ((corners[v * 2 + 1] + halfSpan) / (2f * halfSpan)).coerceIn(0f, 1f)
+                                lerpArgb(crispColor, gradientEndColor, t)
+                            } else crispColor
+                        }
+                        commands += OverlayDrawCommand.Polygon(worldPts, colors)
+                    }
+                }
+            }
+
+            return OverlayShapeDraw(
+                commands = commands,
+                glow = layer.glow,
+                glowColor = (RigRenderer.combinedAlphaChannel(layer.glowColor.toInt(), layer.opacity * 0.6f) shl 24) or (layer.glowColor.toInt() and 0xFFFFFF),
+                glowRadiusPx = (layer.glowRadius * minDim).coerceAtLeast(1f)
+            )
+        }
+
+        /** Per-channel linear interpolation between two ARGB packed ints, t in [0,1]. */
+        private fun lerpArgb(c1: Int, c2: Int, t: Float): Int {
+            val ct = t.coerceIn(0f, 1f)
+            fun lerpChannel(shift: Int): Int {
+                val a = (c1 ushr shift) and 0xFF
+                val b = (c2 ushr shift) and 0xFF
+                return (a + (b - a) * ct + 0.5f).toInt().coerceIn(0, 255)
+            }
+            return (lerpChannel(24) shl 24) or (lerpChannel(16) shl 16) or (lerpChannel(8) shl 8) or lerpChannel(0)
         }
     }
 }

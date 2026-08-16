@@ -1056,7 +1056,56 @@ class RigRenderer {
         data class Triangle(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val x3: Float, val y3: Float) : LocalShapePart()
     }
 
+    /**
+     * Camera pan/zoom/shake, as a single already-composed affine transform:
+     * `screenX = worldX * zoom + offsetX` (same for Y). Pure pixel-space
+     * arithmetic, no Canvas/Matrix dependency, so the GLES path (camera
+     * phase, V2_DECISIONS.md) can apply it directly to already-resolved
+     * geometry instead of relying on a matrix stack the way [draw] does via
+     * `canvas.scale`/`canvas.translate`.
+     *
+     * Verified algebraically equivalent to [draw]'s own
+     * `canvas.scale(zoom,zoom,cw/2,ch/2)` + `canvas.translate(tx,ty)`
+     * composition (with `tx,ty` divided by zoom, per that call site's own
+     * comment) via a Python matrix-stack simulation before this was
+     * written — see V2_DECISIONS.md's History entry for the camera phase
+     * for the derivation and the cross-check.
+     *
+     * Deliberately a DIRECT nested class of [RigRenderer], NOT nested
+     * inside its `companion object` below, for the exact reason
+     * [LocalShapePart]'s own doc comment above already documents in full —
+     * that entry existed specifically so this wouldn't happen again, and
+     * it happened anyway: this class shipped inside the companion object
+     * on the first attempt, CI caught it the same way it caught
+     * `LocalShapePart` originally ("Unresolved reference" from
+     * `GlesFigureFrame.kt`, `GlesFrameRenderer.kt`), fixed here by the same
+     * move. Worth being direct about rather than quietly fixing: reading
+     * the lesson isn't the same as checking the file structure against it
+     * before placing new code near an existing companion-object-adjacent
+     * insertion point.
+     */
+    data class CameraTransform(val zoom: Float, val offsetX: Float, val offsetY: Float) {
+        fun tx(worldX: Float) = worldX * zoom + offsetX
+        fun ty(worldY: Float) = worldY * zoom + offsetY
+        /** For radii/half-widths/stroke widths — camera zoom scales sizes uniformly, same as it scales position deltas. */
+        fun tLen(worldLen: Float) = worldLen * zoom
+    }
+
     companion object {
+        // Any class/data class/sealed class declared directly inside this
+        // companion object is NOT accessible as `RigRenderer.TypeName` from
+        // another file the moment that file needs to name the type
+        // explicitly (a function call with an inferred return type is
+        // fine; an explicit type annotation elsewhere is not) — see
+        // LocalShapePart's and CameraTransform's doc comments above for the
+        // two times this has already broken CI. OvalGeometry/LineSegment/
+        // EyeGeometry/EyebrowGeometry/RectGeom/TreeGeom/StarGeom/RainDrop
+        // below all currently have this same latent placement and are only
+        // "safe" today because nothing outside this file names any of them
+        // explicitly yet. Not moved out in this pass — none of them are
+        // broken right now, and moving all eight is a bigger, separate
+        // change — but flagged here so the third occurrence of this isn't
+        // a surprise to whoever hits it.
         /**
          * Pure FK matrix computation — no Canvas/Paint dependency, so [draw]
          * and the GLES export path (Phase 2, V2_DECISIONS.md) share exactly
@@ -1092,28 +1141,6 @@ class RigRenderer {
                     matrix.preRotate(angles[i])
                 }
             }
-        }
-
-        /**
-         * Camera pan/zoom/shake, as a single already-composed affine
-         * transform: `screenX = worldX * zoom + offsetX` (same for Y). Pure
-         * pixel-space arithmetic, no Canvas/Matrix dependency, so the GLES
-         * path (camera phase, V2_DECISIONS.md) can apply it directly to
-         * already-resolved geometry instead of relying on a matrix stack
-         * the way [draw] does via `canvas.scale`/`canvas.translate`.
-         *
-         * Verified algebraically equivalent to [draw]'s own
-         * `canvas.scale(zoom,zoom,cw/2,ch/2)` + `canvas.translate(tx,ty)`
-         * composition (with `tx,ty` divided by zoom, per that call site's
-         * own comment) via a Python matrix-stack simulation before this was
-         * written — see V2_DECISIONS.md's History entry for the camera
-         * phase for the derivation and the cross-check.
-         */
-        data class CameraTransform(val zoom: Float, val offsetX: Float, val offsetY: Float) {
-            fun tx(worldX: Float) = worldX * zoom + offsetX
-            fun ty(worldY: Float) = worldY * zoom + offsetY
-            /** For radii/half-widths/stroke widths — camera zoom scales sizes uniformly, same as it scales position deltas. */
-            fun tLen(worldLen: Float) = worldLen * zoom
         }
 
         /**

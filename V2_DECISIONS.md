@@ -1359,6 +1359,35 @@ approved by the person before implementing:**
     candidates for a subtle on-device surprise, worth testing deliberately
     (a zoomed/panned shot with a background gradient, and separately one
     with a glowing overlay) rather than just confirming the figure moves.
+  - **CI compile failure on the first push, caught and fixed in a
+    follow-up commit**: `CameraTransform` shipped declared INSIDE
+    `RigRenderer`'s `companion object` — the exact bug class
+    `LocalShapePart`'s own doc comment (overlay shapes + glow phase, the
+    phase immediately before this one) already documented in detail,
+    specifically so it wouldn't happen again. It happened again anyway —
+    ~40 "Unresolved reference" errors (`CameraTransform`, `tx`, `ty`,
+    `tLen`) from `GlesFigureFrame.kt` and `GlesFrameRenderer.kt`, all
+    tracing to the one placement mistake. Fixed by moving `CameraTransform`
+    to a direct nested class of `RigRenderer`, sibling to `LocalShapePart`,
+    matching that entry's own precedent exactly — verified against
+    `computeOverlayShapeParts` (a companion function that already
+    successfully references `LocalShapePart` unqualified, confirmed
+    compiling in CI) as the known-working pattern, rather than assumed
+    from memory of Kotlin's scoping rules a second time.
+    - **Grepped for the same pattern elsewhere, per standing practice,
+      rather than considering this done once the one reported instance
+      compiled.** Found `OvalGeometry`, `LineSegment`, `EyeGeometry`,
+      `EyebrowGeometry`, `RectGeom`, `TreeGeom`, `StarGeom`, and
+      `RainDrop` all currently share the identical companion-object
+      placement — all latent, not live: none is currently referenced by
+      an explicit type from outside this file, only ever consumed via
+      inferred `val` types, which is why none of them has broken CI yet.
+      Deliberately NOT moved in this pass — a genuinely separate,
+      larger change with no urgency (nothing is broken), not something
+      to fold into a CI-failure fix under time pressure. Flagged instead
+      with a warning comment at the top of the companion object itself,
+      naming all eight, so the third occurrence of this bug — if it
+      happens — at least isn't a surprise to whoever hits it.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

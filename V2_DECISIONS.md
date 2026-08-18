@@ -1267,7 +1267,9 @@ approved by the person before implementing:**
     were things this sandbox's lack of a Kotlin compiler could never have
     caught — exactly the gap CI exists to cover, and did.
 
-- **GLES export rewrite — camera phase (zoom/pan/shake)**: brought
+- **GLES export rewrite — camera phase (zoom/pan/shake)**: CI green on
+  `ab46a5f` (after the companion-object fix below) and confirmed on-device.
+  Brought
   `cameraZoom`/`cameraPanX`/`cameraPanY`/`cameraShakeIntensity` into the
   GLES path — the biggest architectural gap called out at the end of the
   overlay shapes + glow entry above. Applied to everything `RigRenderer.draw`
@@ -1353,12 +1355,12 @@ approved by the person before implementing:**
     every frame via `seekToWithAmplitude` (the Canvas `renderer.draw` call
     in `export()` already reads all four), just never passed into
     `fromFkMatrices`. Now threaded through.
-  - Not verified against a compiler or device from this environment, same
-    standing caveat as every prior phase — the gradient 3-rect
-    decomposition and the glow-radius zoom-scaling are the two most likely
-    candidates for a subtle on-device surprise, worth testing deliberately
-    (a zoomed/panned shot with a background gradient, and separately one
-    with a glowing overlay) rather than just confirming the figure moves.
+  - **CI green, confirmed on-device (John, same session as the fix
+    below).** The gradient 3-rect decomposition and the glow-radius
+    zoom-scaling weren't separately called out as checked — worth
+    confirming specifically (a zoomed/panned shot with a background
+    gradient, and separately one with a glowing overlay) rather than
+    assuming general confirmation covered those two flagged risks too.
   - **CI compile failure on the first push, caught and fixed in a
     follow-up commit**: `CameraTransform` shipped declared INSIDE
     `RigRenderer`'s `companion object` — the exact bug class

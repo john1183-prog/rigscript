@@ -644,7 +644,10 @@ object VideoExporter {
                             // during its own bone loop (mirrors RigRenderer.draw's
                             // own needsBoneAnchors + applyParenting call, just folded
                             // into the existing loop instead of a separate pre-pass).
-                            overlays        = engine.currentOverlays
+                            overlays        = engine.currentOverlays,
+                            // Text phase (V2_DECISIONS.md) — same engine.currentCaption
+                            // read the Canvas renderer.draw call above already uses.
+                            captionText     = engine.currentCaption
                         )
 
                         val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps

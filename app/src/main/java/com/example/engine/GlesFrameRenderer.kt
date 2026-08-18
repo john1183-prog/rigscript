@@ -1,5 +1,9 @@
 package com.example.engine
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
@@ -7,6 +11,10 @@ import android.opengl.EGLDisplay
 import android.opengl.EGLExt
 import android.opengl.EGLSurface
 import android.opengl.GLES20
+import android.opengl.GLUtils
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.view.Surface
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -85,7 +93,50 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     private var ovalProgram    = 0
     private var solidProgram   = 0
     private var blurProgram    = 0
+    private var texProgram     = 0
     private var vertexBuf: FloatBuffer = allocFloatBuffer(24)
+
+    /**
+     * Text phase (V2_DECISIONS.md) — texture-quad hybrid: rasterize via
+     * Android's real `Canvas`/`StaticLayout`/`TextPaint` (same engine
+     * `RigRenderer.drawCaption` uses — reusing real font shaping/AA
+     * instead of reimplementing text rendering in GLSL), upload as a GL
+     * texture, draw as a quad. [captionBgPaint]/[captionTextPaint] are
+     * DELIBERATELY separate instances from `RigRenderer`'s own fields of
+     * the same name, not shared — this renderer runs on its own dedicated
+     * [dispatcher] thread (see class doc comment), and `RigRenderer`'s
+     * preview drawing can run concurrently on a different thread (preview
+     * animating while an export runs in the background); a shared mutable
+     * `Paint` written from two threads at once is a real data race, not a
+     * theoretical one. Values mirror `RigRenderer`'s exactly — see
+     * `ensureCaptionTexture`'s doc comment for what "mirror" has to mean
+     * here for the rasterized pixels to actually match preview.
+     */
+    private val captionBgPaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x99000000L.toInt() }
+    private val captionTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.LEFT }
+
+    /**
+     * One already-rasterized-and-uploaded caption texture, plus its
+     * SCREEN-space box bounds (already resolved — position depends only
+     * on the wrapped text's own measured height, same as
+     * `RigRenderer.drawCaption`'s `boxTop` math, so there's nothing left
+     * for a caller to compute). Captions are screen-space (see
+     * [GlesFigureFrame]'s own doc comment on `atmosphereCommands`), so
+     * these bounds are NOT camera-transformed and never need to be.
+     */
+    private class CaptionTexture(val texId: Int, val boxL: Float, val boxT: Float, val boxR: Float, val boxB: Float)
+
+    /**
+     * Keyed on every input the rasterization depends on (text + the
+     * canvas dimensions it was measured against — dual-aspect export
+     * renders two different resolutions of the same project, so the key
+     * MUST include width/height or the second aspect would silently reuse
+     * the first's texture at the wrong size) — same reasoning as
+     * `RigRenderer.cachedShrunkTextSize`'s own cache key. Capped like that
+     * cache too, though a real script's distinct caption strings are
+     * typically far fewer than distinct overlay-text layers.
+     */
+    private val captionTextureCache = LinkedHashMap<String, CaptionTexture>()
 
     /**
      * Offscreen ping-pong pair for overlay-shape glow's two-pass Gaussian
@@ -271,6 +322,35 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                 gl_FragColor = sum;
             }
         """
+
+        // Textured quad, text phase (V2_DECISIONS.md) — samples an already-
+        // rasterized RGBA texture (caption/text-overlay/reference-overlay
+        // pixels, produced by Android's real Canvas/StaticLayout/TextPaint,
+        // NOT reimplemented in GLSL) and draws it as-is. u_alpha is an
+        // ADDITIONAL opacity multiplier on top of whatever alpha the
+        // rasterized pixels already carry (captions always pass 1.0 here —
+        // drawCaption has no opacity control — but overlay text layers do).
+        // The rasterized bitmap is Android's default premultiplied alpha
+        // (RGB already scaled by A), so this multiplies the WHOLE vec4 by
+        // u_alpha uniformly, preserving that invariant, and the draw call
+        // that uses this program switches the GL blend func to
+        // (GL_ONE, GL_ONE_MINUS_SRC_ALPHA) for the same reason
+        // drawGlowShape's own premultiplied pass does — see that function's
+        // doc comment for the fuller reasoning, not repeated here.
+        const val TEX_VERT = """
+            attribute vec2 a_pos;
+            attribute vec2 a_uv;
+            varying   vec2 v_uv;
+            void main() { gl_Position = vec4(a_pos, 0.0, 1.0); v_uv = a_uv; }
+        """
+
+        const val TEX_FRAG = """
+            precision mediump float;
+            uniform sampler2D u_tex;
+            uniform float u_alpha;
+            varying vec2 v_uv;
+            void main() { gl_FragColor = texture2D(u_tex, v_uv) * u_alpha; }
+        """
     }
 
     // ── EGL init / release ────────────────────────────────────────────────────
@@ -326,6 +406,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         ovalProgram    = buildProgram(OVAL_VERT, OVAL_FRAG)
         solidProgram   = buildProgram(SOLID_VERT, SOLID_FRAG)
         blurProgram    = buildProgram(BLUR_VERT, BLUR_FRAG)
+        texProgram     = buildProgram(TEX_VERT, TEX_FRAG)
 
         ownerThread = Thread.currentThread()   // this block runs on dispatcher — see ownerThread's doc comment
         initialized = true
@@ -362,6 +443,11 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             if (ovalProgram    != 0) { GLES20.glDeleteProgram(ovalProgram);    ovalProgram    = 0 }
             if (solidProgram   != 0) { GLES20.glDeleteProgram(solidProgram);   solidProgram   = 0 }
             if (blurProgram    != 0) { GLES20.glDeleteProgram(blurProgram);    blurProgram    = 0 }
+            if (texProgram     != 0) { GLES20.glDeleteProgram(texProgram);     texProgram     = 0 }
+            if (captionTextureCache.isNotEmpty()) {
+                GLES20.glDeleteTextures(captionTextureCache.size, captionTextureCache.values.map { it.texId }.toIntArray(), 0)
+                captionTextureCache.clear()
+            }
             if (glowFboA != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboA), 0); glowFboA = 0 }
             if (glowFboB != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboB), 0); glowFboB = 0 }
             if (glowTexA != 0) { GLES20.glDeleteTextures(1, intArrayOf(glowTexA), 0); glowTexA = 0 }
@@ -575,6 +661,16 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                     drawCircle(cmd.cx, cmd.cy, cmd.radius, w, h, c[0], c[1], c[2], c[3])
                 }
             }
+        }
+
+        // Caption — text phase (V2_DECISIONS.md). Screen-space, drawn LAST
+        // (after atmosphere), matching RigRenderer.drawCaption's own
+        // "after canvas.restore()" placement — burned-in subtitles the
+        // camera can't pan away from, on top of everything else.
+        val caption = frame.captionText
+        if (!caption.isNullOrBlank()) {
+            val tex = ensureCaptionTexture(caption, frame.canvasW, frame.canvasH)
+            drawTexturedQuad(tex.texId, tex.boxL, tex.boxT, tex.boxR, tex.boxB, 1f, w, h)
         }
 
         EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs)
@@ -820,6 +916,121 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
         GLES20.glDisableVertexAttribArray(aPosLoc)
         GLES20.glDisableVertexAttribArray(aUvLoc)
+    }
+
+    // ── Text phase (V2_DECISIONS.md) ────────────────────────────────────────
+
+    /**
+     * Returns the cached [CaptionTexture] for ([text], [canvasW], [canvasH]),
+     * rasterizing and uploading a new one on a cache miss. Math below
+     * MIRRORS [RigRenderer.drawCaption] exactly — same `textSize`/`maxWidth`/
+     * padding/margin formulas, same [StaticLayout] construction — because
+     * this has to produce the same box a viewer would see in preview, not
+     * just "some readable caption box". The one structural difference: the
+     * bitmap IS the box (0,0 at the box's own top-left), not the full
+     * canvas, since rasterizing the whole canvas per caption would be
+     * wasteful — [RigRenderer.drawCaption] draws directly onto the real
+     * (full-canvas) preview canvas and can afford absolute coordinates;
+     * this can't reuse that function as-is for exactly that reason.
+     */
+    private fun ensureCaptionTexture(text: String, canvasW: Int, canvasH: Int): CaptionTexture {
+        val key = "$canvasW|$canvasH|$text"
+        captionTextureCache[key]?.let { return it }
+
+        captionTextPaint.textSize = canvasH * 0.045f
+        val maxWidth = (canvasW * 0.88f).toInt().coerceAtLeast(1)
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, captionTextPaint, maxWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setLineSpacing(0f, 1.1f)
+            .build()
+
+        val padding      = canvasH * 0.02f
+        val bottomMargin = canvasH * 0.06f
+        val boxLeft   = (canvasW - maxWidth) / 2f - padding
+        val boxRight  = boxLeft + maxWidth + padding * 2f
+        val boxBottom = canvasH - bottomMargin
+        val boxTop    = boxBottom - layout.height - padding * 2f
+
+        val texW = (boxRight - boxLeft).toInt().coerceAtLeast(1)
+        val texH = (boxBottom - boxTop).toInt().coerceAtLeast(1)
+        val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
+        val bmpCanvas = Canvas(bmp)
+        // Same backdrop + text as RigRenderer.drawCaption, re-anchored to
+        // this bitmap's own (0,0) — see doc comment above.
+        bmpCanvas.drawRoundRect(0f, 0f, texW.toFloat(), texH.toFloat(), padding, padding, captionBgPaint)
+        bmpCanvas.save()
+        bmpCanvas.translate(padding, padding)
+        layout.draw(bmpCanvas)
+        bmpCanvas.restore()
+
+        val texArr = IntArray(1)
+        GLES20.glGenTextures(1, texArr, 0)
+        val texId = texArr[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        // Uploads the bitmap's actual (premultiplied-alpha) pixel data as-is
+        // — see TEX_FRAG's doc comment for why drawTexturedQuad's blend func
+        // has to match that.
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+        bmp.recycle()
+
+        val result = CaptionTexture(texId, boxLeft, boxTop, boxRight, boxBottom)
+        if (captionTextureCache.size >= 200) {
+            // Evict oldest by insertion order — same cap discipline as
+            // RigRenderer.cachedShrunkTextSize, though a real script's
+            // distinct caption strings are typically far fewer than this.
+            val oldestKey = captionTextureCache.keys.first()
+            captionTextureCache.remove(oldestKey)?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
+        }
+        captionTextureCache[key] = result
+        return result
+    }
+
+    /**
+     * Draws an already-uploaded texture as an axis-aligned quad at
+     * [l]/[t]/[r]/[b] (canvas-pixel bounds, same convention as
+     * [drawSolidRect] etc.), via the shared [drawQuad] helper. [alpha] is
+     * an ADDITIONAL multiplier on top of the texture's own per-pixel alpha
+     * — see [TEX_FRAG]'s doc comment.
+     *
+     * UV mapping: an Android [Bitmap]'s row 0 is the TOP of the image, and
+     * [GLUtils.texImage2D] uploads rows in that same order, so texel row 0
+     * lands at texture-space v=0 — meaning [t] maps to v=0 and [b] maps to
+     * v=1 directly, with NO vertical flip needed. This is a genuinely easy
+     * thing to get backwards (a classic Android-GL mistake) and is the one
+     * piece of this function most worth checking first on-device — does
+     * caption text render right-side-up, not upside-down or mirrored —
+     * rather than assumed correct from reasoning alone.
+     */
+    private fun drawTexturedQuad(texId: Int, l: Float, t: Float, r: Float, b: Float, alpha: Float, canvasW: Float, canvasH: Float) {
+        GLES20.glUseProgram(texProgram)
+        val aPos   = GLES20.glGetAttribLocation(texProgram, "a_pos")
+        val aUv    = GLES20.glGetAttribLocation(texProgram, "a_uv")
+        val uTex   = GLES20.glGetUniformLocation(texProgram, "u_tex")
+        val uAlpha = GLES20.glGetUniformLocation(texProgram, "u_alpha")
+
+        val clipL = toClipX(l, canvasW); val clipR = toClipX(r, canvasW)
+        val clipT = toClipY(t, canvasH); val clipB = toClipY(b, canvasH)
+        val data = floatArrayOf(
+            clipL, clipT, 0f, 0f,   clipR, clipT, 1f, 0f,   clipL, clipB, 0f, 1f,
+            clipR, clipT, 1f, 0f,   clipR, clipB, 1f, 1f,   clipL, clipB, 0f, 1f
+        )
+
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
+        GLES20.glUniform1i(uTex, 0)
+        GLES20.glUniform1f(uAlpha, alpha)
+
+        // Premultiplied-alpha source — see TEX_FRAG's and ensureCaptionTexture's
+        // doc comments, and drawGlowShape's own premultiplied pass for the
+        // fuller reasoning behind this specific blend func, not repeated here.
+        GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        drawQuad(data, aPos, aUv)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
     }
 
     // ── Overlay shapes + glow ────────────────────────────────────────────────

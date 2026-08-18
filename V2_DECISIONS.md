@@ -1390,6 +1390,61 @@ approved by the person before implementing:**
       with a warning comment at the top of the companion object itself,
       naming all eight, so the third occurrence of this bug — if it
       happens — at least isn't a surprise to whoever hits it.
+- **GLES export rewrite — text phase, sub-phase 1 of 3 (captions)**: first
+  of three planned commits for text (captions, then `type == "text"`
+  overlay layers, then reference overlay — image and text sub-cases).
+  Scoping research beforehand found the "captions" item on the roadmap was
+  actually three distinct Canvas text mechanisms, not one — including that
+  `RigRenderer.drawReferenceOverlay` is NOT preview-only tooling as its own
+  placement might suggest: `VideoExporter.kt` does pass the project's real
+  `referenceOverlay` into `export()`'s Canvas call, so it's genuinely
+  export-relevant and stays in scope.
+  - **Approach for all three, decided once and shared across all three
+    commits**: texture-quad hybrid — rasterize via Android's actual
+    `Canvas`/`StaticLayout`/`TextPaint` (same engine
+    `RigRenderer.drawCaption`/`drawGmsText`/`drawReferenceOverlay` already
+    use — reusing real font shaping, gradients, and shadow-layer glow
+    instead of reimplementing any of it in GLSL), upload as a GL texture,
+    draw as a quad via a new `texProgram` shader. New infrastructure this
+    sub-phase built: `TEX_VERT`/`TEX_FRAG`, `drawTexturedQuad` (generic,
+    reused by the next two sub-phases), `ensureCaptionTexture` (rasterize +
+    cache + upload), a `captionTextureCache` keyed on text + canvas w/h
+    (dual-aspect export needs distinct textures per resolution, same
+    reasoning as `cachedShrunkTextSize`'s own key), capped and evicted the
+    same way.
+  - **`captionBgPaint`/`captionTextPaint` are separate instances from
+    `RigRenderer`'s own fields of the same name, deliberately not
+    shared** — this renderer runs on its own dedicated thread, and
+    `RigRenderer`'s preview drawing can run concurrently on a different
+    one (preview animating while an export runs in the background);
+    sharing a mutable `Paint` across two threads is a real data race.
+    Values mirror `RigRenderer`'s exactly.
+  - `GlesFigureFrame` carries only the RAW, unresolved `captionText` —
+    same "GlesFrameRenderer resolves the one exception" split already
+    established for the camera phase's background quad, for the same
+    reason: rasterization needs Android `Bitmap`/`Canvas` APIs this class
+    deliberately has zero dependency on, and the caching that makes
+    rasterizing worthwhile at all has to live somewhere longer-lived than
+    a per-frame data class anyway.
+  - Screen-space, drawn last (after atmosphere) — matches
+    `RigRenderer.drawCaption`'s own "after canvas.restore()" placement.
+  - **Caught during the mandatory diff review, not by CI or on-device**:
+    `texProgram = buildProgram(TEX_VERT, TEX_FRAG)` was duplicated —
+    two identical lines in `init()`, compiling and immediately leaking a
+    redundant GL program object (harmless at runtime, since the second
+    assignment overwrites the first in the Kotlin field, but a real
+    resource leak of the first compiled program, and sloppy regardless).
+    Traced to a context gap mid-session, not a reasoning error — worth
+    logging anyway per standing practice for bugs caught on review.
+  - **Flagged, not yet verified**: the UV vertical-mapping assumption in
+    `drawTexturedQuad` (Android `Bitmap` row 0 = top = texture v=0, no
+    flip needed) is a classic, easy-to-get-backwards spot in Android GL
+    code — right-side-up caption text on-device is the single most
+    important thing to check first, ahead of anything else in this
+    sub-phase.
+  - Not verified against a compiler or device from this environment.
+    Text overlays (bone-parenting, gradient, glow) and reference overlay
+    (image + text sub-cases) are the next two commits, not yet started.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

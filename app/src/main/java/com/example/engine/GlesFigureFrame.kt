@@ -98,7 +98,19 @@ data class GlesFigureFrame(
     val frontOverlays: List<OverlayShapeDraw>,
 
     /** Screen-space, drawn after the figure — see [AtmosphereDrawCommand] doc comment. */
-    val atmosphereCommands: List<AtmosphereDrawCommand>
+    val atmosphereCommands: List<AtmosphereDrawCommand>,
+
+    /**
+     * Text phase (V2_DECISIONS.md) — raw, UNRESOLVED text, deliberately.
+     * Unlike everything else in this class, [GlesFrameRenderer] does the
+     * actual rasterization/positioning itself (needs an Android
+     * `Bitmap`/`Canvas`/`StaticLayout`, which this class has zero
+     * dependency on by design, same reasoning as why the background quad
+     * bounds live there too — see [cameraZoom]'s doc comment). Screen-space,
+     * NOT camera-transformed, matching [RigRenderer.drawCaption]'s own
+     * "after canvas.restore()" placement.
+     */
+    val captionText: String?
 ) {
     sealed class DrawCommand {
         data class BoneLine(
@@ -259,7 +271,9 @@ data class GlesFigureFrame(
             cameraPanX: Float = 0f,
             cameraPanY: Float = 0f,
             cameraShakeIntensity: Float = 0f,
-            overlays: List<TimeResolvedOverlay> = emptyList()
+            overlays: List<TimeResolvedOverlay> = emptyList(),
+            // Text phase (V2_DECISIONS.md) — see the class-level field's own doc comment.
+            captionText: String? = null
         ): GlesFigureFrame {
             val rig    = StickFigureRig
             val bones  = rig.BONES
@@ -456,7 +470,8 @@ data class GlesFigureFrame(
                 frontOverlays           = frontOverlays.map { transformOverlayShapeDraw(it, camera) },
                 // NOT camera-transformed — screen-space atmosphere, unchanged
                 // from before this phase. See class doc comment.
-                atmosphereCommands      = atmosphereCommands
+                atmosphereCommands      = atmosphereCommands,
+                captionText             = captionText
             )
         }
 

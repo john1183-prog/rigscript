@@ -1445,6 +1445,59 @@ approved by the person before implementing:**
   - Not verified against a compiler or device from this environment.
     Text overlays (bone-parenting, gradient, glow) and reference overlay
     (image + text sub-cases) are the next two commits, not yet started.
+- **GLES export rewrite — text phase, sub-phase 2 of 3 (`type == "text"`
+  overlay layers)**: reuses `drawTexturedQuad`/the rasterize-cache-upload
+  pattern from sub-phase 1, plus the shape-overlay bone-parenting/
+  `localToWorld` pipeline from the overlay-shapes phase.
+  - **Real design decision, not just plumbing**: `RigRenderer.draw`'s
+    overlay loop dispatches shape AND text layers from ONE ordered list
+    (`for (layer in behindOverlays) { drawGmsOverlay(...) }`), so a shape
+    and text overlay in the same group can be Z-ordered relative to each
+    other, not just relative to the figure — confirmed by reading that
+    loop, not assumed. A naive bolt-on `behindTextOverlays` list alongside
+    the existing `behindOverlays: List<OverlayShapeDraw>` would have
+    silently broken that relative order for exactly the kind of script
+    DEMO's own `intro_badge` (shape) + `wordmark_intro` (text) already
+    is. Fixed by restructuring `behindOverlays`/`frontOverlays` into a
+    single `List<OverlayDraw>` (a new sealed `Shape`/`Text` wrapper) —
+    real churn to already-shipped, CI-green, on-device-confirmed code
+    from the camera and overlay-shapes phases, done deliberately rather
+    than avoided for being inconvenient.
+  - `GlesFigureFrame.buildOverlayTextDraw` does NOT call `localToWorld`
+    itself — it can't, without knowing the rasterized text's local
+    bounding box first, which needs a real `TextPaint` measurement only
+    `GlesFrameRenderer` can do. It passes through origin/rotation/scale
+    (pre-camera) plus style, and `GlesFrameRenderer.drawOverlayTextDraw`
+    measures, then calls the SAME `RigRenderer.localToWorld` shape
+    overlays use on the measured local corners.
+  - Rasterization (`ensureOverlayTextTexture`) mirrors
+    `RigRenderer.cachedShrunkTextSize`/`drawGmsText` — shrink-to-fit
+    (`canvasW * 0.92f`, verified against actual source, not guessed),
+    gradient, glow (padded bitmap margin so shadow blur isn't clipped at
+    the texture edge), bold, alignment (`localL`/`localR` asymmetric
+    around the origin depending on align, matching exactly where
+    `Paint.Align` places text relative to the draw-call x coordinate).
+  - **One flagged, not fully resolved discrepancy**: `drawGmsText` builds
+    its gradient shader from raw (no-opacity) colors and applies opacity
+    once afterward via `Paint.alpha` as a uniform multiplier.
+    `ensureOverlayTextTexture` instead bakes opacity into each gradient
+    stop's own alpha individually. Identical results only if both stops
+    share the same starting alpha — near-certain in practice (script
+    colors are consistently authored fully opaque, same assumption the
+    shape-overlay gradient path already makes) but not proven for an
+    arbitrary semi-transparent gradient color.
+  - **Caught during my own review before commit**: a stray invalid
+    `bold@ draw.bold` label (a typo, not valid Kotlin) in the first draft
+    of `ensureOverlayTextTexture`; fixed immediately. Also explicitly
+    re-checked (`git diff | grep | uniq -d`) for a repeat of sub-phase
+    1's duplicate-line mistake — none found this time.
+  - Fixed two more stale doc-comment spots surfaced while restructuring:
+    `GlesFigureFrame`'s class-level scope comment and
+    `buildOverlayShapeDraw`'s own doc comment both still said text/figure
+    overlays were unimplemented.
+  - Not verified against a compiler or device. Reference overlay (image +
+    text sub-cases) is the last planned commit for this phase, not yet
+    started.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

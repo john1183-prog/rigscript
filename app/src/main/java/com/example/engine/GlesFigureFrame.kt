@@ -29,9 +29,16 @@ package com.example.engine
  * separate lists rather than folded into [drawCommands]. OVERLAY SHAPES
  * (V2_DECISIONS.md) added `type == "shape"` overlay layers (rect/circle/
  * line/arrow/cross), parented-to-bone or not, with true two-pass Gaussian
- * blur glow — see [OverlayShapeDraw] doc comment. Scoped deliberately
- * narrow: `type == "text"`/`"figure"` overlays, particle trails, and
- * captions all remain unimplemented in GLES — see V2_DECISIONS.md for the
+ * blur glow — see [OverlayShapeDraw] doc comment. The CAMERA phase added
+ * pan/zoom/shake, applied to everything above except atmosphere — see
+ * [cameraZoom]'s doc comment. The TEXT phase added captions (see
+ * [captionText]'s doc comment) and `type == "text"` overlay layers (see
+ * [OverlayTextDraw]/[OverlayDraw] doc comments) — the latter in the SAME
+ * ordered [behindOverlays]/[frontOverlays] lists as shape overlays, not
+ * separate ones, so a script mixing shape and text overlays in one group
+ * keeps their relative Z-order. Scoped deliberately narrow still: `type ==
+ * "figure"` overlays, particle trails, and reference overlay (image or
+ * text) all remain unimplemented in GLES — see V2_DECISIONS.md for the
  * exact boundary and why.
  */
 data class GlesFigureFrame(
@@ -85,8 +92,8 @@ data class GlesFigureFrame(
      */
     val groundLineYFraction: Float,
 
-    /** Behind the figure — see [OverlayShapeDraw] doc comment. Drawn after the ground line, before [drawCommands]. */
-    val behindOverlays: List<OverlayShapeDraw>,
+    /** Behind the figure — see [OverlayDraw] doc comment. Drawn after the ground line, before [drawCommands]. */
+    val behindOverlays: List<OverlayDraw>,
 
     /** Ordered exactly like the Canvas path's per-bone-index loop — see class doc comment. */
     val drawCommands: List<DrawCommand>,
@@ -94,8 +101,8 @@ data class GlesFigureFrame(
     /** 0f = fully transparent, 1f = fully opaque. Applied to the whole figure (all commands), not per-command. */
     val figureAlpha: Float,
 
-    /** In front of the figure — see [OverlayShapeDraw] doc comment. Drawn after [drawCommands], before [atmosphereCommands]. */
-    val frontOverlays: List<OverlayShapeDraw>,
+    /** In front of the figure — see [OverlayDraw] doc comment. Drawn after [drawCommands], before [atmosphereCommands]. */
+    val frontOverlays: List<OverlayDraw>,
 
     /** Screen-space, drawn after the figure — see [AtmosphereDrawCommand] doc comment. */
     val atmosphereCommands: List<AtmosphereDrawCommand>,
@@ -234,6 +241,62 @@ data class GlesFigureFrame(
         val glowColor: Int,
         val glowRadiusPx: Float
     )
+
+    /**
+     * One resolved `type == "text"` overlay layer (text phase —
+     * V2_DECISIONS.md), ready for [GlesFrameRenderer] to rasterize+draw.
+     * UNLIKE [OverlayShapeDraw], this carries only STYLE inputs and the
+     * resolved world-space placement — NOT pre-built geometry — because
+     * the geometry itself (the rasterized bitmap's pixel bounds) can't be
+     * known until [GlesFrameRenderer] actually measures the text with a
+     * real `TextPaint`, and that measurement/rasterization needs Android
+     * `Bitmap`/`Canvas` APIs this class deliberately has zero dependency
+     * on (same reasoning as the camera phase's background quad, and this
+     * class's own [captionText] field).
+     *
+     * [originX]/[originY]/[scale] are ALREADY camera-transformed by the
+     * time [GlesFrameRenderer] sees them (via [transformOverlayTextDraw],
+     * called from the same final pass as every other overlay) —
+     * [rotationDeg] passes through unchanged, since camera zoom/pan/shake
+     * has no rotation component. [colorArgb]/[glowColorArgb] already have
+     * opacity baked into their alpha channel (matching
+     * [RigRenderer.combinedAlphaChannel]'s exact `opacity` /
+     * `opacity * 0.8f` split for text vs. its glow — see
+     * [RigRenderer.drawGmsText]), so [GlesFrameRenderer] never needs a
+     * separate opacity multiplier at draw time.
+     */
+    data class OverlayTextDraw(
+        val text: String,
+        val fontSizeFraction: Float,
+        val bold: Boolean,
+        val align: String,
+        val colorArgb: Int,
+        val gradientColorArgb: Int?,
+        val glow: Boolean,
+        val glowColorArgb: Int,
+        val glowRadiusFraction: Float,
+        val originX: Float,
+        val originY: Float,
+        val rotationDeg: Float,
+        val scale: Float
+    )
+
+    /**
+     * One item in [behindOverlays]/[frontOverlays] — a SINGLE ordered list
+     * per group, deliberately NOT two separate lists (one for shapes, one
+     * for text). [RigRenderer.draw]'s own overlay loop dispatches each
+     * layer to `drawGmsShape`/`drawGmsText` from ONE loop over the
+     * original script layer order — meaning a shape and a text overlay in
+     * the same group can be Z-ordered relative to EACH OTHER, not just
+     * relative to the figure. Two separate lists (all shapes first, then
+     * all text) would silently break that relative order for any script
+     * mixing the two types in one group — DEMO's own `intro_badge`
+     * (shape) + `wordmark_intro` (text) pairing is exactly this scenario.
+     */
+    sealed class OverlayDraw {
+        data class Shape(val draw: OverlayShapeDraw) : OverlayDraw()
+        data class Text(val draw: OverlayTextDraw) : OverlayDraw()
+    }
 
     companion object {
         /**
@@ -375,8 +438,8 @@ data class GlesFigureFrame(
                 OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
             else emptyList()
             val (behindResolved, frontResolved) = resolvedOverlays.partition { !it.inFrontOfFigure }
-            val behindOverlays = behindResolved.mapNotNull { buildOverlayShapeDraw(it, canvasW, canvasH, minDim) }
-            val frontOverlays  = frontResolved.mapNotNull { buildOverlayShapeDraw(it, canvasW, canvasH, minDim) }
+            val behindOverlays = behindResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim) }
+            val frontOverlays  = frontResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim) }
 
             val bgColor = (overrides.bgColor ?: appearance.exportBgColor).toInt()
             // These two are DELIBERATELY independent — see groundLineYFraction's
@@ -464,10 +527,10 @@ data class GlesFigureFrame(
                 showGroundLine          = overrides.showGroundLine ?: appearance.showGroundLine,
                 groundLineColor         = (overrides.groundLineColor ?: appearance.groundLineColor).toInt(),
                 groundLineYFraction     = plainGroundLineYFraction,
-                behindOverlays          = behindOverlays.map { transformOverlayShapeDraw(it, camera) },
+                behindOverlays          = behindOverlays.map { transformOverlayDraw(it, camera) },
                 drawCommands            = commands.map { transformDrawCommand(it, camera) },
                 figureAlpha             = (overrides.opacity ?: 1f).coerceIn(0f, 1f),
-                frontOverlays           = frontOverlays.map { transformOverlayShapeDraw(it, camera) },
+                frontOverlays           = frontOverlays.map { transformOverlayDraw(it, camera) },
                 // NOT camera-transformed — screen-space atmosphere, unchanged
                 // from before this phase. See class doc comment.
                 atmosphereCommands      = atmosphereCommands,
@@ -538,6 +601,21 @@ data class GlesFigureFrame(
          * shot (glow itself isn't on-device-confirmed as of this phase
          * either — see V2_DECISIONS.md's Deferred section).
          */
+        /** Dispatches to [transformOverlayShapeDraw] or [transformOverlayTextDraw] — see [OverlayDraw] doc comment for why this is one list, not two. */
+        private fun transformOverlayDraw(item: OverlayDraw, cam: RigRenderer.CameraTransform): OverlayDraw = when (item) {
+            is OverlayDraw.Shape -> OverlayDraw.Shape(transformOverlayShapeDraw(item.draw, cam))
+            is OverlayDraw.Text  -> OverlayDraw.Text(transformOverlayTextDraw(item.draw, cam))
+        }
+
+        /**
+         * Same reasoning as [transformOverlayShapeDraw] — [originX]/[originY]
+         * and [OverlayTextDraw.scale] get the camera transform;
+         * [OverlayTextDraw.rotationDeg] passes through unchanged (camera
+         * zoom/pan/shake has no rotation component).
+         */
+        private fun transformOverlayTextDraw(draw: OverlayTextDraw, cam: RigRenderer.CameraTransform): OverlayTextDraw =
+            draw.copy(originX = cam.tx(draw.originX), originY = cam.ty(draw.originY), scale = draw.scale * cam.zoom)
+
         private fun transformOverlayShapeDraw(overlay: OverlayShapeDraw, cam: RigRenderer.CameraTransform): OverlayShapeDraw {
             val transformed = overlay.commands.map { cmd ->
                 when (cmd) {
@@ -558,12 +636,63 @@ data class GlesFigureFrame(
             return overlay.copy(commands = transformed, glowRadiusPx = cam.tLen(overlay.glowRadiusPx))
         }
 
+        /** Dispatches to [buildOverlayShapeDraw] or [buildOverlayTextDraw] by [ResolvedOverlay.type] — see [OverlayDraw] doc comment for why this is one list, not two. */
+        private fun buildOverlayDraw(layer: ResolvedOverlay, canvasW: Int, canvasH: Int, minDim: Float): OverlayDraw? = when (layer.type) {
+            "shape" -> buildOverlayShapeDraw(layer, canvasW, canvasH, minDim)?.let { OverlayDraw.Shape(it) }
+            "text"  -> buildOverlayTextDraw(layer, canvasW, canvasH)?.let { OverlayDraw.Text(it) }
+            else    -> null   // "figure" overlays, particle trails — still unimplemented, see class doc comment.
+        }
+
+        /**
+         * Builds one [OverlayTextDraw] from a fully-resolved overlay, or
+         * null if it's invisible (`opacity <= 0.001f`, matching
+         * [buildOverlayShapeDraw]'s own early-return), not a `type ==
+         * "text"` layer, or has no text to show. Unlike
+         * [buildOverlayShapeDraw], this does NOT call
+         * [RigRenderer.localToWorld] itself — it can't, without knowing the
+         * rasterized text's local bounding box first, which only
+         * [GlesFrameRenderer] can measure (see [OverlayTextDraw]'s own doc
+         * comment). [originX]/[originY]/[layer.rotationDeg]/[layer.scale]
+         * are passed through as-is (pre-camera — the camera transform is
+         * applied later, in [transformOverlayTextDraw]) for
+         * [GlesFrameRenderer] to combine with the measured bounding box
+         * itself.
+         */
+        private fun buildOverlayTextDraw(layer: ResolvedOverlay, canvasW: Int, canvasH: Int): OverlayTextDraw? {
+            val text = layer.text
+            if (layer.opacity <= 0.001f || layer.type != "text" || text.isNullOrBlank()) return null
+
+            val baseColor = layer.color.toInt()
+            val colorArgb = (RigRenderer.combinedAlphaChannel(baseColor, layer.opacity) shl 24) or (baseColor and 0xFFFFFF)
+            val gradientColorArgb = layer.gradientColor?.toInt()?.let { g ->
+                (RigRenderer.combinedAlphaChannel(g, layer.opacity) shl 24) or (g and 0xFFFFFF)
+            }
+            // 0.8f matches RigRenderer.drawGmsText's own glow-alpha call site exactly — not reused/re-derived, mirrored.
+            val glowBase = layer.glowColor.toInt()
+            val glowColorArgb = (RigRenderer.combinedAlphaChannel(glowBase, layer.opacity * 0.8f) shl 24) or (glowBase and 0xFFFFFF)
+
+            return OverlayTextDraw(
+                text = text,
+                fontSizeFraction = layer.fontSize,
+                bold = layer.bold,
+                align = layer.align,
+                colorArgb = colorArgb,
+                gradientColorArgb = gradientColorArgb,
+                glow = layer.glow,
+                glowColorArgb = glowColorArgb,
+                glowRadiusFraction = layer.glowRadius,
+                originX = canvasW * layer.x,
+                originY = canvasH * layer.y,
+                rotationDeg = layer.rotationDeg,
+                scale = layer.scale
+            )
+        }
+
         /**
          * Builds one [OverlayShapeDraw] from a fully-resolved overlay, or
          * null if it's invisible (`opacity <= 0.001f`, matching
          * [RigRenderer.drawGmsOverlay]'s own early-return) or not a
-         * `type == "shape"` layer — text/figure overlays aren't implemented
-         * in GLES yet, see class doc comment.
+         * `type == "shape"` layer.
          *
          * Applies the position/rotation/scale transform explicitly via
          * [RigRenderer.localToWorld] — the GLES equivalent of

@@ -3,7 +3,9 @@ package com.example.engine
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Shader
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
@@ -137,6 +139,34 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * typically far fewer than distinct overlay-text layers.
      */
     private val captionTextureCache = LinkedHashMap<String, CaptionTexture>()
+
+    /**
+     * Text phase, `type == "text"` overlays — separate instance from
+     * [captionTextPaint] (different style knobs — gradient/glow/bold/align
+     * per layer, vs. captions' one fixed style) and, same as
+     * [captionTextPaint]/[captionBgPaint], deliberately not shared with
+     * `RigRenderer`'s own `gmsTextPaint` field for the identical
+     * thread-safety reason documented there.
+     */
+    private val overlayTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * A rasterized overlay-text bitmap's GL texture plus its LOCAL bounding
+     * box (unscaled, unrotated, relative to the layer's own origin —
+     * INCLUDES the glow-blur padding margin when the layer glows, so the
+     * whole bitmap — not just the tight glyph bounds — maps correctly into
+     * world space). [localL]/[localR] are asymmetric around 0 depending on
+     * [ResolvedOverlay.align] (LEFT: `[0, width]`; RIGHT: `[-width, 0]`;
+     * CENTER: `[-width/2, width/2]`) — matching exactly where
+     * `Canvas.drawText`'s `Paint.Align` places text relative to the x
+     * coordinate passed to it, which is always local 0 here. [localT]/
+     * [localB] are always symmetric — [RigRenderer.drawGmsText]'s
+     * `baselineOffset` always centers vertically regardless of alignment.
+     */
+    private class OverlayTextTexture(val texId: Int, val localL: Float, val localT: Float, val localR: Float, val localB: Float)
+
+    /** Keyed on every rasterization input — see [CaptionTexture]'s cache doc comment for the same reasoning, extended here to cover gradient/glow/bold/align too, since all of those affect the rendered pixels. */
+    private val overlayTextTextureCache = LinkedHashMap<String, OverlayTextTexture>()
 
     /**
      * Offscreen ping-pong pair for overlay-shape glow's two-pass Gaussian
@@ -448,6 +478,10 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                 GLES20.glDeleteTextures(captionTextureCache.size, captionTextureCache.values.map { it.texId }.toIntArray(), 0)
                 captionTextureCache.clear()
             }
+            if (overlayTextTextureCache.isNotEmpty()) {
+                GLES20.glDeleteTextures(overlayTextTextureCache.size, overlayTextTextureCache.values.map { it.texId }.toIntArray(), 0)
+                overlayTextTextureCache.clear()
+            }
             if (glowFboA != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboA), 0); glowFboA = 0 }
             if (glowFboB != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboB), 0); glowFboB = 0 }
             if (glowTexA != 0) { GLES20.glDeleteTextures(1, intArrayOf(glowTexA), 0); glowTexA = 0 }
@@ -587,13 +621,14 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             drawRoundCappedLine(bgL, groundY, bgR, groundY, 1f, w, h, c[0], c[1], c[2], c[3])
         }
 
-        // Behind-the-figure overlay shapes — see GlesFigureFrame.OverlayShapeDraw
-        // doc comment. Glow (if any) drawn first via the offscreen blur passes,
-        // THEN the crisp shape on top of it — matching RigRenderer.drawGmsShape's
-        // own glow-then-crisp order exactly.
+        // Behind-the-figure overlays — see GlesFigureFrame.OverlayDraw doc
+        // comment for why this is one ordered loop over a mixed
+        // shape/text list, not two separate ones. Shape glow (if any)
+        // drawn first via the offscreen blur passes, THEN the crisp shape
+        // on top of it — matching RigRenderer.drawGmsShape's own
+        // glow-then-crisp order exactly.
         for (overlay in frame.behindOverlays) {
-            if (overlay.glow) drawGlowShape(overlay, frame.canvasW, frame.canvasH, w, h)
-            drawOverlayCommands(overlay.commands, w, h, colorOverride = null)
+            drawOverlayItem(overlay, frame.canvasW, frame.canvasH, w, h)
         }
 
         if (frame.figureAlpha > 0.001f) {
@@ -636,10 +671,9 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             }
         }
 
-        // Front-of-figure overlay shapes — same glow-then-crisp order as behindOverlays.
+        // Front-of-figure overlays — same ordered dispatch as behindOverlays.
         for (overlay in frame.frontOverlays) {
-            if (overlay.glow) drawGlowShape(overlay, frame.canvasW, frame.canvasH, w, h)
-            drawOverlayCommands(overlay.commands, w, h, colorOverride = null)
+            drawOverlayItem(overlay, frame.canvasW, frame.canvasH, w, h)
         }
 
         // Atmosphere (fog/rain/snow) — screen-space, drawn AFTER the figure
@@ -670,7 +704,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         val caption = frame.captionText
         if (!caption.isNullOrBlank()) {
             val tex = ensureCaptionTexture(caption, frame.canvasW, frame.canvasH)
-            drawTexturedQuad(tex.texId, tex.boxL, tex.boxT, tex.boxR, tex.boxB, 1f, w, h)
+            drawTexturedQuad(
+                tex.texId,
+                tex.boxL, tex.boxT,   tex.boxR, tex.boxT,
+                tex.boxR, tex.boxB,   tex.boxL, tex.boxB,
+                1f, w, h
+            )
         }
 
         EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs)
@@ -997,27 +1036,44 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * an ADDITIONAL multiplier on top of the texture's own per-pixel alpha
      * — see [TEX_FRAG]'s doc comment.
      *
+     * Takes 4 explicit corners ([x0]/[y0] through [x3]/[y3], in TOP-LEFT,
+     * TOP-RIGHT, BOTTOM-RIGHT, BOTTOM-LEFT order — matching UV (0,0)/(1,0)/
+     * (1,1)/(0,1)) rather than an axis-aligned box, because `type ==
+     * "text"` overlay layers (text phase, V2_DECISIONS.md) can be rotated
+     * ([RigRenderer.localToWorld]'s `rotationDeg`) — a rotated rectangle
+     * isn't expressible as l/t/r/b. Captions never need rotation (always
+     * screen-space, axis-aligned), so their call site just passes the 4
+     * corners of their own l/t/r/b box directly.
+     *
      * UV mapping: an Android [Bitmap]'s row 0 is the TOP of the image, and
      * [GLUtils.texImage2D] uploads rows in that same order, so texel row 0
-     * lands at texture-space v=0 — meaning [t] maps to v=0 and [b] maps to
-     * v=1 directly, with NO vertical flip needed. This is a genuinely easy
-     * thing to get backwards (a classic Android-GL mistake) and is the one
-     * piece of this function most worth checking first on-device — does
-     * caption text render right-side-up, not upside-down or mirrored —
-     * rather than assumed correct from reasoning alone.
+     * lands at texture-space v=0 — meaning the TOP corners map to v=0 and
+     * the BOTTOM corners map to v=1, with NO vertical flip needed. This is
+     * a genuinely easy thing to get backwards (a classic Android-GL
+     * mistake) and is the one piece of this function most worth checking
+     * first on-device — does caption/overlay text render right-side-up,
+     * not upside-down or mirrored — rather than assumed correct from
+     * reasoning alone.
      */
-    private fun drawTexturedQuad(texId: Int, l: Float, t: Float, r: Float, b: Float, alpha: Float, canvasW: Float, canvasH: Float) {
+    private fun drawTexturedQuad(
+        texId: Int,
+        x0: Float, y0: Float, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float,
+        alpha: Float, canvasW: Float, canvasH: Float
+    ) {
         GLES20.glUseProgram(texProgram)
         val aPos   = GLES20.glGetAttribLocation(texProgram, "a_pos")
         val aUv    = GLES20.glGetAttribLocation(texProgram, "a_uv")
         val uTex   = GLES20.glGetUniformLocation(texProgram, "u_tex")
         val uAlpha = GLES20.glGetUniformLocation(texProgram, "u_alpha")
 
-        val clipL = toClipX(l, canvasW); val clipR = toClipX(r, canvasW)
-        val clipT = toClipY(t, canvasH); val clipB = toClipY(b, canvasH)
+        val cx0 = toClipX(x0, canvasW); val cy0 = toClipY(y0, canvasH)
+        val cx1 = toClipX(x1, canvasW); val cy1 = toClipY(y1, canvasH)
+        val cx2 = toClipX(x2, canvasW); val cy2 = toClipY(y2, canvasH)
+        val cx3 = toClipX(x3, canvasW); val cy3 = toClipY(y3, canvasH)
+        // Same winding as drawCircle's own two-triangle split: (0,1,3) then (1,2,3).
         val data = floatArrayOf(
-            clipL, clipT, 0f, 0f,   clipR, clipT, 1f, 0f,   clipL, clipB, 0f, 1f,
-            clipR, clipT, 1f, 0f,   clipR, clipB, 1f, 1f,   clipL, clipB, 0f, 1f
+            cx0, cy0, 0f, 0f,   cx1, cy1, 1f, 0f,   cx3, cy3, 0f, 1f,
+            cx1, cy1, 1f, 0f,   cx2, cy2, 1f, 1f,   cx3, cy3, 0f, 1f
         )
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
@@ -1031,6 +1087,160 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         drawQuad(data, aPos, aUv)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+    }
+
+    /** Dispatches one [GlesFigureFrame.OverlayDraw] item to shape or text drawing — see that sealed class's doc comment for why [behindOverlays]/[frontOverlays] loops call this instead of two separate loops. */
+    private fun drawOverlayItem(item: GlesFigureFrame.OverlayDraw, canvasW: Int, canvasH: Int, w: Float, h: Float) {
+        when (item) {
+            is GlesFigureFrame.OverlayDraw.Shape -> {
+                val overlay = item.draw
+                if (overlay.glow) drawGlowShape(overlay, canvasW, canvasH, w, h)
+                drawOverlayCommands(overlay.commands, w, h, colorOverride = null)
+            }
+            is GlesFigureFrame.OverlayDraw.Text -> drawOverlayTextDraw(item.draw, canvasW, canvasH, w, h)
+        }
+    }
+
+    /**
+     * Rasterizes+draws one [GlesFigureFrame.OverlayTextDraw]. Measurement,
+     * shrink-to-fit, gradient, and glow all mirror
+     * [RigRenderer.cachedShrunkTextSize]/[RigRenderer.drawGmsText] as
+     * closely as this architecture allows — see [ensureOverlayTextTexture]'s
+     * doc comment for the one structural difference (bitmap-relative vs.
+     * canvas-absolute coordinates, same reasoning as
+     * [ensureCaptionTexture]'s).
+     */
+    private fun drawOverlayTextDraw(draw: GlesFigureFrame.OverlayTextDraw, canvasW: Int, canvasH: Int, w: Float, h: Float) {
+        val tex = ensureOverlayTextTexture(draw, canvasW, canvasH)
+        // 4 LOCAL corners (already include glow padding) → world, via the
+        // exact same RigRenderer.localToWorld shape overlays use — draw's
+        // origin/rotation/scale are already camera-transformed (see
+        // transformOverlayTextDraw), so this needs nothing further.
+        val (x0, y0) = RigRenderer.localToWorld(tex.localL, tex.localT, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+        val (x1, y1) = RigRenderer.localToWorld(tex.localR, tex.localT, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+        val (x2, y2) = RigRenderer.localToWorld(tex.localR, tex.localB, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+        val (x3, y3) = RigRenderer.localToWorld(tex.localL, tex.localB, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+        // alpha already baked into tex's rasterized pixels (colorArgb/glowColorArgb
+        // carry opacity in their alpha channel — see OverlayTextDraw's doc comment),
+        // so 1f here, same as captions.
+        drawTexturedQuad(tex.texId, x0, y0, x1, y1, x2, y2, x3, y3, 1f, w, h)
+    }
+
+    /**
+     * Returns the cached [OverlayTextTexture] for [draw]'s full style
+     * (text/size/bold/align/colors/glow), rasterizing and uploading a new
+     * one on a cache miss. Mirrors [RigRenderer.cachedShrunkTextSize]'s
+     * shrink-to-fit and [RigRenderer.drawGmsText]'s Paint configuration
+     * (gradient/glow/bold/align) as closely as this architecture allows.
+     * Structural difference from both, same reasoning as
+     * [ensureCaptionTexture]'s own doc comment: the bitmap IS the text's
+     * own (padded) bounding box, not the full canvas, so drawing happens
+     * at bitmap-relative coordinates, re-anchored from the local-space
+     * math below.
+     *
+     * The `maxTextWidth` shrink-to-fit target here (`canvasW * 0.92f`) IS
+     * verified against `RigRenderer.cachedShrunkTextSize`'s own `w * 0.92f`
+     * — read directly from source, not assumed from the overall approach
+     * mirroring it.
+     *
+     * One flagged, not fully resolved, difference from
+     * [RigRenderer.drawGmsText]: that function builds its gradient shader
+     * from RAW (no-opacity) colors and applies opacity ONCE afterward via
+     * `Paint.alpha` as a uniform multiplier over the whole shader output.
+     * This function instead bakes opacity into EACH gradient stop's own
+     * alpha individually (`colorArgb`/`gradientColorArgb`, both already
+     * opacity-adjusted before reaching here — see [GlesFigureFrame]'s
+     * `buildOverlayTextDraw`). These produce IDENTICAL results only if
+     * both stop colors share the same starting alpha (near-certain in
+     * practice — script colors are consistently authored fully opaque,
+     * with `opacity` as the sole per-layer transparency control, same
+     * assumption the shape-overlay gradient path already makes) but are
+     * not PROVEN identical for an arbitrary semi-transparent gradient
+     * color. Not worth blocking this commit over; worth knowing if a
+     * gradient text overlay's opacity ever looks subtly off on-device.
+     */
+    private fun ensureOverlayTextTexture(draw: GlesFigureFrame.OverlayTextDraw, canvasW: Int, canvasH: Int): OverlayTextTexture {
+        val key = "${draw.text}|${draw.fontSizeFraction}|${draw.bold}|${draw.align}|${draw.colorArgb}|" +
+            "${draw.gradientColorArgb}|${draw.glow}|${draw.glowColorArgb}|${draw.glowRadiusFraction}|$canvasW|$canvasH"
+        overlayTextTextureCache[key]?.let { return it }
+
+        overlayTextPaint.isFakeBoldText = draw.bold
+        var textSize = canvasH * draw.fontSizeFraction
+        overlayTextPaint.textSize = textSize
+        val maxTextWidth = canvasW * 0.92f
+        val rawWidth = overlayTextPaint.measureText(draw.text)
+        if (rawWidth > maxTextWidth && rawWidth > 0f) {
+            textSize *= maxTextWidth / rawWidth
+            overlayTextPaint.textSize = textSize
+        }
+        val finalWidth = overlayTextPaint.measureText(draw.text)
+
+        overlayTextPaint.shader = draw.gradientColorArgb?.let { grad ->
+            val halfH = textSize / 2f
+            LinearGradient(0f, -halfH, 0f, halfH, draw.colorArgb, grad, Shader.TileMode.CLAMP)
+        }
+        overlayTextPaint.color = draw.colorArgb
+        overlayTextPaint.textAlign = when (draw.align) {
+            "left"  -> Paint.Align.LEFT
+            "right" -> Paint.Align.RIGHT
+            else    -> Paint.Align.CENTER
+        }
+
+        val glowRadiusPx = (draw.glowRadiusFraction * canvasH).coerceAtLeast(1f)
+        if (draw.glow) {
+            overlayTextPaint.setShadowLayer(glowRadiusPx, 0f, 0f, draw.glowColorArgb)
+        } else {
+            overlayTextPaint.clearShadowLayer()
+        }
+
+        val metrics = overlayTextPaint.fontMetrics
+        // Same vertical centering as RigRenderer.drawGmsText's baselineOffset.
+        val glyphHalfH = (metrics.descent - metrics.ascent) / 2f
+        // Shadow-layer blur can bleed well beyond the glyph's tight bounds —
+        // padding the bitmap avoids clipping it at the edge. 3x radius is a
+        // deliberately generous margin, not measured against Android's own
+        // shadow falloff — worth revisiting if glow looks clipped on-device.
+        val pad = if (draw.glow) glowRadiusPx * 3f else 0f
+
+        val (localL, localR) = when (draw.align) {
+            "left"  -> 0f to finalWidth
+            "right" -> -finalWidth to 0f
+            else    -> -finalWidth / 2f to finalWidth / 2f
+        }
+        val localT = -glyphHalfH
+        val localB = glyphHalfH
+        val texL = localL - pad; val texR = localR + pad
+        val texT = localT - pad; val texB = localB + pad
+
+        val texW = (texR - texL).toInt().coerceAtLeast(1)
+        val texH = (texB - texT).toInt().coerceAtLeast(1)
+        val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
+        val bmpCanvas = Canvas(bmp)
+        // Local (0,0) maps to bitmap-space (-texL, baselineY) — baselineY
+        // re-derives RigRenderer.drawGmsText's own baselineOffset
+        // (-(ascent+descent)/2), re-anchored into this bitmap's own origin.
+        val originXInBmp = -texL
+        val baselineY = -texT - (metrics.ascent + metrics.descent) / 2f
+        bmpCanvas.drawText(draw.text, originXInBmp, baselineY, overlayTextPaint)
+
+        val texArr = IntArray(1)
+        GLES20.glGenTextures(1, texArr, 0)
+        val texId = texArr[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+        bmp.recycle()
+
+        val result = OverlayTextTexture(texId, texL, texT, texR, texB)
+        if (overlayTextTextureCache.size >= 200) {
+            val oldestKey = overlayTextTextureCache.keys.first()
+            overlayTextTextureCache.remove(oldestKey)?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
+        }
+        overlayTextTextureCache[key] = result
+        return result
     }
 
     // ── Overlay shapes + glow ────────────────────────────────────────────────

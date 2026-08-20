@@ -512,6 +512,14 @@ object VideoExporter {
                 // layers at all, so engine.currentOverlays would always have
                 // returned empty regardless of what the script actually had.
                 it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
+                // Text phase (V2_DECISIONS.md): same gap as overlay layers
+                // above — this smoke test reads engine.currentCaption
+                // (captionText param, see the fromFkMatrices call below) but
+                // never called loadCaptions, so it would always have
+                // resolved to null regardless of the script's actual
+                // ScriptEvent.caption fields. Matches export()'s own setup
+                // exactly, same TimelineCompiler.extractCaptions call.
+                it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
             }
 
             val totalFrames = (durationSec * fps).toInt().coerceAtLeast(1)

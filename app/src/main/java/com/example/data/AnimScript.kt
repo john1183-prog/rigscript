@@ -227,6 +227,21 @@ data class AnimScript(
          * at 19.9s, boneColor/bgColor at 24.0s) — camera zoom was already
          * being reset that way at 17.5s for the existing 15s/21.5s beats,
          * this just extends the same discipline to pan.
+         *
+         * Text phase (V2_DECISIONS.md) — two more additions inside the
+         * same ~3s window, both previously silent gaps: `wordmark_intro`
+         * (already present, already inside the window) now carries a
+         * gradient + glow, since it was plain white-on-nothing text before
+         * this phase and so never exercised those specific text-overlay
+         * code paths in the smoke test; the wave event now carries a
+         * caption, which `exportGlesSmokeTest` would have silently
+         * rendered nothing for regardless of this field, since that
+         * function never called `engine.loadCaptions` at all until fixed
+         * in the same commit as this script change. The caption's 1.3s
+         * window (1.5–2.8s) and `intro_badge`'s "lower" slot (0.78 y-
+         * fraction, 0.3–2.6s) overlap in TIME but not in screen position —
+         * checked against `OverlayResolver`'s actual slot-to-y-fraction
+         * mapping before choosing this timing, not just assumed clear.
          */
         val DEMO = AnimScript(
             events = listOf(
@@ -244,7 +259,15 @@ data class AnimScript(
                     // shake burst lands on the wave beat — exercises all
                     // four camera fields together within the same ~3s
                     // window the scene-shape transition already covers.
-                    cameraZoom = 1f, cameraPanY = 0.04f, cameraShake = 0.35f),
+                    cameraZoom = 1f, cameraPanY = 0.04f, cameraShake = 0.35f,
+                    // Text phase (V2_DECISIONS.md) — captions weren't
+                    // exercised anywhere in the smoke test window before
+                    // this. exportGlesSmokeTest previously never called
+                    // engine.loadCaptions at all (fixed alongside this),
+                    // so this would have silently rendered nothing even
+                    // with the field set. Ends at 2.8s, before the pan
+                    // reset at 3.5s and comfortably inside the window.
+                    caption = "Waving hello!", captionDurationSec = 1.3f),
                 ScriptEvent(3.5f,  "explain",        0.7f, "ease_in_out",
                     // Reset pan back to center just after the smoke test
                     // window — same discipline the 17.5s event already
@@ -283,10 +306,20 @@ data class AnimScript(
             ),
             blinkEvents = listOf(1.3f, 14.7f, 21.4f),
             overlayLayers = listOf(
+                // Text phase (V2_DECISIONS.md) — gradient+glow text active
+                // 0.2-3.0s, inside the smoke test window, so this specific
+                // combination (not just plain text — wordmark_intro was
+                // white-on-nothing before this phase) is actually visible
+                // in the debug export. bold=true is the field default, not
+                // set explicitly, but was already being exercised even
+                // before this edit. gradientColor picks up the same light
+                // blue as the opening event's groundLineColor, for visual
+                // cohesion rather than an arbitrary test color.
                 OverlayLayer(
                     id = "wordmark_intro", type = "text", text = "HELLO!",
                     startSec = 0.2f, endSec = 3.0f, slot = "upper",
-                    fontSize = 0.09f, color = 0xFFFFFFFFL,
+                    fontSize = 0.09f, color = 0xFFFFFFFFL, gradientColor = 0xFF4FC3F7L,
+                    glow = true, glowRadius = 0.025f,
                     enterStyle = "pop", enterEase = "back", enterDuration = 0.4f,
                     exitStyle = "fade", exitDuration = 0.3f
                 ),

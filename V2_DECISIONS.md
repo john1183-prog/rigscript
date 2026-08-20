@@ -1498,6 +1498,67 @@ approved by the person before implementing:**
   - Not verified against a compiler or device. Reference overlay (image +
     text sub-cases) is the last planned commit for this phase, not yet
     started.
+- **GLES export rewrite — text phase, sub-phase 3 of 3 (reference
+  overlay — image + text)**: completes the text phase. Reuses
+  `drawTexturedQuad` (generalized to accept custom UV corners, for the
+  image crop case) and the rasterize-cache-upload pattern, but is
+  architecturally distinct from the first two sub-phases in one real way.
+  - **Not a script-driven list item, unlike everything else in this
+    phase**: `ReferenceOverlay` is a single global per-project entity
+    (set once by the user in the editor, explicitly NOT part of the AI
+    script pipeline — confirmed from that class's own doc comment) with
+    its own independent `inFrontOfFigure`. `RigRenderer.draw`'s two call
+    sites draw it at a FIXED point — always first in its behind/front
+    group, before that group's ordinary overlay list, never interleaved
+    within it — so this did NOT need the `OverlayDraw`-style ordered
+    interleaving sub-phase 2 required. A new `ReferenceOverlayDraw`
+    field (nullable, not a list) plus two fixed call sites in
+    `drawFigureFrame`, mirroring `RigRenderer.draw`'s own two call sites
+    exactly.
+  - `GlesFigureFrame` calls `ReferenceOverlay.isVisibleAt` directly
+    (reused, not reimplemented) for the visibility-window check, and
+    accepts a raw `Bitmap?` reference as a genuine, if narrow, exception
+    to its "zero Android Bitmap/Canvas dependency" rule — held as a
+    plain pass-through reference, never touched here, which is a much
+    lesser dependency than the active rasterization sub-phases 1/2
+    correctly avoided needing in this class.
+  - **IMAGE sub-case**: the source bitmap is uploaded as a texture ONCE
+    (a single-slot cache compared by `Bitmap` identity, not content —
+    there's only ever one reference-overlay image per project, so
+    there's nothing to key by), and `ReferenceOverlay.cropLeft/Top/
+    Right/Bottom` map directly onto `drawTexturedQuad`'s new UV
+    parameters — cropping is purely a UV-range choice, never a
+    re-upload, even if the crop changes.
+  - **Real bug caught during design, before writing the draw call**: the
+    aspect-ratio math for sizing the cropped image. The naive version —
+    `(cropRight - cropLeft) / (cropBottom - cropTop)`, using the crop
+    FRACTIONS directly — is wrong for any non-square source bitmap.
+    `RigRenderer.drawReferenceOverlay` computes aspect from actual
+    cropped PIXEL dimensions (`cropFraction * bitmap.width/height`), not
+    the bare fraction difference. Caught by rereading that function's
+    exact math before implementing, not after something looked wrong.
+  - **TEXT sub-case**: single-slot cache again (same "only one at a
+    time" reasoning as the image case), mirroring
+    `RigRenderer.drawReferenceOverlay`'s TEXT case exactly — `textSize =
+    sizePx * 0.3f`, `maxWidth = minDim(canvas) * 0.6f`, centered
+    `StaticLayout`, optional backdrop rect. Always center-anchored (no
+    `align` concept here, unlike `OverlayTextDraw` — confirmed from
+    source, not assumed from the overlay-text sub-phase's pattern).
+  - `exportGlesSmokeTest` now decodes `project.referenceOverlay`'s image
+    ONCE up front (same pattern and same reasoning as `export()`'s own
+    "I/O must never happen inside the per-frame loop" comment, read
+    directly from that function before replicating it) and threads it
+    through the `fromFkMatrices` call.
+  - **Scoping note, not a defect**: unlike captions and overlay text,
+    this sub-case genuinely can't be exercised by editing `AnimScript.DEMO`
+    — reference overlay is deliberately outside the script pipeline
+    entirely, requiring the user to configure one by hand in the editor
+    (import an image, or type reference text) on a real project. No demo
+    script change accompanies this commit for that reason.
+  - Not verified against a compiler or device from this environment. This
+    completes the planned scope of the text phase (captions, overlay
+    text, reference overlay); next per the original roadmap is a real
+    multi-minute stress test and the fallback path, not yet started.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

@@ -491,6 +491,15 @@ object VideoExporter {
             val (width, height) = settings.dimensions(settings.aspectRatio)
             val minDim     = minOf(width, height).toFloat()
 
+            // Text phase, sub-phase 3 (V2_DECISIONS.md) — decoded ONCE up
+            // front, same reasoning and same pattern as export()'s own
+            // "I/O must never happen inside the per-frame loop" comment.
+            val referenceOverlay = project.referenceOverlay
+            val referenceOverlayBitmap: Bitmap? =
+                if (referenceOverlay.type == com.example.data.ReferenceOverlay.OverlayType.IMAGE && referenceOverlay.imagePath != null)
+                    runCatching { BitmapFactory.decodeFile(referenceOverlay.imagePath) }.getOrNull()
+                else null
+
             // Same timeline-resolution pipeline export() itself uses — see
             // this function's doc comment for why that reuse matters here.
             @Suppress("DEPRECATION")
@@ -655,7 +664,10 @@ object VideoExporter {
                             overlays        = engine.currentOverlays,
                             // Text phase (V2_DECISIONS.md) — same engine.currentCaption
                             // read the Canvas renderer.draw call above already uses.
-                            captionText     = engine.currentCaption
+                            captionText     = engine.currentCaption,
+                            // Text phase, sub-phase 3 — decoded once, above.
+                            referenceOverlay       = referenceOverlay,
+                            referenceOverlayBitmap = referenceOverlayBitmap
                         )
 
                         val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps

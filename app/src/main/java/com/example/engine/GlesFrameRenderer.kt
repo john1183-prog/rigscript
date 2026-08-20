@@ -18,6 +18,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.view.Surface
+import com.example.data.ReferenceOverlay
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -167,6 +168,34 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
     /** Keyed on every rasterization input — see [CaptionTexture]'s cache doc comment for the same reasoning, extended here to cover gradient/glow/bold/align too, since all of those affect the rendered pixels. */
     private val overlayTextTextureCache = LinkedHashMap<String, OverlayTextTexture>()
+
+    /**
+     * Text phase, sub-phase 3 (V2_DECISIONS.md) — reference overlay's IMAGE
+     * sub-case. A SINGLE slot, not a keyed cache like [captionTextureCache]/
+     * [overlayTextTextureCache]: unlike text, there's only ever ONE
+     * reference-overlay bitmap per project (set once by the user in the
+     * editor), so there's nothing to key by — just "is this still the same
+     * [Bitmap] reference as last frame, or has the user swapped it." Compared
+     * by IDENTITY (`!==`), not content equality — matches how the project
+     * itself treats a re-imported image as a wholly new [Bitmap] instance,
+     * never mutated in place.
+     */
+    private var refImageTexId = 0
+    private var refImageBitmapRef: Bitmap? = null
+
+    /**
+     * Reference overlay's TEXT sub-case — separate `TextPaint`/`Paint` pair
+     * from [captionTextPaint]/[captionBgPaint] and [overlayTextPaint] (each
+     * sub-case has its own distinct style knobs), for the same thread-safety
+     * reasoning documented on [captionBgPaint].
+     */
+    private val refTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.LEFT }
+    private val refBgPaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x99000000L.toInt() }
+
+    /** One rasterized reference-overlay-text bitmap's texture, plus its LOCAL (unscaled) half-extents — always symmetric around the origin, unlike [OverlayTextTexture] (no align concept here — [RigRenderer.drawReferenceOverlay]'s TEXT case is always center-anchored). */
+    private class ReferenceTextTexture(val texId: Int, val halfW: Float, val halfH: Float)
+    private var refTextTextureCache: ReferenceTextTexture? = null
+    private var refTextTextureKey: String? = null
 
     /**
      * Offscreen ping-pong pair for overlay-shape glow's two-pass Gaussian
@@ -482,6 +511,10 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                 GLES20.glDeleteTextures(overlayTextTextureCache.size, overlayTextTextureCache.values.map { it.texId }.toIntArray(), 0)
                 overlayTextTextureCache.clear()
             }
+            if (refImageTexId != 0) { GLES20.glDeleteTextures(1, intArrayOf(refImageTexId), 0); refImageTexId = 0; refImageBitmapRef = null }
+            refTextTextureCache?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
+            refTextTextureCache = null
+            refTextTextureKey = null
             if (glowFboA != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboA), 0); glowFboA = 0 }
             if (glowFboB != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboB), 0); glowFboB = 0 }
             if (glowTexA != 0) { GLES20.glDeleteTextures(1, intArrayOf(glowTexA), 0); glowTexA = 0 }
@@ -621,6 +654,14 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             drawRoundCappedLine(bgL, groundY, bgR, groundY, 1f, w, h, c[0], c[1], c[2], c[3])
         }
 
+        // Reference overlay (text phase, sub-phase 3 — V2_DECISIONS.md),
+        // behind case — matches RigRenderer.draw's own call site exactly:
+        // always drawn BEFORE the behindOverlays loop, not interleaved
+        // within it (see GlesFigureFrame.ReferenceOverlayDraw doc comment).
+        frame.referenceOverlayDraw?.let { ref ->
+            if (!ref.inFrontOfFigure) drawReferenceOverlayDraw(ref, frame.canvasW, frame.canvasH, w, h)
+        }
+
         // Behind-the-figure overlays — see GlesFigureFrame.OverlayDraw doc
         // comment for why this is one ordered loop over a mixed
         // shape/text list, not two separate ones. Shape glow (if any)
@@ -669,6 +710,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                     }
                 }
             }
+        }
+
+        // Reference overlay, front case — same reasoning as the behind
+        // case above, mirroring RigRenderer.draw's second call site.
+        frame.referenceOverlayDraw?.let { ref ->
+            if (ref.inFrontOfFigure) drawReferenceOverlayDraw(ref, frame.canvasW, frame.canvasH, w, h)
         }
 
         // Front-of-figure overlays — same ordered dispatch as behindOverlays.
@@ -1058,7 +1105,16 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     private fun drawTexturedQuad(
         texId: Int,
         x0: Float, y0: Float, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float,
-        alpha: Float, canvasW: Float, canvasH: Float
+        alpha: Float, canvasW: Float, canvasH: Float,
+        // Reference-overlay IMAGE crop (text phase, sub-phase 3 —
+        // V2_DECISIONS.md) is the only caller that overrides these — maps
+        // ReferenceOverlay.cropLeft/Top/Right/Bottom directly onto UV
+        // instead of cropping a sub-bitmap, so the source image only ever
+        // needs uploading once regardless of crop. Defaults give the
+        // original full-texture mapping every other caller (captions,
+        // overlay text) relies on.
+        u0: Float = 0f, v0: Float = 0f, u1: Float = 1f, v1: Float = 0f,
+        u2: Float = 1f, v2: Float = 1f, u3: Float = 0f, v3: Float = 1f
     ) {
         GLES20.glUseProgram(texProgram)
         val aPos   = GLES20.glGetAttribLocation(texProgram, "a_pos")
@@ -1072,8 +1128,8 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         val cx3 = toClipX(x3, canvasW); val cy3 = toClipY(y3, canvasH)
         // Same winding as drawCircle's own two-triangle split: (0,1,3) then (1,2,3).
         val data = floatArrayOf(
-            cx0, cy0, 0f, 0f,   cx1, cy1, 1f, 0f,   cx3, cy3, 0f, 1f,
-            cx1, cy1, 1f, 0f,   cx2, cy2, 1f, 1f,   cx3, cy3, 0f, 1f
+            cx0, cy0, u0, v0,   cx1, cy1, u1, v1,   cx3, cy3, u3, v3,
+            cx1, cy1, u1, v1,   cx2, cy2, u2, v2,   cx3, cy3, u3, v3
         )
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
@@ -1240,6 +1296,131 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             overlayTextTextureCache.remove(oldestKey)?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
         }
         overlayTextTextureCache[key] = result
+        return result
+    }
+
+    /**
+     * Dispatches one [GlesFigureFrame.ReferenceOverlayDraw] to the IMAGE or
+     * TEXT sub-case, mirroring [RigRenderer.drawReferenceOverlay] exactly.
+     * Called at the two fixed points in [drawFigureFrame] matching that
+     * function's own two call sites — see [GlesFigureFrame.ReferenceOverlayDraw]'s
+     * doc comment for why this is a fixed position, not an [OverlayDraw]-style
+     * ordered dispatch.
+     */
+    private fun drawReferenceOverlayDraw(draw: GlesFigureFrame.ReferenceOverlayDraw, canvasW: Int, canvasH: Int, w: Float, h: Float) {
+        when (draw.type) {
+            ReferenceOverlay.OverlayType.IMAGE -> {
+                val bitmap = draw.bitmap ?: return
+                val texId = ensureRefImageTexture(bitmap)
+                val cropL = draw.cropLeft.coerceIn(0f, 1f)
+                val cropT = draw.cropTop.coerceIn(0f, 1f)
+                val cropR = draw.cropRight.coerceIn(0f, 1f).coerceAtLeast(cropL + 0.001f)
+                val cropB = draw.cropBottom.coerceIn(0f, 1f).coerceAtLeast(cropT + 0.001f)
+                // Aspect from actual CROPPED PIXEL dimensions (fraction *
+                // bitmap dimension), matching RigRenderer.drawReferenceOverlay's
+                // own (cropR_px - cropL_px)/(cropB_px - cropT_px) exactly —
+                // NOT the raw fraction difference alone, which would be wrong
+                // for any non-square source bitmap.
+                val cropPxW = (cropR - cropL) * bitmap.width
+                val cropPxH = (cropB - cropT) * bitmap.height
+                val aspect = cropPxW / cropPxH.coerceAtLeast(0.001f)
+                val dw = if (aspect >= 1f) draw.sizePx else draw.sizePx * aspect
+                val dh = if (aspect >= 1f) draw.sizePx / aspect else draw.sizePx
+                val l = draw.originX - dw / 2f; val r = draw.originX + dw / 2f
+                val t = draw.originY - dh / 2f; val b = draw.originY + dh / 2f
+                drawTexturedQuad(
+                    texId,
+                    l, t,   r, t,   r, b,   l, b,
+                    1f, w, h,
+                    // UV mapped directly to the crop fractions — the whole
+                    // source bitmap is uploaded once (see ensureRefImageTexture),
+                    // cropping is purely a UV-range choice, never a re-upload.
+                    cropL, cropT,   cropR, cropT,   cropR, cropB,   cropL, cropB
+                )
+            }
+            ReferenceOverlay.OverlayType.TEXT -> {
+                val text = draw.text
+                if (text.isNullOrBlank()) return
+                val tex = ensureRefTextTexture(text, draw.textColorArgb, draw.showBackdrop, draw.sizePx, canvasW, canvasH)
+                val l = draw.originX - tex.halfW; val r = draw.originX + tex.halfW
+                val t = draw.originY - tex.halfH; val b = draw.originY + tex.halfH
+                drawTexturedQuad(tex.texId, l, t, r, t, r, b, l, b, 1f, w, h)
+            }
+        }
+    }
+
+    /**
+     * Uploads [bitmap] as a texture, re-using the existing one if it's the
+     * SAME [Bitmap] instance as last frame (identity, not content, equality
+     * — see [refImageBitmapRef]'s doc comment) rather than re-uploading a
+     * static image every single frame of an export.
+     */
+    private fun ensureRefImageTexture(bitmap: Bitmap): Int {
+        if (refImageBitmapRef === bitmap && refImageTexId != 0) return refImageTexId
+        if (refImageTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(refImageTexId), 0)
+
+        val texArr = IntArray(1)
+        GLES20.glGenTextures(1, texArr, 0)
+        refImageTexId = texArr[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, refImageTexId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+        refImageBitmapRef = bitmap
+        return refImageTexId
+    }
+
+    /**
+     * Returns the cached [ReferenceTextTexture] for this exact style, or
+     * rasterizes+uploads a new one on a cache miss (single-slot — see
+     * [refTextTextureCache]'s doc comment). Mirrors
+     * [RigRenderer.drawReferenceOverlay]'s TEXT case: `textSize = sizePx *
+     * 0.3f`, `maxWidth = minDim(canvas) * 0.6f`, centered [StaticLayout],
+     * optional backdrop rect.
+     */
+    private fun ensureRefTextTexture(text: String, textColorArgb: Int, showBackdrop: Boolean, sizePx: Float, canvasW: Int, canvasH: Int): ReferenceTextTexture {
+        val key = "$text|$textColorArgb|$showBackdrop|$sizePx|$canvasW|$canvasH"
+        if (refTextTextureKey == key) refTextTextureCache?.let { return it }
+
+        val minDim = minOf(canvasW, canvasH).toFloat()
+        refTextPaint.color = textColorArgb
+        refTextPaint.textSize = sizePx * 0.3f
+        val maxWidth = (minDim * 0.6f).toInt().coerceAtLeast(1)
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, refTextPaint, maxWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .build()
+
+        val pad = if (showBackdrop) sizePx * 0.08f else 0f
+        val texW = (maxWidth + pad * 2f).toInt().coerceAtLeast(1)
+        val texH = (layout.height + pad * 2f).toInt().coerceAtLeast(1)
+        val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
+        val bmpCanvas = Canvas(bmp)
+        if (showBackdrop) {
+            bmpCanvas.drawRoundRect(0f, 0f, texW.toFloat(), texH.toFloat(), pad, pad, refBgPaint)
+        }
+        bmpCanvas.save()
+        bmpCanvas.translate(pad, pad)
+        layout.draw(bmpCanvas)
+        bmpCanvas.restore()
+
+        val texArr = IntArray(1)
+        GLES20.glGenTextures(1, texArr, 0)
+        val texId = texArr[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+        bmp.recycle()
+
+        refTextTextureCache?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
+        val result = ReferenceTextTexture(texId, texW / 2f, texH / 2f)
+        refTextTextureCache = result
+        refTextTextureKey = key
         return result
     }
 

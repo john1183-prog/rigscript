@@ -1,5 +1,8 @@
 package com.example.engine
 
+import android.graphics.Bitmap
+import com.example.data.ReferenceOverlay
+
 /**
  * Resolved per-frame figure geometry and style, ready to hand to
  * [GlesFrameRenderer.drawFigureFrame].
@@ -117,8 +120,48 @@ data class GlesFigureFrame(
      * NOT camera-transformed, matching [RigRenderer.drawCaption]'s own
      * "after canvas.restore()" placement.
      */
-    val captionText: String?
+    val captionText: String?,
+
+    /**
+     * Reference overlay (text phase, sub-phase 3 — V2_DECISIONS.md), or
+     * null if none is configured or not visible at this frame's timeSec
+     * (per [ReferenceOverlay.isVisibleAt], called directly rather than
+     * reimplemented). UNLIKE [OverlayDraw]'s shape/text list, this is a
+     * single global per-project entity, not a time-windowed script layer
+     * — so there's no "original list order" to preserve. [GlesFrameRenderer]
+     * draws it at the exact same fixed point [RigRenderer.draw]'s own two
+     * call sites do: always the FIRST thing in its behind/front group,
+     * immediately before that group's ordinary overlay list, never
+     * interleaved within it.
+     */
+    val referenceOverlayDraw: ReferenceOverlayDraw?
 ) {
+    /**
+     * See [referenceOverlayDraw]'s own doc comment. [originX]/[originY]/
+     * [sizePx] are already camera-transformed by the time
+     * [GlesFrameRenderer] sees them (via [transformReferenceOverlayDraw])
+     * — there's no rotation to worry about passing through unchanged,
+     * unlike [OverlayTextDraw]'s `rotationDeg`, since
+     * [com.example.data.ReferenceOverlay] has no rotation field at all.
+     * [bitmap] is a genuine, if narrow, exception to this class's
+     * "zero Android Bitmap/Canvas dependency" rule — carried through as a
+     * plain reference, never touched (measured/drawn/rasterized) here,
+     * only by [GlesFrameRenderer]; holding a reference is a much lesser
+     * dependency than the active rasterization [captionText]/
+     * [OverlayTextDraw] avoid needing in this class.
+     */
+    data class ReferenceOverlayDraw(
+        val type: String,           // ReferenceOverlay.OverlayType.IMAGE or TEXT
+        val bitmap: Bitmap?,        // IMAGE only
+        val cropLeft: Float, val cropTop: Float, val cropRight: Float, val cropBottom: Float,
+        val text: String?,          // TEXT only
+        val textColorArgb: Int,
+        val showBackdrop: Boolean,
+        val originX: Float, val originY: Float,
+        val sizePx: Float,
+        val inFrontOfFigure: Boolean
+    )
+
     sealed class DrawCommand {
         data class BoneLine(
             val sx: Float, val sy: Float, val ex: Float, val ey: Float,
@@ -336,7 +379,10 @@ data class GlesFigureFrame(
             cameraShakeIntensity: Float = 0f,
             overlays: List<TimeResolvedOverlay> = emptyList(),
             // Text phase (V2_DECISIONS.md) — see the class-level field's own doc comment.
-            captionText: String? = null
+            captionText: String? = null,
+            // Text phase, sub-phase 3 (V2_DECISIONS.md) — see ReferenceOverlayDraw's own doc comment.
+            referenceOverlay: ReferenceOverlay? = null,
+            referenceOverlayBitmap: Bitmap? = null
         ): GlesFigureFrame {
             val rig    = StickFigureRig
             val bones  = rig.BONES
@@ -506,6 +552,9 @@ data class GlesFigureFrame(
                 }
             }
 
+            val referenceOverlayDraw = buildReferenceOverlayDraw(referenceOverlay, referenceOverlayBitmap, canvasW, canvasH, timeSec)
+                ?.let { transformReferenceOverlayDraw(it, camera) }
+
             return GlesFigureFrame(
                 canvasW                 = canvasW,
                 canvasH                 = canvasH,
@@ -534,7 +583,8 @@ data class GlesFigureFrame(
                 // NOT camera-transformed — screen-space atmosphere, unchanged
                 // from before this phase. See class doc comment.
                 atmosphereCommands      = atmosphereCommands,
-                captionText             = captionText
+                captionText             = captionText,
+                referenceOverlayDraw    = referenceOverlayDraw
             )
         }
 
@@ -608,6 +658,13 @@ data class GlesFigureFrame(
         }
 
         /**
+         * Same reasoning as [transformOverlayTextDraw] — no rotation to pass
+         * through, since [ReferenceOverlay] has no rotation field.
+         */
+        private fun transformReferenceOverlayDraw(draw: ReferenceOverlayDraw, cam: RigRenderer.CameraTransform): ReferenceOverlayDraw =
+            draw.copy(originX = cam.tx(draw.originX), originY = cam.ty(draw.originY), sizePx = cam.tLen(draw.sizePx))
+
+        /**
          * Same reasoning as [transformOverlayShapeDraw] — [originX]/[originY]
          * and [OverlayTextDraw.scale] get the camera transform;
          * [OverlayTextDraw.rotationDeg] passes through unchanged (camera
@@ -634,6 +691,37 @@ data class GlesFigureFrame(
                 }
             }
             return overlay.copy(commands = transformed, glowRadiusPx = cam.tLen(overlay.glowRadiusPx))
+        }
+
+        /**
+         * Builds one [ReferenceOverlayDraw], or null if [overlay] is null,
+         * not visible at [timeSec] (delegates straight to
+         * [ReferenceOverlay.isVisibleAt] — reused, not reimplemented), or
+         * (IMAGE case) has no [bitmap] to draw. `originX`/`originY`/`sizePx`
+         * are pre-camera "world" values here (`canvasW * overlay.posX` etc,
+         * matching [RigRenderer.drawReferenceOverlay]'s own `cx`/`cy`/`sizePx`
+         * exactly) — [transformReferenceOverlayDraw] applies camera after.
+         */
+        private fun buildReferenceOverlayDraw(
+            overlay: ReferenceOverlay?, bitmap: Bitmap?, canvasW: Int, canvasH: Int, timeSec: Float
+        ): ReferenceOverlayDraw? {
+            if (overlay == null || !overlay.isVisibleAt(timeSec)) return null
+            if (overlay.type == ReferenceOverlay.OverlayType.IMAGE && bitmap == null) return null
+
+            val minDim = minOf(canvasW, canvasH).toFloat()
+            return ReferenceOverlayDraw(
+                type = overlay.type,
+                bitmap = bitmap,
+                cropLeft = overlay.cropLeft, cropTop = overlay.cropTop,
+                cropRight = overlay.cropRight, cropBottom = overlay.cropBottom,
+                text = overlay.text,
+                textColorArgb = overlay.textColor.toInt(),
+                showBackdrop = overlay.showBackdrop,
+                originX = canvasW * overlay.posX,
+                originY = canvasH * overlay.posY,
+                sizePx = minDim * overlay.sizeFraction,
+                inFrontOfFigure = overlay.inFrontOfFigure
+            )
         }
 
         /** Dispatches to [buildOverlayShapeDraw] or [buildOverlayTextDraw] by [ResolvedOverlay.type] — see [OverlayDraw] doc comment for why this is one list, not two. */

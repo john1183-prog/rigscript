@@ -1557,8 +1557,57 @@ approved by the person before implementing:**
     script change accompanies this commit for that reason.
   - Not verified against a compiler or device from this environment. This
     completes the planned scope of the text phase (captions, overlay
-    text, reference overlay); next per the original roadmap is a real
-    multi-minute stress test and the fallback path, not yet started.
+    text, reference overlay).
+- **GLES export rewrite — error-hardening pass on `exportGlesSmokeTest`**:
+  the next roadmap item after the text phase was originally framed as
+  "build the fallback path." Investigated first rather than building
+  blind: real `export()` still doesn't call GLES at all (only the smoke
+  test does), so there's no actual integration point for a fallback to
+  protect yet — building one in isolation would mean designing against a
+  target that doesn't exist. Did the narrower, genuinely useful thing
+  instead: hardened what's actually there today.
+  - **Found `release()`/the smoke test's cleanup were already solid**,
+    contrary to what I'd assumed going in — `glesRenderer.release()` runs
+    from a real `finally` block wrapping the whole export attempt, and
+    `release()` itself already guards every EGL/GL teardown step against
+    partial-init state (`if (x != EGL_NO_Y)` throughout). Worth recording
+    as a positive finding, not just building on top of an assumed gap
+    that turned out not to be there.
+  - **Named every one of the six shader programs** (`buildProgram`/
+    `compileShader` now take a `name` param) — a link/compile failure's
+    message now says WHICH of the six failed, not just a generic
+    "Program link failed: <GLSL log>" indistinguishable from the other
+    five.
+  - **`buildProgram`/`compileShader` now clean up their own partially-
+    created GL objects on failure** (orphaned shader objects on a compile
+    failure; the failed program plus both shaders on a link failure) —
+    not fixing a real leak (`release()`'s eventual `eglDestroyContext`/
+    `eglTerminate` frees everything in the context regardless), but not
+    leaving orphaned objects sitting around for however long a caller
+    takes to notice and tear the context down either.
+  - **Logs GL_RENDERER/GL_VENDOR/GL_VERSION on every successful `init()`**
+    — genuinely new capability, not just hardening: this tool's whole
+    purpose is catching device-specific GLES issues, and there was
+    previously no record of which GPU/driver a successful run even used,
+    only ever logged reactively after something already went wrong.
+  - **Caught and fixed my own mistake before it became a repeat of this
+    session's earlier companion-object bug**: my first draft added a
+    SECOND `private companion object` block to hold the new `TAG`
+    constant, not noticing the file already had one — two companion
+    objects in one class doesn't compile. Caught during my own review
+    before commit, merged `TAG` into the existing one instead.
+  - **Fixed a stale doc comment surfaced by this exact investigation**:
+    `init()`'s own doc comment said a caller "falls back to the software
+    path" on failure — true of the ORIGINAL plan, not of what
+    `exportGlesSmokeTest` (the only current caller) actually does today,
+    which this pass's own research confirmed directly. Corrected to
+    describe current behavior rather than read as an already-honored
+    contract.
+  - Not verified against a compiler or device from this environment. The
+    actual fallback path remains not started, correctly — it needs a real
+    integration point (GLES wired into `export()`) that doesn't exist
+    yet. Next per the original roadmap is a real multi-minute stress test
+    (needs the user's device, not code) before that wiring makes sense.
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

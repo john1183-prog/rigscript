@@ -17,6 +17,7 @@ import android.opengl.GLUtils
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.util.Log
 import android.view.Surface
 import com.example.data.ReferenceOverlay
 import kotlinx.coroutines.CoroutineDispatcher
@@ -212,6 +213,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     private var glowFboH = 0
 
     private companion object {
+        // Matches VideoExporter's own TAG convention — separate constant
+        // (not shared/imported) since these are logically distinct log
+        // sources even though this file's failures are usually surfaced
+        // through a VideoExporter caller. Used by init()'s GPU/driver
+        // logging — error-hardening pass, V2_DECISIONS.md.
+        const val TAG = "GlesFrameRenderer"
 
         // Round-capped line via a signed-distance field against the segment [0,1] on u.
         // a_uv: u = position along axis normalised by segment length (0=start, 1=end,
@@ -415,9 +422,19 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     // ── EGL init / release ────────────────────────────────────────────────────
 
     /**
-     * Performs all EGL setup on [dispatcher]. Throws on any failure — the
-     * caller is responsible for treating this as "GLES unavailable for this
-     * export" and falling back to the software path.
+     * Performs all EGL setup on [dispatcher]. Throws on any failure, with a
+     * message identifying which step failed — see the naming comment right
+     * before the six `buildProgram` calls below for why shader/program
+     * failures specifically say which of the six.
+     *
+     * NOT YET what a caller actually does with that failure, as of the
+     * error-hardening pass (V2_DECISIONS.md): the only caller today
+     * (`exportGlesSmokeTest`) just surfaces it as `Result.failure` — there
+     * is no fallback to the Canvas path anywhere yet. "The caller falls
+     * back to software rendering" describes the eventual intent once GLES
+     * is wired into real export, not current behavior — worth being
+     * explicit about rather than leaving this comment read as a standing
+     * contract that's already honored.
      */
     suspend fun init() = withContext(dispatcher) {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
@@ -460,37 +477,72 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
 
-        lineCapProgram = buildProgram(LINE_VERT, LINE_FRAG)
-        circleProgram  = buildProgram(CIRCLE_VERT, CIRCLE_FRAG)
-        ovalProgram    = buildProgram(OVAL_VERT, OVAL_FRAG)
-        solidProgram   = buildProgram(SOLID_VERT, SOLID_FRAG)
-        blurProgram    = buildProgram(BLUR_VERT, BLUR_FRAG)
-        texProgram     = buildProgram(TEX_VERT, TEX_FRAG)
+        // Named per program (error-hardening pass — V2_DECISIONS.md): a
+        // link/compile failure's error message now says WHICH of these six
+        // failed, not just "Program link failed: <GLSL log>" with no
+        // indication of which shader source that log even belongs to —
+        // six near-identical failure messages were indistinguishable
+        // before this.
+        lineCapProgram = buildProgram(LINE_VERT, LINE_FRAG, "lineCapProgram")
+        circleProgram  = buildProgram(CIRCLE_VERT, CIRCLE_FRAG, "circleProgram")
+        ovalProgram    = buildProgram(OVAL_VERT, OVAL_FRAG, "ovalProgram")
+        solidProgram   = buildProgram(SOLID_VERT, SOLID_FRAG, "solidProgram")
+        blurProgram    = buildProgram(BLUR_VERT, BLUR_FRAG, "blurProgram")
+        texProgram     = buildProgram(TEX_VERT, TEX_FRAG, "texProgram")
+
+        // Error-hardening pass (V2_DECISIONS.md) — this diagnostic's whole
+        // purpose is catching device-specific GLES issues, so the
+        // GPU/driver identity is worth having on record even for a
+        // SUCCESSFUL init, not just logged reactively after something
+        // already went wrong. Cheap (three string reads), done once.
+        Log.i(TAG, "GLES init OK — renderer=${GLES20.glGetString(GLES20.GL_RENDERER)}, " +
+            "vendor=${GLES20.glGetString(GLES20.GL_VENDOR)}, version=${GLES20.glGetString(GLES20.GL_VERSION)}")
 
         ownerThread = Thread.currentThread()   // this block runs on dispatcher — see ownerThread's doc comment
         initialized = true
     }
 
-    private fun buildProgram(vertSrc: String, fragSrc: String): Int {
-        val vert = compileShader(GLES20.GL_VERTEX_SHADER, vertSrc)
-        val frag = compileShader(GLES20.GL_FRAGMENT_SHADER, fragSrc)
+    /**
+     * Compiles+links one program, or throws with [name] in the message on
+     * either a compile or link failure — see the naming comment right
+     * before [init]'s six `buildProgram` calls for why that matters now
+     * that there are six near-identical shader pairs.
+     * Cleans up its OWN partially-created GL objects on failure
+     * ([compileShader]'s shader object; this function's own [prog] if
+     * linking fails after both shaders compiled) — [release]'s eventual
+     * `eglDestroyContext`/`eglTerminate` would free these anyway as part of
+     * tearing down the whole context, so this isn't fixing a real leak so
+     * much as not leaving orphaned objects sitting around for however long
+     * a caller takes to notice [init] failed and tear the context down.
+     */
+    private fun buildProgram(vertSrc: String, fragSrc: String, name: String): Int {
+        val vert = compileShader(GLES20.GL_VERTEX_SHADER, vertSrc, "$name (vertex)")
+        val frag = compileShader(GLES20.GL_FRAGMENT_SHADER, fragSrc, "$name (fragment)")
         val prog = GLES20.glCreateProgram()
         GLES20.glAttachShader(prog, vert); GLES20.glAttachShader(prog, frag)
         GLES20.glLinkProgram(prog)
         val status = IntArray(1)
         GLES20.glGetProgramiv(prog, GLES20.GL_LINK_STATUS, status, 0)
-        check(status[0] == GLES20.GL_TRUE) { "Program link failed: ${GLES20.glGetProgramInfoLog(prog)}" }
+        if (status[0] != GLES20.GL_TRUE) {
+            val log = GLES20.glGetProgramInfoLog(prog)
+            GLES20.glDeleteShader(vert); GLES20.glDeleteShader(frag); GLES20.glDeleteProgram(prog)
+            error("Program link failed [$name]: $log")
+        }
         GLES20.glDeleteShader(vert); GLES20.glDeleteShader(frag)
         return prog
     }
 
-    private fun compileShader(type: Int, src: String): Int {
+    private fun compileShader(type: Int, src: String, name: String): Int {
         val sh = GLES20.glCreateShader(type)
         GLES20.glShaderSource(sh, src.trimIndent())
         GLES20.glCompileShader(sh)
         val status = IntArray(1)
         GLES20.glGetShaderiv(sh, GLES20.GL_COMPILE_STATUS, status, 0)
-        check(status[0] == GLES20.GL_TRUE) { "Shader compile failed (type=$type): ${GLES20.glGetShaderInfoLog(sh)}" }
+        if (status[0] != GLES20.GL_TRUE) {
+            val log = GLES20.glGetShaderInfoLog(sh)
+            GLES20.glDeleteShader(sh)
+            error("Shader compile failed [$name]: $log")
+        }
         return sh
     }
 

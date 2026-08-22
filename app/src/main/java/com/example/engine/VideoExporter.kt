@@ -482,7 +482,11 @@ object VideoExporter {
         project: ProjectDef,
         keyframes: List<BakedKeyframe>,
         amplitudeSettings: com.example.data.AmplitudeSettings = com.example.data.AmplitudeSettings(),
-        durationSec: Float = 3f
+        durationSec: Float = 3f,
+        // Stress-test support (V2_DECISIONS.md — "GLES export rewrite —
+        // stress test"). Optional and defaulted to null so this stays a
+        // no-op for the plain ~3s quick-check path.
+        onProgress: ((progress: Float, etaSec: Float?) -> Unit)? = null
     ): Result<ExportResult> = withContext(Dispatchers.Default) {
         runCatching {
             val settings   = project.exportSettings
@@ -532,6 +536,7 @@ object VideoExporter {
             }
 
             val totalFrames = (durationSec * fps).toInt().coerceAtLeast(1)
+            val exportStartMs = System.currentTimeMillis()
             // Reused every frame, filled in place by computeFkMatrices — same
             // "pre-allocate once" convention RigRenderer's own instance field
             // follows, so this loop doesn't allocate 10 Matrix objects/frame.
@@ -673,10 +678,15 @@ object VideoExporter {
                         val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
                         glesRenderer.drawFigureFrame(glesFrame, presentationTimeNs)
                         drain(untilEos = false)
+                        // No audio mux step in this function (unlike
+                        // export()'s 0.90f-then-writeAudio split) — video
+                        // only, so progress can go straight to 1.0.
+                        onProgress?.invoke(frameIdx.toFloat() / totalFrames, computeEtaSec(frameIdx + 1, totalFrames, exportStartMs))
                     }
                 }
                 encoder.signalEndOfInputStream()
                 drain(untilEos = true)
+                onProgress?.invoke(1f, 0f)
 
                 encoder.stop(); encoder.release(); encoderReleased = true
                 if (muxerStarted) { muxer.stop(); muxer.release(); muxerReleased = true }

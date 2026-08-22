@@ -880,9 +880,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * export pipeline. Remove this and its UI trigger once a later phase
      * makes GLES the real export path.
      *
-     * No thermal watcher here (unlike [exportVideo]/[exportPreview]) — a
-     * few seconds of encoding isn't a thermal-risk workload, so adding one
-     * would just be noise.
+     * Now includes the same [watchThermalStatus] [exportVideo]/[exportPreview]
+     * use, plus progress/ETA reporting and a wake-lock ceiling that scales
+     * with the requested duration instead of a flat constant — needed once
+     * this could run for a real stress test, not just a few seconds.
+     *
+     * TEMPORARY, one-off override below (V2_DECISIONS.md — "GLES export
+     * rewrite — stress test"): `durationSec` is currently hardcoded to the
+     * project's real full length instead of left at [VideoExporter]'s 3s
+     * default, so this one run is a genuine unattended stress test. Revert
+     * that override (stop passing `durationSec` at all) once the run is
+     * confirmed and logged — the fast ~3s quick-check is this button's
+     * normal job.
      */
     fun exportGlesSmokeTest(context: Context) {
         if (exportJob != null) return   // a preview or a real export is already running
@@ -890,21 +899,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:GlesSmokeTest")
         exportJob = viewModelScope.launch {
-            wakeLock.acquire(2 * 60 * 1000L)   // 2 min ceiling — a few seconds of encoding should never remotely take this long
+            val compiled = compileTimeline(project.script)
+            // TEMPORARY override — see doc comment above. Same formula
+            // export() itself uses for its own totalSec, so this is
+            // stress-testing the project's actual real length, not a
+            // guess.
+            val scriptEnd = compiled.lastOrNull()?.let { it.timeSec + it.duration } ?: 0f
+            val stressDurationSec = maxOf(scriptEnd, project.audioDurationSec) + 1f
+
+            // Floor matches the original flat 2-min ceiling (so this is a
+            // no-op change for any future plain ~3s call); cap matches
+            // exportVideo's own 3hr ceiling; 1.5x leaves slack over a naive
+            // 1:1 time estimate without holding the lock needlessly long.
+            val wakeLockCeilingMs = (stressDurationSec * 1.5f * 1000L).toLong()
+                .coerceIn(2 * 60 * 1000L, 3 * 60 * 60 * 1000L)
+            wakeLock.acquire(wakeLockCeilingMs)
+            val thermalWatcher = watchThermalStatus(pm)
             _exportProgress.value = 0f
             _exportEtaSec.value   = null
             _exportedFile.value   = emptyList()
             try {
-                val compiled = compileTimeline(project.script)
                 val result = VideoExporter.exportGlesSmokeTest(
                     context           = context,
                     project           = project,
                     keyframes         = compiled,
-                    amplitudeSettings = _amplitudeSettings.value
+                    amplitudeSettings = _amplitudeSettings.value,
+                    durationSec       = stressDurationSec,
+                    onProgress        = { progress, eta ->
+                        _exportProgress.value = progress
+                        _exportEtaSec.value   = eta
+                    }
                 )
                 result.onSuccess {
                     _exportedFile.value = listOf(it)
-                    _message.emit("GLES figure test complete: ${it.location}")
+                    _message.emit("GLES figure test complete (${"%.0f".format(stressDurationSec)}s): ${it.location}")
                 }.onFailure { e ->
                     _message.emit("GLES figure test failed (this is diagnostic info, not a real export problem): ${e.message}")
                 }
@@ -912,6 +940,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _message.emit("GLES figure test cancelled")
                 throw e
             } finally {
+                thermalWatcher?.cancel()
                 _exportProgress.value = null
                 _exportEtaSec.value   = null
                 exportJob = null

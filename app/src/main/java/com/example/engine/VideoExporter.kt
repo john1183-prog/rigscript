@@ -24,9 +24,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import java.io.File
 import java.nio.ByteBuffer
 
@@ -550,9 +547,9 @@ object VideoExporter {
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
                 // Explicit, not left to the driver default — see
                 // V2_DECISIONS.md's color-equivalence note. BT.601 matches
-                // the coefficients argbToNV12Chunk uses on the software
-                // path, so a real GLES export should look the same, not
-                // shifted in tint/contrast.
+                // the coefficients argbToNV12 uses on the software path,
+                // so a real GLES export should look the same, not shifted
+                // in tint/contrast.
                 setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT601_PAL)
                 setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
             }
@@ -818,56 +815,25 @@ object VideoExporter {
     }
 
     /**
-     * Converts [pixels] (ARGB, [w]x[h]) into NV12 in [out]. This is the #1
-     * export bottleneck (confirmed via code review — a single-threaded
-     * 1080p frame here previously cost 20-50ms, the majority of total
-     * per-frame export time). Parallelized across row-aligned chunks on
-     * [Dispatchers.Default]; safe because this function is only ever called
-     * from inside `export()`'s own `withContext(Dispatchers.Default)` block,
-     * and each chunk writes to a disjoint region of [out] that it computes
-     * independently (no shared running offset across chunks).
+     * Converts [pixels] (ARGB, [w]x[h]) into NV12 in [out]. Single
+     * synchronous loop — deliberately NOT parallelized across coroutines.
      *
-     * Chunk boundaries are kept even (2-row-aligned) since the U/V plane is
-     * subsampled 2x2 — a chunk starting on an odd row would split a
-     * chroma-sample pair across two coroutines.
+     * A prior version split this into 4 row-chunks dispatched via
+     * `async(Dispatchers.Default)`, reasoning this was the #1 export
+     * bottleneck and could be sped up by parallelizing it. In practice it
+     * was a regression: this is memory-bound work sharing one mobile
+     * memory bus, which doesn't parallelize the way CPU-bound work does,
+     * plus real coroutine dispatch/scheduling overhead on top of that.
+     * Measured real-world effect: 30-60 minutes for an 8-minute video,
+     * with device heating/freezing reported. Reverted to this simple loop,
+     * matching the code at commit dc1c11d (V2_DECISIONS.md — "argbToNV12
+     * performance regression").
      */
-    private suspend fun argbToNV12(pixels: IntArray, w: Int, h: Int, out: ByteArray) {
-        val chunkCount = 4
-        // Even-row-aligned chunk boundaries so no chunk splits a 2x2 chroma block.
-        val rawChunk = (h / chunkCount).coerceAtLeast(1)
-        val chunkRows = if (rawChunk % 2 == 0) rawChunk else rawChunk + 1
-        val ySize = w * h
-
-        coroutineScope {
-            val jobs = mutableListOf<kotlinx.coroutines.Deferred<Unit>>()
-            var startRow = 0
-            while (startRow < h) {
-                val endRow = (startRow + chunkRows).coerceAtMost(h) // exclusive
-                jobs += async(Dispatchers.Default) {
-                    argbToNV12Chunk(pixels, w, startRow, endRow, ySize, out)
-                }
-                startRow = endRow
-            }
-            jobs.awaitAll()
-        }
-    }
-
-    /**
-     * Converts rows [[startRow], [endRow]) of [pixels] into [out]. Computes
-     * its own Y/UV offsets from ([startRow], [w]) directly rather than
-     * incrementing a counter shared with other chunks, so concurrent chunks
-     * never race on the same index.
-     */
-    private fun argbToNV12Chunk(
-        pixels: IntArray, w: Int,
-        startRow: Int, endRow: Int, ySize: Int, out: ByteArray
-    ) {
-        for (row in startRow until endRow) {
+    private fun argbToNV12(pixels: IntArray, w: Int, h: Int, out: ByteArray) {
+        var yOff  = 0
+        var uvOff = w * h
+        for (row in 0 until h) {
             val rowBase = row * w
-            var yOff = rowBase
-            // UV plane: 2 bytes (U,V) per 2x2 luma block. Row pairs (0,1),
-            // (2,3)... share one chroma row, w bytes wide (w/2 samples * 2).
-            var uvOff = ySize + (row / 2) * w
             for (col in 0 until w) {
                 val p = pixels[rowBase + col]
                 val r = (p shr 16) and 0xFF

@@ -1,6 +1,7 @@
 package com.example.engine
 
 import android.graphics.Bitmap
+import android.util.Log
 import com.example.data.ReferenceOverlay
 
 /**
@@ -342,6 +343,19 @@ data class GlesFigureFrame(
     }
 
     companion object {
+        // TEMPORARY — GLES Phase 3 mouth-position bug (V2_DECISIONS.md).
+        // Static analysis of computeMouthGeometry, the FK matrix sourcing,
+        // toClipY, drawOval/drawCircle, and the oval fragment shader found
+        // no structural asymmetry between the (working) head circle and
+        // the (broken) mouth oval — same shared geometry function, same
+        // clip-space conversion, same vertex/shader pipeline for both.
+        // Rather than guess a sign flip blindly (the exact risk this was
+        // deferred to avoid), logging the actual resolved values once so
+        // the next device run gives real numbers instead of another
+        // guess. Remove this flag + the Log.i call below once the bug's
+        // resolved.
+        private var loggedMouthDiagnostic = false
+
         /**
          * Builds a [GlesFigureFrame] from the already-computed [matrices] array
          * (one [android.graphics.Matrix] per bone, in [StickFigureRig.BONES]
@@ -450,6 +464,46 @@ data class GlesFigureFrame(
                             endX, endY, startX, startY, r,
                             mouthShape, mouthOpenness, expression, headScaleMultiplier
                         )
+                        if (!loggedMouthDiagnostic) {
+                            loggedMouthDiagnostic = true
+                            // Extensive static re-check (V2_DECISIONS.md — "GLES
+                            // Phase 3 mouth y-offset direction") found computeMouthGeometry,
+                            // computeFkMatrices, rootX/Y/scale, drawOval, and the
+                            // oval SDF shader all genuinely identical/shared between
+                            // Canvas and GLES for the mouth. No asymmetric bug found
+                            // by reading alone. Added this log instead of guessing a
+                            // fix blind: diagClipY duplicates GlesFrameRenderer.toClipY (no GL context in this class
+                            // to call the real one — keep numerically identical to
+                            // it or this log is misleading) so the actual clip-space
+                            // ordering is visible directly, and logs an eye's
+                            // clipY on the same line for a same-frame comparison —
+                            // eyes are the one other head feature reported working,
+                            // so if the eye's clipY looks equally "off" once this is
+                            // read against what's seen on-device, the bug isn't
+                            // clip-space at all and is further downstream than this
+                            // function.
+                            fun diagClipY(py: Float) = 1f - (py / canvasH) * 2f
+                            val eyeForDiag = RigRenderer.computeEyeGeometry(
+                                endX, endY, startX, startY, r,
+                                eyeOpenness, expression, headScaleMultiplier, appearance
+                            )
+                            Log.i(
+                                "GlesFigureFrame",
+                                "MOUTH DIAGNOSTIC — head tip(hx=$endX,hy=$endY,clipY=${diagClipY(endY)}) " +
+                                    "neck(nx=$startX,ny=$startY,clipY=${diagClipY(startY)}) r=$r " +
+                                    "mouth center(cx=${g.cx},cy=${g.cy},clipY=${diagClipY(g.cy)}) " +
+                                    "eye center, same frame, for comparison(cx=${eyeForDiag.left.cx},cy=${eyeForDiag.left.cy},clipY=${diagClipY(eyeForDiag.left.cy)}) " +
+                                    "halfW=${g.halfWidth} halfH=${g.halfHeight} " +
+                                    "canvasW=$canvasW canvasH=$canvasH — " +
+                                    "expect: head clipY is the LARGEST of the three (toClipY " +
+                                    "decreases as py increases), neck clipY the SMALLEST, mouth " +
+                                    "clipY between them, closer to head's. If mouth clipY instead " +
+                                    "falls outside [neck,head] or below neck's, that confirms a " +
+                                    "clip-space bug here. If it looks correct here but still wrong " +
+                                    "on-screen, the bug is downstream of this log (SDF shader or " +
+                                    "the actual draw call), not the position math."
+                            )
+                        }
                         commands += DrawCommand.Oval(g.cx, g.cy, g.halfWidth, g.halfHeight, mouthColor)
                     }
                     if (appearance.showEyes) {

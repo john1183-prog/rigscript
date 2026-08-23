@@ -236,6 +236,23 @@ fun EditorScreen(
         else glesTestStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
+    // Stress-test mode of the same diagnostic — a separate button rather
+    // than a gesture (long-press etc.) on the one above, deliberately:
+    // this environment can't visually verify Compose gesture-detection
+    // code before it ships, and a stray long-press accidentally firing a
+    // multi-minute run mid-iteration would be a real annoyance, not just
+    // a cosmetic risk. Two unambiguous buttons instead.
+    val glesStressTestStoragePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) vm.exportGlesSmokeTest(context, stressTest = true)
+        else scope.launch { snackState.showSnackbar("Storage permission is needed to save the test clip") }
+    }
+    fun triggerGlesStressTest() {
+        if (Build.VERSION.SDK_INT >= 29) vm.exportGlesSmokeTest(context, stressTest = true)
+        else glesStressTestStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
+
     fun openExport(uri: Uri) {
         runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW).apply {
@@ -575,6 +592,7 @@ fun EditorScreen(
                     onExport     = { triggerExport() },
                     onExportPreview = { triggerExportPreview() },
                     onGlesSmokeTest = { triggerGlesSmokeTest() },
+                    onGlesStressTest = { triggerGlesStressTest() },
                     onOpen       = { openExport(it) },
                     onShare      = { shareExport(it) },
                     modifier     = Modifier.fillMaxSize()
@@ -1158,6 +1176,7 @@ private fun ExportPanel(
     onExport: () -> Unit,
     onExportPreview: () -> Unit,
     onGlesSmokeTest: () -> Unit,
+    onGlesStressTest: () -> Unit,
     onOpen: (Uri) -> Unit,
     onShare: (Uri) -> Unit,
     modifier: Modifier = Modifier
@@ -1239,15 +1258,24 @@ private fun ExportPanel(
             Text("Export Video")
         }
 
-        // GLES export rewrite, now through the camera phase (V2_DECISIONS.md)
-        // — a plain TextButton, deliberately not styled like the two real
-        // actions above, since it doesn't render the actual animation yet.
-        // Remove once later phases make GLES part of the real export path.
+        // GLES export rewrite, through the text phase + stress-test
+        // hardening (V2_DECISIONS.md) — plain TextButtons, deliberately
+        // not styled like the two real actions above, since neither
+        // renders captions/text/figure overlays yet. Remove both once
+        // later phases make GLES part of the real export path.
         Spacer(Modifier.height(4.dp))
         TextButton(onClick = onGlesSmokeTest, modifier = Modifier.fillMaxWidth()) {
             Text("GLES export test (debug)", fontSize = 12.sp)
         }
         Text("Renders ~3s of the real timeline through the new GPU export path — full figure + background/scene/atmosphere + overlay shapes/glow + camera pan/zoom/shake now, still no captions or text/figure overlays, a diagnostic check, not a real export.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+
+        Spacer(Modifier.height(4.dp))
+        TextButton(onClick = onGlesStressTest, modifier = Modifier.fillMaxWidth()) {
+            Text("GLES stress test — full project (debug)", fontSize = 12.sp)
+        }
+        Text("Same GPU path, but renders this project's actual full length instead of ~3s — a real unattended run, not a quick check. Can take a while for a long project; watch for heat, stalls, or slowdown.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
     }

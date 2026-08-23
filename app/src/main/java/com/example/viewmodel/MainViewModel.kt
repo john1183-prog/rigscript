@@ -868,50 +868,59 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * GLES export rewrite diagnostic (V2_DECISIONS.md). Renders ~3s of the
-     * ACTUAL active project's real timeline through the GLES path —
-     * bones/head/joints, mouth/eyes/eyebrows, background/scene shapes/
-     * atmosphere, `type == "shape"` overlays with glow, and camera
+     * GLES export rewrite diagnostic (V2_DECISIONS.md). Renders the GLES
+     * path — bones/head/joints, mouth/eyes/eyebrows, background/scene
+     * shapes/atmosphere, `type == "shape"` overlays with glow, and camera
      * zoom/pan/shake — sourcing project/keyframes the same way
      * [exportVideo] does so this is testing the real pose-resolution
      * pipeline, not a synthetic stand-in. Still no captions or
      * text/figure overlays (see V2_DECISIONS.md's Deferred section), so
      * it's not yet a full preview of a real export. Not part of the real
-     * export pipeline. Remove this and its UI trigger once a later phase
+     * export pipeline. Remove this and its UI triggers once a later phase
      * makes GLES the real export path.
      *
-     * Now includes the same [watchThermalStatus] [exportVideo]/[exportPreview]
-     * use, plus progress/ETA reporting and a wake-lock ceiling that scales
-     * with the requested duration instead of a flat constant — needed once
-     * this could run for a real stress test, not just a few seconds.
+     * Two modes, both through this one function:
+     *  - [stressTest] false (default): the original fast ~3s quick-check,
+     *    for iterating on a single new feature without waiting.
+     *  - [stressTest] true: renders the ACTIVE project's real full length
+     *    (`max(scriptEnd, audioDurationSec) + 1s`, same formula [export]
+     *    itself uses), a genuine stress run against real content rather
+     *    than a synthetic duration. Confirmed on-device: a 26s
+     *    multi-feature clip and a 54s poses+camera-only clip both
+     *    rendered at ~1x realtime with no slowdown. Still worth a real
+     *    multi-minute (8min-equivalent) run before calling GLES export
+     *    thermally/memory proven — this only exercises whatever length
+     *    the currently-active project happens to be.
      *
-     * TEMPORARY, one-off override below (V2_DECISIONS.md — "GLES export
-     * rewrite — stress test"): `durationSec` is currently hardcoded to the
-     * project's real full length instead of left at [VideoExporter]'s 3s
-     * default, so this one run is a genuine unattended stress test. Revert
-     * that override (stop passing `durationSec` at all) once the run is
-     * confirmed and logged — the fast ~3s quick-check is this button's
-     * normal job.
+     * Includes the same [watchThermalStatus] [exportVideo]/[exportPreview]
+     * use, progress/ETA reporting (bound to the same [_exportProgress]/
+     * [_exportEtaSec] UI those functions use), and a wake-lock ceiling
+     * that scales with the actual requested duration instead of a flat
+     * constant — a flat one made sense back when this only ever ran a
+     * few seconds, not once duration can be a real project's length.
      */
-    fun exportGlesSmokeTest(context: Context) {
+    fun exportGlesSmokeTest(context: Context, stressTest: Boolean = false) {
         if (exportJob != null) return   // a preview or a real export is already running
         val project = _activeProject.value ?: return
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:GlesSmokeTest")
         exportJob = viewModelScope.launch {
             val compiled = compileTimeline(project.script)
-            // TEMPORARY override — see doc comment above. Same formula
-            // export() itself uses for its own totalSec, so this is
-            // stress-testing the project's actual real length, not a
-            // guess.
-            val scriptEnd = compiled.lastOrNull()?.let { it.timeSec + it.duration } ?: 0f
-            val stressDurationSec = maxOf(scriptEnd, project.audioDurationSec) + 1f
+            // Same formula export() itself uses for its own totalSec, so a
+            // stress run tests the project's actual real length, not a
+            // guess. Plain mode keeps the original 3f quick-check value.
+            val durationSec = if (stressTest) {
+                val scriptEnd = compiled.lastOrNull()?.let { it.timeSec + it.duration } ?: 0f
+                maxOf(scriptEnd, project.audioDurationSec) + 1f
+            } else {
+                3f
+            }
 
-            // Floor matches the original flat 2-min ceiling (so this is a
-            // no-op change for any future plain ~3s call); cap matches
-            // exportVideo's own 3hr ceiling; 1.5x leaves slack over a naive
-            // 1:1 time estimate without holding the lock needlessly long.
-            val wakeLockCeilingMs = (stressDurationSec * 1.5f * 1000L).toLong()
+            // Floor matches the original flat 2-min ceiling (so plain mode
+            // is unchanged); cap matches exportVideo's own 3hr ceiling;
+            // 1.5x leaves slack over a naive 1:1 time estimate without
+            // holding the lock needlessly long.
+            val wakeLockCeilingMs = (durationSec * 1.5f * 1000L).toLong()
                 .coerceIn(2 * 60 * 1000L, 3 * 60 * 60 * 1000L)
             wakeLock.acquire(wakeLockCeilingMs)
             val thermalWatcher = watchThermalStatus(pm)
@@ -924,7 +933,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     project           = project,
                     keyframes         = compiled,
                     amplitudeSettings = _amplitudeSettings.value,
-                    durationSec       = stressDurationSec,
+                    durationSec       = durationSec,
                     onProgress        = { progress, eta ->
                         _exportProgress.value = progress
                         _exportEtaSec.value   = eta
@@ -932,7 +941,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 result.onSuccess {
                     _exportedFile.value = listOf(it)
-                    _message.emit("GLES figure test complete (${"%.0f".format(stressDurationSec)}s): ${it.location}")
+                    _message.emit("GLES figure test complete (${"%.0f".format(durationSec)}s): ${it.location}")
                 }.onFailure { e ->
                     _message.emit("GLES figure test failed (this is diagnostic info, not a real export problem): ${e.message}")
                 }

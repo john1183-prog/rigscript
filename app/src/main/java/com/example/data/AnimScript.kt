@@ -242,7 +242,74 @@ data class AnimScript(
          * fraction, 0.3–2.6s) overlap in TIME but not in screen position —
          * checked against `OverlayResolver`'s actual slot-to-y-fraction
          * mapping before choosing this timing, not just assumed clear.
+         *
+         * Stress-test extension (V2_DECISIONS.md — "GLES export rewrite —
+         * stress test"): everything above this point (events 0.0-24.0s,
+         * the matching blinkEvents/overlayLayers) is UNCHANGED — it's the
+         * hand-tuned content [VideoExporter.exportGlesSmokeTest]'s plain
+         * ~3s quick-check mode still renders, and every comment above still
+         * describes exactly what it did before. Everything from 24.0s on
+         * is new, generated rather than hand-authored (see [stressCycle]),
+         * existing purely to give the newer full-length stress-test mode a
+         * real ~8-minute duration to run against — not narrative
+         * choreography the way the original section is. Two deliberate,
+         * one-off exceptions inserted at 248-255s, not part of the
+         * generated cycle: gradient background + camera zoom/pan active
+         * together, and a glowing overlay active during a camera zoom —
+         * both flagged in V2_DECISIONS.md as never separately checked even
+         * after each feature was individually confirmed. A second
+         * shape+gradient+glow overlay (same combination as `intro_badge`)
+         * repeats at 300s so it's easy to spot again on a long playback
+         * review, not just in the first few seconds.
          */
+        // Pose/ease/expression for one entry in the repeating filler cycle
+        // stressCycle() generates — plain data, not a ScriptEvent itself,
+        // so the loop below only has to fill in timeSec.
+        private data class CycleBeat(val offsetSec: Float, val pose: String, val ease: String = "ease_in_out", val expression: String? = null)
+
+        private val STRESS_CYCLE_TEMPLATE = listOf(
+            CycleBeat(0.0f,  "shrug"),
+            CycleBeat(3.0f,  "point_up",       "ease_out"),
+            CycleBeat(6.0f,  "confused",       expression = "worried"),
+            CycleBeat(9.0f,  "think"),
+            CycleBeat(12.0f, "jog_a"),
+            CycleBeat(12.8f, "jog_b"),
+            CycleBeat(13.6f, "jog_a"),
+            CycleBeat(14.4f, "stand_straight", "ease_out"),
+            CycleBeat(17.0f, "sit"),
+            CycleBeat(20.0f, "tired"),
+            CycleBeat(23.0f, "jump",           "elastic_out", "wide"),
+            CycleBeat(26.0f, "point_left",     "ease_out"),
+            CycleBeat(29.0f, "point_right",    "ease_out")
+        )
+        private const val STRESS_CYCLE_LEN_SEC = 32f
+
+        /**
+         * [count] repetitions of [STRESS_CYCLE_TEMPLATE], starting at
+         * [startSec] — purely to give the GLES stress-test mode a real
+         * multi-minute duration to run against (V2_DECISIONS.md). Reuses
+         * the pose library's fuller vocabulary (jog/jump/sit/tired/point_*)
+         * rather than the smaller set the hand-authored section above
+         * needed, so 8 minutes doesn't feel identical on loop. Not meant
+         * to be edited by hand the way the events above are — regenerate
+         * by changing [STRESS_CYCLE_TEMPLATE]/[STRESS_CYCLE_LEN_SEC]
+         * instead of hand-patching individual generated events.
+         */
+        private fun stressCycle(startSec: Float, count: Int): List<ScriptEvent> {
+            val out = ArrayList<ScriptEvent>(count * STRESS_CYCLE_TEMPLATE.size)
+            for (i in 0 until count) {
+                val base = startSec + i * STRESS_CYCLE_LEN_SEC
+                for (beat in STRESS_CYCLE_TEMPLATE) {
+                    out += ScriptEvent(base + beat.offsetSec, beat.pose, 0.5f, beat.ease, expression = beat.expression)
+                }
+            }
+            return out
+        }
+
+        /** One extra blink per [stressCycle] repetition, same [count]/[startSec] convention. */
+        private fun stressCycleBlinks(startSec: Float, count: Int): List<Float> =
+            (0 until count).map { startSec + it * STRESS_CYCLE_LEN_SEC + 18f }
+
         val DEMO = AnimScript(
             events = listOf(
                 ScriptEvent(0.0f,  "stand_straight", 0.4f, "ease_out",
@@ -303,8 +370,23 @@ data class AnimScript(
                     // loop — figureX/figureScale don't need restating, they
                     // were already reset at 19.9f and haven't changed since.
                     boneColor = 0xFF0000FFL, bgColor = 0xFF1A1A2EL)
-            ),
-            blinkEvents = listOf(1.3f, 14.7f, 21.4f),
+            ) + stressCycle(25.0f, 7) + listOf(
+                // Combo test 1/2 (V2_DECISIONS.md, stress-test extension):
+                // gradient background ACTIVE at the same time as a camera
+                // zoom/pan move — each confirmed individually, never
+                // together. 248.0s falls strictly between the two
+                // stressCycle batches (25 + 6*32 + 29 = 246.0 is batch 1's
+                // last event; batch 2 starts at 258.0), not inside either,
+                // so it can't collide with a generated event's timestamp.
+                ScriptEvent(248.0f, "explain", 1.0f, "ease_in_out",
+                    backgroundStyle = "gradient", backgroundGradientColor = 0xFF283593L,
+                    cameraZoom = 1.2f, cameraPanX = 0.05f, cameraPanY = -0.03f),
+                ScriptEvent(254.0f, "stand_straight", 1.0f, "ease_in_out",
+                    // Reset both back to defaults before the next
+                    // stressCycle batch resumes at 258.0s.
+                    backgroundStyle = "solid", cameraZoom = 1f, cameraPanX = 0f, cameraPanY = 0f)
+            ) + stressCycle(258.0f, 7),
+            blinkEvents = listOf(1.3f, 14.7f, 21.4f) + stressCycleBlinks(25.0f, 7) + stressCycleBlinks(258.0f, 7),
             overlayLayers = listOf(
                 // Text phase (V2_DECISIONS.md) — gradient+glow text active
                 // 0.2-3.0s, inside the smoke test window, so this specific
@@ -396,6 +478,30 @@ data class AnimScript(
                     x = 0.8f, y = 0.62f, scale = 0.8f,
                     pose = "wave", expression = "happy", color = 0xFFFFA726L,
                     enterStyle = "fade", exitStyle = "fade"
+                )
+            ) + listOf(
+                // Combo test 2/2 (V2_DECISIONS.md, stress-test extension):
+                // glowRadiusPx scaling under camera zoom — each confirmed
+                // individually, never together. Overlaps the
+                // cameraZoom=1.2f window above (248.0-254.0s) exactly.
+                OverlayLayer(
+                    id = "combo_glow_zoom_test", type = "shape", shape = "circle",
+                    startSec = 248.5f, endSec = 253.5f,
+                    x = 0.5f, y = 0.3f, radius = 0.05f, color = 0xFF00E5FFL,
+                    glow = true, glowRadius = 0.04f,
+                    enterStyle = "fade", exitStyle = "fade"
+                ),
+                // Same shape+gradient+glow combination as intro_badge
+                // (0.3-2.6s) but at 300s, so it's easy to spot again on a
+                // long playback review instead of only in the first few
+                // seconds — shape-overlay glow was flagged unconfirmed for
+                // longer than any other phase (V2_DECISIONS.md).
+                OverlayLayer(
+                    id = "shape_glow_reprise", type = "shape", shape = "rect",
+                    startSec = 300.0f, endSec = 304.0f, slot = "lower",
+                    width = 0.3f, height = 0.025f, color = 0xFF26C6DAL, gradientColor = 0xFFFFF176L,
+                    glow = true, glowRadius = 0.018f,
+                    enterStyle = "slideup", exitStyle = "fade"
                 )
             )
         )

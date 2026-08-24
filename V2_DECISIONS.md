@@ -1609,6 +1609,29 @@ approved by the person before implementing:**
     yet. Next per the original roadmap is a real multi-minute stress test
     (needs the user's device, not code) before that wiring makes sense.
 
+- **GLES export rewrite — real multi-minute stress test: CONFIRMED
+  on-device.** The item at the top of this list's "next" note for
+  several sessions. Two real runs via the (now permanent, see
+  `exportGlesSmokeTest(stressTest = true)` above) stress-test button:
+  a 7:04 (424s) real project and the 8-minute `AnimScript.DEMO`
+  extension (~479.5s) both rendered at ~1x realtime — 424s and 481s
+  respectively — with no reported slowdown, stall, or thermal/memory
+  issue over either run. This is the actual target this stress-test
+  work existed to hit, not the earlier 26s/54s spot-checks (good
+  signal at the time, but short of "multi-minute").
+  - Still outstanding from the same on-device session, not yet
+    reported back: the "MOUTH DIAGNOSTIC" logcat line (added this
+    session — see the mouth-bug Deferred entry below), a real-export
+    timing comparison for the `argbToNV12` revert (this stress test
+    exercises the GLES path, which never used `argbToNV12` at all —
+    the regression is specifically in Canvas `export()`, so confirming
+    the revert needs a timed real export, not this button), and visual
+    confirmation of the two new combo events at 248-255s (gradient
+    background + camera zoom/pan together, glow + camera zoom
+    together) plus `shape_glow_reprise` at 300s — a render finishing
+    in realtime confirms it didn't hang or overheat, not that any of
+    these look correct.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

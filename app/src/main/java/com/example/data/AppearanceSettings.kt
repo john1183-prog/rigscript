@@ -84,8 +84,8 @@ data class AppearanceSettings(
     // ── Eyes — position & shape (V2) ─────────────────────────────────────────
     /** How far apart the two eyes sit, as a fraction of the head radius. Was a fixed 0.34, which read as too close together for a bigger/thicker head style. */
     val eyeSpacingNormalized: Float = 0.34f,
-    /** How far the eyes sit from the head's center toward the neck, as a fraction of the head radius (same head-tip/neck-axis technique the mouth also uses). */
-    val eyeVerticalOffsetNormalized: Float = 0.12f,
+    /** How far the eyes sit from the head's center toward the neck, as a fraction of the head radius (same head-tip/neck-axis technique the mouth also uses). Nudged from 0.12 to 0.08 per direct feedback that eyes read too low. New projects only — existing projects keep whatever value they already have saved. */
+    val eyeVerticalOffsetNormalized: Float = 0.08f,
     /** Eye height-to-width ratio at full openness (blinking still flattens toward a thin line regardless of this setting). 1.0 = perfectly round. The reference look this was built toward has genuinely oval eyes, but exactly how oval is a matter of taste — hence adjustable rather than hardcoded. */
     val eyeAspectRatio: Float = 1.2f
 )

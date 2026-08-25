@@ -922,12 +922,21 @@ class RigRenderer {
         // function's doc comment for the headScaleMultiplier-on-the-anchor
         // reasoning that used to live here.
         val g = computeMouthGeometry(hx, hy, nx, ny, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
+        if (g.rotationDeg != 0f) canvas.save()
+        if (g.rotationDeg != 0f) canvas.rotate(g.rotationDeg, g.cx, g.cy)
         canvas.drawOval(g.cx - g.halfWidth, g.cy - g.halfHeight, g.cx + g.halfWidth, g.cy + g.halfHeight, mouthPaint)
+        if (g.rotationDeg != 0f) canvas.restore()
     }
 
     /**
-     * Eyes, positioned/rotated using the same head-tip/neck-axis technique as
-     * [drawMouth] — they follow head tilt for free with no extra bookkeeping.
+     * Eyes, positioned using the same head-tip/neck-axis technique as
+     * [drawMouth]. Their POSITION always rotated correctly with the head via
+     * the perpendicular offset below — but until now their SHAPE stayed
+     * screen-axis-aligned regardless of head rotation, which is exactly what
+     * caused one eye to collapse to a sliver under real rotation (confirmed
+     * via device video, not just static analysis — see V2_DECISIONS.md).
+     * [OvalGeometry.rotationDeg] ([RigRenderer.headRotationDeg]) now rotates
+     * the shape itself to match, so eyes turn rigidly with the head.
      *
      * [openness] is resolved analytically upstream in [PlaybackEngine] from
      * BOTH natural idle blinking and any AI-scripted
@@ -945,8 +954,9 @@ class RigRenderer {
      * drawn only for [Expression.WORRIED]/[Expression.ANGRY], per
      * [Expression]'s own doc comment. Their tilt direction was derived
      * analytically from the perpendicular/"up" basis below, the same way the
-     * three newest poses (present/point_self/open_hands) were computed —
-     * this has NOT been visually confirmed on-device and may need a sign flip.
+     * three newest poses (present/point_self/open_hands) were computed — now
+     * visually confirmed correct via device video review (worried tilts
+     * inner-up, angry tilts inner-down), no sign flip needed.
      */
     private fun drawEyes(
         canvas: Canvas,
@@ -962,15 +972,23 @@ class RigRenderer {
         // computeMouthGeometry's doc comment for why this is shared with the
         // GLES export path rather than duplicated.
         val eyes = computeEyeGeometry(hx, hy, nx, ny, r, openness, expression, headScaleMultiplier, appearance)
+        val rot = eyes.left.rotationDeg   // same for both eyes — one head, one rotation
 
+        if (rot != 0f) canvas.save()
+        if (rot != 0f) canvas.rotate(rot, eyes.left.cx, eyes.left.cy)
         canvas.drawOval(
             eyes.left.cx - eyes.left.halfWidth, eyes.left.cy - eyes.left.halfHeight,
             eyes.left.cx + eyes.left.halfWidth, eyes.left.cy + eyes.left.halfHeight, eyePaint
         )
+        if (rot != 0f) canvas.restore()
+
+        if (rot != 0f) canvas.save()
+        if (rot != 0f) canvas.rotate(rot, eyes.right.cx, eyes.right.cy)
         canvas.drawOval(
             eyes.right.cx - eyes.right.halfWidth, eyes.right.cy - eyes.right.halfHeight,
             eyes.right.cx + eyes.right.halfWidth, eyes.right.cy + eyes.right.halfHeight, eyePaint
         )
+        if (rot != 0f) canvas.restore()
 
         val brows = computeEyebrowGeometry(eyes, expression)
         if (brows != null) drawEyebrows(canvas, brows)
@@ -1180,8 +1198,15 @@ class RigRenderer {
             return CameraTransform(zoom, offsetX, offsetY)
         }
 
-        /** Center + half-extents of an oval, in the same canvas-pixel space [computeFkMatrices] outputs. */
-        data class OvalGeometry(val cx: Float, val cy: Float, val halfWidth: Float, val halfHeight: Float)
+        /**
+         * Center + half-extents of an oval, in the same canvas-pixel space
+         * [computeFkMatrices] outputs. [rotationDeg] rotates the oval's own
+         * shape around (cx,cy) — same sense as [android.graphics.Canvas.rotate]
+         * (positive = clockwise in this Y-down pixel space) so Canvas and GLES
+         * consumers can apply it identically. Defaulted to 0 (unrotated) for
+         * every caller that has no orientation to track (trees, clouds, snow).
+         */
+        data class OvalGeometry(val cx: Float, val cy: Float, val halfWidth: Float, val halfHeight: Float, val rotationDeg: Float = 0f)
 
         /** One straight segment, in canvas-pixel space. */
         data class LineSegment(val sx: Float, val sy: Float, val ex: Float, val ey: Float)
@@ -1196,6 +1221,21 @@ class RigRenderer {
         data class EyebrowGeometry(val left: LineSegment, val right: LineSegment, val halfWidth: Float)
 
         /**
+         * How far the head bone (hx,hy = tip, nx,ny = origin) has rotated
+         * from its own upright rest pose, in degrees, in the same sense as
+         * [android.graphics.Canvas.rotate] (positive = clockwise, this is
+         * Y-down pixel space) — shared by [computeMouthGeometry] and
+         * [computeEyeGeometry] so both rotate identically with the head
+         * rather than each deriving it separately and risking a mismatch.
+         * At rest (bone pointing straight up, hy<ny, hx==nx) this is 0.
+         */
+        fun headRotationDeg(hx: Float, hy: Float, nx: Float, ny: Float): Float {
+            val restDeg = -90.0
+            val boneDeg = Math.toDegrees(kotlin.math.atan2((hy - ny).toDouble(), (hx - nx).toDouble()))
+            return (boneDeg - restDeg).toFloat()
+        }
+
+        /**
          * Pure geometry for the mouth oval — no Canvas/Paint dependency, so
          * [drawMouth] (Canvas path) and [GlesFigureFrame.fromFkMatrices] (GLES
          * path, Phase 3) share exactly one implementation of this math instead
@@ -1207,14 +1247,20 @@ class RigRenderer {
          * headScaleMultiplier). See [drawMouth]'s own doc comment for why
          * headScaleMultiplier is also applied to the anchor offset below, not
          * just to r.
+         *
+         * Anchor coefficient nudged from 0.42 to 0.36 — moves the mouth
+         * slightly higher in the head (toward hx,hy) per direct feedback
+         * that it read too low. Also now carries [OvalGeometry.rotationDeg]
+         * ([headRotationDeg]) so it turns rigidly with the head instead of
+         * staying screen-axis-aligned.
          */
         fun computeMouthGeometry(
             hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
             mouthShape: Int, mouthOpenness: Float, expression: Int,
             headScaleMultiplier: Float
         ): OvalGeometry {
-            val cx = hx + (nx - hx) * 0.42f * headScaleMultiplier
-            var cy = hy + (ny - hy) * 0.42f * headScaleMultiplier
+            val cx = hx + (nx - hx) * 0.36f * headScaleMultiplier
+            var cy = hy + (ny - hy) * 0.36f * headScaleMultiplier
 
             val (wFrac, hFrac) = when (mouthShape) {
                 MouthShape.WIDE   -> 0.44f to 0.28f
@@ -1234,7 +1280,7 @@ class RigRenderer {
 
             val hw = wFrac * r * widthMul
             val hh = hFrac * r * (0.5f + 0.5f * mouthOpenness.coerceIn(0f, 1f))
-            return OvalGeometry(cx, cy, hw, hh)
+            return OvalGeometry(cx, cy, hw, hh, headRotationDeg(hx, hy, nx, ny))
         }
 
         /**
@@ -1273,9 +1319,22 @@ class RigRenderer {
             val rightX = cx + perpX * eyeSpacing
             val rightY = cy + perpY * eyeSpacing
 
+            // Root cause of the sliver-eye bug under rotation: this oval's
+            // shape was always screen-axis-aligned (halfWidth horizontal,
+            // halfHeight vertical) even though leftX/Y and rightX/Y already
+            // correctly rotate around the head via perpX/perpY. At rest the
+            // two happen to line up, so it looked fine; under real rotation
+            // the shape's true (perpX,perpY)-aligned orientation and its
+            // drawn (screen-axis) orientation diverge, and the GLES SDF
+            // test — which assumes the shape's local axes ARE screen axes —
+            // ends up rejecting most of one eye's footprint. Passing
+            // rotationDeg through fixes both paths at once, since it's the
+            // same [OvalGeometry] both consume.
+            val rotationDeg = headRotationDeg(hx, hy, nx, ny)
+
             return EyeGeometry(
-                left  = OvalGeometry(leftX, leftY, baseEyeRadius, eyeRadiusY),
-                right = OvalGeometry(rightX, rightY, baseEyeRadius, eyeRadiusY),
+                left  = OvalGeometry(leftX, leftY, baseEyeRadius, eyeRadiusY, rotationDeg),
+                right = OvalGeometry(rightX, rightY, baseEyeRadius, eyeRadiusY, rotationDeg),
                 perpX = perpX, perpY = perpY, upX = upX, upY = upY
             )
         }

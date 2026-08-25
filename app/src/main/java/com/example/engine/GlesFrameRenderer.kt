@@ -746,7 +746,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                         val c = argbToGlColor(cmd.color)
                         drawOval(
                             cmd.cx, cmd.cy, cmd.halfWidth, cmd.halfHeight, w, h,
-                            c[0], c[1], c[2], c[3] * frame.figureAlpha
+                            c[0], c[1], c[2], c[3] * frame.figureAlpha, cmd.rotationDeg
                         )
                     }
                     is GlesFigureFrame.DrawCommand.Eyebrow -> {
@@ -942,7 +942,8 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     private fun drawOval(
         cx: Float, cy: Float, rx: Float, ry: Float,
         canvasW: Float, canvasH: Float,
-        red: Float, green: Float, blue: Float, alpha: Float
+        red: Float, green: Float, blue: Float, alpha: Float,
+        rotationDeg: Float = 0f
     ) {
         if (rx < 0.5f || ry < 0.5f) return
 
@@ -963,18 +964,28 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLES20.glUniform1f(uRy, ry)
         GLES20.glUniform1f(uAaHalf, aaHalfPx)
 
-        val l = cx - padX; val r2 = cx + padX
-        val t = cy - padY; val b2 = cy + padY
+        // a_local (the SDF test's input, in OVAL_FRAG) stays in the oval's
+        // own unrotated local frame — (-padX,-padY)..(padX,padY) — same as
+        // always, so the ellipse test itself needs no changes. Only the
+        // actual SCREEN position of each corner is rotated around (cx,cy),
+        // same sense as android.graphics.Canvas.rotate (positive degrees =
+        // clockwise in this Y-down pixel space) so this matches the Canvas
+        // path exactly for the same rotationDeg. rotationDeg == 0 (every
+        // caller except mouth/eyes) reduces to cos=1,sin=0 — the original
+        // axis-aligned quad, unchanged.
+        val rad = Math.toRadians(rotationDeg.toDouble())
+        val cos = kotlin.math.cos(rad).toFloat()
+        val sin = kotlin.math.sin(rad).toFloat()
+        fun rotatedX(localX: Float, localY: Float) = cx + localX * cos - localY * sin
+        fun rotatedY(localX: Float, localY: Float) = cy + localX * sin + localY * cos
 
-        // a_local is the RAW PIXEL offset from (cx,cy) — see OVAL_FRAG's doc
-        // comment for why, unlike the line/circle shaders' length-normalised UVs.
         val data = floatArrayOf(
-            toClipX(l,  canvasW), toClipY(t,  canvasH), -padX, -padY,
-            toClipX(r2, canvasW), toClipY(t,  canvasH),  padX, -padY,
-            toClipX(l,  canvasW), toClipY(b2, canvasH), -padX,  padY,
-            toClipX(r2, canvasW), toClipY(t,  canvasH),  padX, -padY,
-            toClipX(r2, canvasW), toClipY(b2, canvasH),  padX,  padY,
-            toClipX(l,  canvasW), toClipY(b2, canvasH), -padX,  padY
+            toClipX(rotatedX(-padX, -padY), canvasW), toClipY(rotatedY(-padX, -padY), canvasH), -padX, -padY,
+            toClipX(rotatedX( padX, -padY), canvasW), toClipY(rotatedY( padX, -padY), canvasH),  padX, -padY,
+            toClipX(rotatedX(-padX,  padY), canvasW), toClipY(rotatedY(-padX,  padY), canvasH), -padX,  padY,
+            toClipX(rotatedX( padX, -padY), canvasW), toClipY(rotatedY( padX, -padY), canvasH),  padX, -padY,
+            toClipX(rotatedX( padX,  padY), canvasW), toClipY(rotatedY( padX,  padY), canvasH),  padX,  padY,
+            toClipX(rotatedX(-padX,  padY), canvasW), toClipY(rotatedY(-padX,  padY), canvasH), -padX,  padY
         )
 
         drawQuad(data, aPos, aLocal)

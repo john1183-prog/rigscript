@@ -175,17 +175,19 @@ data class GlesFigureFrame(
 
         /**
          * Shared by the mouth and each eye — all three are the same shape
-         * (an axis-aligned oval), just different sizes/positions/colors, so
-         * one command type covers all of them rather than three near-
-         * identical ones. See [RigRenderer.computeMouthGeometry] /
+         * (an oval, optionally rotated), just different sizes/positions/
+         * colors, so one command type covers all of them rather than three
+         * near-identical ones. See [RigRenderer.computeMouthGeometry] /
          * [RigRenderer.computeEyeGeometry] for how cx/cy/halfWidth/
-         * halfHeight are derived — this class only replays already-resolved
-         * geometry, same as every other [DrawCommand].
+         * halfHeight/rotationDeg are derived — this class only replays
+         * already-resolved geometry, same as every other [DrawCommand].
+         * [rotationDeg] defaults to 0 (unrotated) since this type is also
+         * used by static, non-facial ovals.
          */
         data class Oval(
             val cx: Float, val cy: Float,
             val halfWidth: Float, val halfHeight: Float,
-            val color: Int
+            val color: Int, val rotationDeg: Float = 0f
         ) : DrawCommand()
 
         /**
@@ -504,15 +506,15 @@ data class GlesFigureFrame(
                                     "the actual draw call), not the position math."
                             )
                         }
-                        commands += DrawCommand.Oval(g.cx, g.cy, g.halfWidth, g.halfHeight, mouthColor)
+                        commands += DrawCommand.Oval(g.cx, g.cy, g.halfWidth, g.halfHeight, mouthColor, g.rotationDeg)
                     }
                     if (appearance.showEyes) {
                         val eyes = RigRenderer.computeEyeGeometry(
                             endX, endY, startX, startY, r,
                             eyeOpenness, expression, headScaleMultiplier, appearance
                         )
-                        commands += DrawCommand.Oval(eyes.left.cx, eyes.left.cy, eyes.left.halfWidth, eyes.left.halfHeight, eyeColor)
-                        commands += DrawCommand.Oval(eyes.right.cx, eyes.right.cy, eyes.right.halfWidth, eyes.right.halfHeight, eyeColor)
+                        commands += DrawCommand.Oval(eyes.left.cx, eyes.left.cy, eyes.left.halfWidth, eyes.left.halfHeight, eyeColor, eyes.left.rotationDeg)
+                        commands += DrawCommand.Oval(eyes.right.cx, eyes.right.cy, eyes.right.halfWidth, eyes.right.halfHeight, eyeColor, eyes.right.rotationDeg)
 
                         val brows = RigRenderer.computeEyebrowGeometry(eyes, expression)
                         if (brows != null) {

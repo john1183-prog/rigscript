@@ -452,17 +452,24 @@ object VideoExporter {
      * have reintroduced exactly the parity risk the "export-only" decision
      * was contingent on mitigating — see V2_DECISIONS.md's History entry.
      *
-     * Scope as of the camera phase: bones, head, joints, mouth, eyes,
-     * eyebrows, background (solid/gradient/sky+ground), scene shapes
-     * (mountains/city/trees/clouds), stars, ground line, atmosphere (fog/
-     * rain/snow), `type == "shape"` overlay layers with true two-pass
-     * Gaussian blur glow, and camera zoom/pan/shake (applied to everything
-     * above except atmosphere, which stays screen-space — matching
-     * [RigRenderer.draw] exactly) — the full figure AND backdrop, correctly
-     * posed/colored/blinking/lip-synced/panned. Still no captions or
-     * `type == "text"`/`"figure"` overlays or particle trails (see
-     * V2_DECISIONS.md's Deferred section), so this is not yet a full
-     * preview of a real export.
+     * Scope as of this session (stress-test + audio fixes, following the
+     * text phase): bones, head, joints, mouth, eyes, eyebrows, background
+     * (solid/gradient/sky+ground), scene shapes (mountains/city/trees/
+     * clouds), stars, ground line, atmosphere (fog/rain/snow), captions,
+     * `type == "text"`/`"shape"` overlay layers (true two-pass Gaussian
+     * blur glow), camera zoom/pan/shake (applied to everything above except
+     * atmosphere, which stays screen-space — matching [RigRenderer.draw]
+     * exactly), and now a verbatim copy of the project's own narration
+     * audio track if it has one (see [copyAudioTrack] call below — this
+     * function had no audio muxing at all before this session, despite an
+     * earlier version of this comment claiming "lip-synced"; the mouth
+     * moved from the same envelope [export] uses, but the output file
+     * itself carried no audio to actually judge sync against). Still no
+     * `type == "figure"` overlays, particle trails, or the music/
+     * sound-effect mixing [export]'s real `AudioMixer` path does (see
+     * V2_DECISIONS.md's Deferred section) — narration-only, verbatim, is
+     * enough to confirm mouth-sync, which is what actually needed
+     * confirming here. Not a full preview of a real export.
      *
      * Still deliberately NOT called from [export] — same reasoning as every
      * prior phase: this can't render the full picture yet, so wiring it
@@ -562,6 +569,7 @@ object VideoExporter {
             val muxer = output.openMuxer()
             val bufferInfo = MediaCodec.BufferInfo()
             var videoTrackIdx = -1
+            var audioTrackIdx = -1
             var muxerStarted = false
             var encoderReleased = false
             var muxerReleased = false
@@ -577,6 +585,16 @@ object VideoExporter {
                         outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                             if (!muxerStarted) {
                                 videoTrackIdx = muxer.addTrack(encoder.outputFormat)
+                                // Verbatim narration copy only -- not the full
+                                // AudioMixer path export() uses for music/
+                                // sound-effect mixing. This stays a diagnostic
+                                // tool, not the real export pipeline; the
+                                // common case (does the mouth track match a
+                                // real narration file) is what actually
+                                // needed confirming here.
+                                if (project.audioFilePath != null) {
+                                    audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
+                                }
                                 muxer.start(); muxerStarted = true
                             }
                         }
@@ -675,14 +693,19 @@ object VideoExporter {
                         val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
                         glesRenderer.drawFigureFrame(glesFrame, presentationTimeNs)
                         drain(untilEos = false)
-                        // No audio mux step in this function (unlike
-                        // export()'s 0.90f-then-writeAudio split) — video
-                        // only, so progress can go straight to 1.0.
+                        // Progress can go straight to 1.0 -- unlike export()'s
+                        // 0.90f-then-writeAudio split, audio here is a single
+                        // fast verbatim copy after video drains, not a
+                        // per-frame interleaved write worth reserving headroom
+                        // for.
                         onProgress?.invoke(frameIdx.toFloat() / totalFrames, computeEtaSec(frameIdx + 1, totalFrames, exportStartMs))
                     }
                 }
                 encoder.signalEndOfInputStream()
                 drain(untilEos = true)
+                if (audioTrackIdx >= 0 && project.audioFilePath != null) {
+                    copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (durationSec * 1_000_000L).toLong())
+                }
                 onProgress?.invoke(1f, 0f)
 
                 encoder.stop(); encoder.release(); encoderReleased = true
@@ -690,7 +713,7 @@ object VideoExporter {
                 output.finish(context)
                 success = true
 
-                Log.i(TAG, "GLES figure test: $totalFrames frames -> ${output.location}")
+                Log.i(TAG, "GLES figure test: $totalFrames frames, audioTrackIdx=$audioTrackIdx -> ${output.location}")
                 ExportResult(output.uri, output.location, "GLES figure test")
             } finally {
                 glesRenderer.release()

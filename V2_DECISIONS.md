@@ -1632,6 +1632,87 @@ approved by the person before implementing:**
     in realtime confirms it didn't hang or overheat, not that any of
     these look correct.
 
+- **Feature-check script + device video review: found and fixed two real
+  bugs, closed out the mouth investigation.** Built a ~80s hand-authored
+  test script (`feature_check.json`, delivered via `importScript`, not
+  committed to the repo — one-off diagnostic, not project content) hitting
+  every atmosphere, the two never-tested combos, both overlay types,
+  script-level appearance overrides, all expressions, blink, and camera
+  pan/shake in labeled, individually-timestamped segments. Reviewed the
+  actual device output frame-by-frame with `ffmpeg`/PIL rather than relying
+  on a verbal description.
+  - **Overrides confirmed correct, precisely**, not just visually: sampled
+    exact pixel colors at `figureScale`/`boneColor`/`headColor` override
+    points and got near-exact matches (e.g. `(253,0,0)` for a `0xFFFF0000`
+    red target), including that the "sticky"/carry-forward semantics work
+    (a color set at one event correctly persists at a later event that
+    doesn't touch that field).
+  - **Snow bug, root cause found, NOT YET FIXED**: `computeSnowFlakes`/
+    `computeStarPositions` in `RigRenderer.kt` draw circles with a
+    hardcoded 2-3px radius, never scaled to canvas resolution — at real
+    export resolution (1920x1088) they're barely-visible specks,
+    indistinguishable at a glance from the star field, which uses the
+    same tiny fixed size. Confirmed via source read and reproduced
+    identically in both a landscape and a portrait render. This is
+    shared code — Canvas `export()` draws it the exact same way — so
+    this is a pre-existing, resolution-unaware sizing bug, not something
+    the GLES rewrite introduced. Snow *is* correctly falling (confirmed
+    motion across frames, vs. stars' fixed twinkle) — just too small to
+    read as snow. **Next session: fix by scaling flake/star radius with
+    canvas size** (e.g. tie to `minDim`, the same way other proportional
+    sizing in this codebase works), not a flat pixel constant. Worth
+    checking rain's stroke width for the same pattern while in there.
+  - **New bug found (not the original mouth bug): eyes/mouth broke under
+    head rotation, and it's now FIXED.** A wave-pose frame showed one eye
+    as a normal oval and the other collapsed to a thin sliver at the
+    head's edge; a non-rotated baseline frame showed both eyes fine.
+    Root cause: eye/mouth *position* already correctly rotated with the
+    head (the perpendicular-offset math), but their *shape* stayed
+    screen-axis-aligned regardless — fine at rest since the two axes
+    coincide, wrong under real rotation. In GLES specifically this meant
+    the SDF ellipse test rejected most of one eye's footprint. Confirmed
+    the same bug exists in Canvas (`canvas.drawOval` was equally
+    axis-aligned) — never reported before because it was never tested
+    under real head rotation until this video review.
+  - **Fixed in `c253f3d`** (see that commit's full message for the
+    complete technical writeup): `OvalGeometry` gained a `rotationDeg`
+    field (default 0, so every non-facial oval caller — trees, clouds,
+    snow — is unaffected); new shared `headRotationDeg` computes the
+    head bone's rotation from its own rest pose; Canvas rotates via
+    `canvas.rotate()`, GLES rotates the quad corners around `(cx,cy)`
+    while keeping the SDF's own local test space untouched.
+    `headRotationDeg`'s formula was numerically verified against
+    synthetic 30° and -45° rotations before writing the Kotlin (both
+    recovered exactly) — the usual discipline, but the GLES-side quad
+    rotation itself has NOT been checked against a compiler or device.
+    Also nudged both features upward per direct feedback they read too
+    low: mouth anchor coefficient 0.42 → 0.36, `eyeVerticalOffsetNormalized`
+    default 0.12 → 0.08 (new projects only).
+  - **Original "mouth at bottom of head" bug: effectively superseded.**
+    The diagnostic logging added earlier this session never got a
+    device report back, and given the actual observed symptom turned
+    out to be the rotation bug just described (not a resting-position
+    bug — baseline frames show mouth correctly placed), it's reasonable
+    to consider the original report explained by this fix. Worth a
+    fresh look on the next device check to formally close it out, but
+    don't reopen deep static investigation unless something concrete
+    contradicts this.
+  - **GLES audio: was completely silent, now fixed.** Discovered while
+    reviewing the feature-check video that `exportGlesSmokeTest` had
+    zero audio-muxing code at all — the mouth animates from the same
+    envelope `export()` uses, but the previous output files carried no
+    audio track whatsoever, so there was never actually a way to judge
+    lip-sync by watching a result with sound on. **Fixed in `f7d1ea1`**:
+    reuses `addAudioTrack`/`copyAudioTrack` verbatim — the exact helpers
+    `export()`'s own `embedAudio` branch already uses — to mux a
+    verbatim copy of the project's narration track. Deliberately no
+    music/sound-effect `AudioMixer` mixing (that's `export()`'s job);
+    this stays a diagnostic tool. Not verified against a compiler or
+    device from this environment.
+  - **Text overlay "upper" slot sits directly over the head** rather than
+    clearly above it, in the feature-check video — not clearly a bug
+    (might be intentional layout), flagged rather than assumed either way.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

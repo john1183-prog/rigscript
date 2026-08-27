@@ -597,8 +597,11 @@ data class GlesFigureFrame(
                     atmosphereCommands += AtmosphereDrawCommand.FullscreenTint(0x33FFFFFFL.toInt())
                 }
                 SceneAtmosphere.RAIN -> {
+                    // Was a flat 1f (and disagreed with Canvas's own flat 2f)
+                    // — see RigRenderer.computeStarPositions' doc comment.
+                    val rainWidth = minDim * 0.0018f
                     for (d in RigRenderer.computeRainDrops(canvasW, canvasH, timeSec)) {
-                        atmosphereCommands += AtmosphereDrawCommand.Line(d.x1, d.y1, d.x2, d.y2, 1f, 0x66AACCFFL.toInt())
+                        atmosphereCommands += AtmosphereDrawCommand.Line(d.x1, d.y1, d.x2, d.y2, rainWidth, 0x66AACCFFL.toInt())
                     }
                 }
                 SceneAtmosphere.SNOW -> {

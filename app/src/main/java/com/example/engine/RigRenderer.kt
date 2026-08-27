@@ -466,7 +466,8 @@ class RigRenderer {
             }
             SceneAtmosphere.RAIN -> {
                 atmospherePaint.color = 0x66AACCFFL.toInt()
-                atmospherePaint.strokeWidth = 2f
+                // Was a flat 2f — see computeStarPositions' doc comment.
+                atmospherePaint.strokeWidth = min(w, h).toFloat() * 0.0018f
                 for (d in computeRainDrops(w, h, timeSec)) {
                     canvas.drawLine(d.x1, d.y1, d.x2, d.y2, atmospherePaint)
                 }
@@ -1497,8 +1498,26 @@ class RigRenderer {
             return list
         }
 
+        /**
+         * Radius/width constants for stars, snow, and rain (here and in
+         * [computeSnowFlakes] / [drawAtmosphere]'s RAIN case / GLES's
+         * matching atmosphere block) were flat hardcoded pixel values until
+         * this fix — invisible at real export resolution (1920x1088: a 2-3px
+         * circle reads as a barely-visible speck, indistinguishable from
+         * noise), and never checked against the canvas size at all. Tied to
+         * minDim now, the same way every other proportional size in this
+         * file already works (see boneStrokeNormalized/jointRadiusNormalized
+         * usage elsewhere). Found while fixing snow: rain's stroke width was
+         * ALSO a flat constant, AND Canvas/GLES disagreed with each other on
+         * its value (2f vs 1f) — an unrelated pre-existing mismatch, fixed
+         * alongside this since it's the same root cause. The fraction values
+         * chosen (0.003 stars, 0.005 snow, 0.0018 rain) are a reasoned
+         * guess, not a device-confirmed size — worth a look on the next
+         * device check, not assumed correct on sight.
+         */
         fun computeStarPositions(w: Int, h: Int, timeSec: Float): List<StarGeom> {
             val stars = 40
+            val starRadius = min(w, h).toFloat() * 0.003f
             val list = ArrayList<StarGeom>(stars)
             for (i in 0 until stars) {
                 // Fixed pseudo-random grid — stars don't move, just a light static-time twinkle.
@@ -1506,7 +1525,7 @@ class RigRenderer {
                 val y = ((i * 3079) % (h / 2).coerceAtLeast(1)).toFloat()
                 val twinkle = 0.5f + 0.5f * kotlin.math.sin(timeSec * 2f + i)
                 val alpha = (140 + 100 * twinkle).coerceIn(0f, 255f)
-                list += StarGeom(x, y, 2f, alpha)
+                list += StarGeom(x, y, starRadius, alpha)
             }
             return list
         }
@@ -1524,16 +1543,18 @@ class RigRenderer {
             return list
         }
 
+        /** See [computeStarPositions]'s doc comment for the resolution-scaling fix this shares. */
         fun computeSnowFlakes(w: Int, h: Int, timeSec: Float): List<OvalGeometry> {
             val flakes = 30
             val speed = 120f
+            val snowRadius = min(w, h).toFloat() * 0.005f
             val list = ArrayList<OvalGeometry>(flakes)
             for (i in 0 until flakes) {
                 val baseX = (i.toFloat() / flakes) * w
                 val drift = kotlin.math.sin(timeSec * 0.6f + i) * 15f
                 val x = baseX + drift
                 val y = ((timeSec * speed) + i * 71f).let { it % (h + 20f) } - 10f
-                list += OvalGeometry(x, y, 3f, 3f)
+                list += OvalGeometry(x, y, snowRadius, snowRadius)
             }
             return list
         }

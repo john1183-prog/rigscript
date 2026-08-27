@@ -1713,6 +1713,26 @@ approved by the person before implementing:**
     clearly above it, in the feature-check video — not clearly a bug
     (might be intentional layout), flagged rather than assumed either way.
 
+- **Snow/star/rain resolution-scaling fix: implemented, NOT yet
+  device-confirmed.** Follows up on the "Snow bug, root cause found, NOT
+  YET FIXED" entry directly above. `computeStarPositions`/
+  `computeSnowFlakes` (shared by Canvas and GLES) had flat 2f/3f pixel
+  radii, invisible at real export resolution — tied both to `min(w, h)`
+  now, matching how every other proportional size in this file already
+  works (see `boneStrokeNormalized`/`jointRadiusNormalized` usage
+  elsewhere). While in there, checked rain's stroke width per the
+  earlier entry's own suggestion to do so — it had the same flat-constant
+  bug, AND Canvas/GLES disagreed with each other on the value (2f vs 1f),
+  an unrelated pre-existing mismatch, fixed alongside this since it's the
+  same root cause. Fraction values chosen (0.003 stars, 0.005 snow,
+  0.0018 rain) are a reasoned guess, not a confirmed size — needs an
+  actual look on the next device check like everything else in this
+  list, not assumed correct just because the logic is straightforward.
+  Verified: full diff review, brace/paren balance check on both changed
+  files (`RigRenderer.kt`, `GlesFigureFrame.kt`). NOT verified: compiler
+  — GitHub Actions/the commit-status API wasn't reachable this session
+  (rate limit exhausted on the shared sandbox IP) — or device.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -1787,6 +1807,15 @@ zoom in."
   inside `computeMouthGeometry` for the GLES path; needs on-device
   confirmation to determine which. Deferred deliberately — not fixing
   blindly from this environment without a way to verify the result.
+  **UPDATE, likely superseded — see the "Feature-check script + device
+  video review" entry under What's implemented, above:** the actual
+  observed symptom turned out to be the eyes/mouth rotation bug, not a
+  resting-position issue — baseline (non-rotated) frames from that
+  session's video review show the mouth correctly placed. Left as
+  written above rather than rewritten, per this file's own practice of
+  recording what was actually decided at the time; treat the paragraph
+  above as historical, not current status. Still worth a direct
+  on-device look to formally close it out.
 
 - **`argbToNV12` performance regression in Canvas export path** —
   identified across two commits: `dc1c11d` (smooth) → `88d7cb6` (no

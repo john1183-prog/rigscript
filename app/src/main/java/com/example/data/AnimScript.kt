@@ -376,17 +376,41 @@ data class AnimScript(
                 // zoom/pan move — each confirmed individually, never
                 // together. 248.0s falls strictly between the two
                 // stressCycle batches (25 + 6*32 + 29 = 246.0 is batch 1's
-                // last event; batch 2 starts at 258.0), not inside either,
+                // last event; batch 2 starts at 264.0), not inside either,
                 // so it can't collide with a generated event's timestamp.
                 ScriptEvent(248.0f, "explain", 1.0f, "ease_in_out",
                     backgroundStyle = "gradient", backgroundGradientColor = 0xFF283593L,
                     cameraZoom = 1.2f, cameraPanX = 0.05f, cameraPanY = -0.03f),
                 ScriptEvent(254.0f, "stand_straight", 1.0f, "ease_in_out",
-                    // Reset both back to defaults before the next
-                    // stressCycle batch resumes at 258.0s.
-                    backgroundStyle = "solid", cameraZoom = 1f, cameraPanX = 0f, cameraPanY = 0f)
-            ) + stressCycle(258.0f, 7),
-            blinkEvents = listOf(1.3f, 14.7f, 21.4f) + stressCycleBlinks(25.0f, 7) + stressCycleBlinks(258.0f, 7),
+                    // Reset both back to defaults before the room/beach
+                    // segment below.
+                    backgroundStyle = "solid", cameraZoom = 1f, cameraPanX = 0f, cameraPanY = 0f),
+                // New scene shapes (V2_DECISIONS.md, "Background shapes:
+                // room + beach"). sceneShape/sceneAtmosphere both snap
+                // (carry-forward, no interpolation), so each of these holds
+                // until the next event changes it — explicit
+                // sceneAtmosphere = "none" here matters because "snow" (set
+                // once at 1.5s) would otherwise still be carrying forward
+                // through the entire stress cycle and into this segment.
+                ScriptEvent(255.0f, "explain", 0.6f, "ease_in_out",
+                    sceneShape = "room", sceneAtmosphere = "none",
+                    skyColor = 0xFFF3E5D0L, groundColor = 0xFFC9A876L, horizonY = 0.68f),
+                // Beach + stars together deliberately, same untested-combo
+                // rationale as the gradient+camera test above. Also the
+                // only place in this whole script sceneAtmosphere = "stars"
+                // appears — needed to exercise the star-radius resolution-
+                // scaling fix at all.
+                ScriptEvent(258.0f, "present", 0.6f, "ease_in_out",
+                    sceneShape = "beach", sceneAtmosphere = "stars",
+                    skyColor = 0xFF1A2744L, groundColor = 0xFF0D1B2AL, horizonY = 0.62f),
+                ScriptEvent(261.0f, "stand_straight", 0.8f, "ease_in_out",
+                    // Reset to exactly the 1.5s event's own values — batch
+                    // 2 of stressCycle below was authored against
+                    // mountains+snow and shouldn't see anything different.
+                    sceneShape = "mountains", sceneAtmosphere = "snow",
+                    skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f)
+            ) + stressCycle(264.0f, 7),
+            blinkEvents = listOf(1.3f, 14.7f, 21.4f) + stressCycleBlinks(25.0f, 7) + stressCycleBlinks(264.0f, 7),
             overlayLayers = listOf(
                 // Text phase (V2_DECISIONS.md) — gradient+glow text active
                 // 0.2-3.0s, inside the smoke test window, so this specific

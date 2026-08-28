@@ -580,6 +580,19 @@ data class GlesFigureFrame(
                             for (puff in cloud) sceneCommands += SceneDrawCommand.Circle(puff.cx, puff.cy, puff.halfWidth, sceneColor)
                         }
                     }
+                    SceneShape.ROOM -> {
+                        for (f in RigRenderer.computeRoomFurniture(canvasW, canvasH, horizonYFraction, timeSec)) {
+                            sceneCommands += SceneDrawCommand.Rect(f.l, f.t, f.r, f.b, sceneColor)
+                        }
+                    }
+                    SceneShape.BEACH -> {
+                        val beach = RigRenderer.computeBeachElements(canvasW, canvasH, horizonYFraction, timeSec)
+                        sceneCommands += SceneDrawCommand.Circle(beach.sun.cx, beach.sun.cy, beach.sun.halfWidth, sceneColor)
+                        for (u in beach.umbrellas) {
+                            sceneCommands += SceneDrawCommand.Circle(u.canopy.cx, u.canopy.cy, u.canopy.halfWidth, sceneColor)
+                            sceneCommands += SceneDrawCommand.Rect(u.trunk.l, u.trunk.t, u.trunk.r, u.trunk.b, sceneColor)
+                        }
+                    }
                 }
                 if (sceneAtmosphere == SceneAtmosphere.STARS) {
                     for (s in RigRenderer.computeStarPositions(canvasW, canvasH, timeSec)) {

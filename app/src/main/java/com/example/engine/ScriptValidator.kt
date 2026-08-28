@@ -30,7 +30,7 @@ object ScriptValidator {
     private val VALID_EASE = setOf(
         "linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic_out", "spring", "rigid"
     )
-    private val VALID_SCENE_SHAPE = setOf("none", "mountains", "city", "trees", "clouds")
+    private val VALID_SCENE_SHAPE = setOf("none", "mountains", "city", "trees", "clouds", "room", "beach")
     private val VALID_ATMOSPHERE  = setOf("none", "rain", "snow", "fog", "stars")
 
     private val VALID_OVERLAY_TYPE  = setOf("text", "shape", "particles", "figure")

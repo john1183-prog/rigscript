@@ -454,6 +454,19 @@ class RigRenderer {
                     for (puff in c) canvas.drawCircle(puff.cx, puff.cy, puff.halfWidth, sceneShapePaint)
                 }
             }
+            SceneShape.ROOM -> {
+                for (f in computeRoomFurniture(w, h, horizonYFraction, timeSec)) {
+                    canvas.drawRect(f.l, f.t, f.r, f.b, sceneShapePaint)
+                }
+            }
+            SceneShape.BEACH -> {
+                val beach = computeBeachElements(w, h, horizonYFraction, timeSec)
+                canvas.drawCircle(beach.sun.cx, beach.sun.cy, beach.sun.halfWidth, sceneShapePaint)
+                for (u in beach.umbrellas) {
+                    canvas.drawCircle(u.canopy.cx, u.canopy.cy, u.canopy.halfWidth, sceneShapePaint)
+                    canvas.drawRect(u.trunk.l, u.trunk.t, u.trunk.r, u.trunk.b, sceneShapePaint)
+                }
+            }
         }
     }
 
@@ -1386,6 +1399,12 @@ class RigRenderer {
         /** A tree's canopy (circle) and trunk (thin rect). */
         data class TreeGeom(val canopy: OvalGeometry, val trunk: RectGeom)
 
+        /** Sun (circle) + a few umbrella silhouettes (reusing TreeGeom's own
+         *  canopy+pole shape, just tuned proportions — see
+         *  computeBeachElements' doc comment for why a new geometry type
+         *  wasn't introduced for this). */
+        data class BeachGeom(val sun: OvalGeometry, val umbrellas: List<TreeGeom>)
+
         /** One star: position, radius, and its already-twinkle-resolved alpha (0-255). */
         data class StarGeom(val cx: Float, val cy: Float, val r: Float, val alpha: Float)
 
@@ -1503,6 +1522,83 @@ class RigRenderer {
                 )
             }
             return list
+        }
+
+        /**
+         * A handful of rectangular furniture silhouettes sitting at the
+         * floor line — same "objects standing at horizonPx" composition as
+         * [computeCityBuildings], just shorter/wider proportions (furniture,
+         * not a skyline) and fewer of them (3, not 8) so they read as
+         * discrete pieces rather than a repeating pattern. Widths/heights
+         * are literal per-index fractions rather than a formula like
+         * city's — there's no natural single curve for "a room's worth of
+         * furniture" the way there is for a repeating skyline, so this is
+         * just 3 explicitly-placed pieces, checked by hand (and in Python,
+         * before writing this) to not overlap and to stay on-canvas across
+         * landscape/portrait/ultrawide/square and horizon fractions 0.3-0.9.
+         * Tiny sway added purely for consistency with every other scene
+         * shape here having *some* motion (see PROMPT_CONSIDERATIONS.md's
+         * "constant subtle motion" line) — furniture doesn't really sway,
+         * but literally rigid furniture was a bigger departure from every
+         * other shape's behavior than a barely-perceptible common sway is.
+         */
+        fun computeRoomFurniture(w: Int, h: Int, horizonYFraction: Float, timeSec: Float): List<RectGeom> {
+            val horizonPx = h * horizonYFraction
+            val sway = kotlin.math.sin(timeSec * 0.04f + 2f) * w * 0.005f
+            val heightFractions = floatArrayOf(0.35f, 0.55f, 0.30f)
+            val widthFractions  = floatArrayOf(0.22f, 0.12f, 0.28f)
+            val leftFractions   = floatArrayOf(0.08f, 0.42f, 0.62f)
+            val list = ArrayList<RectGeom>(3)
+            for (i in 0 until 3) {
+                val fh = horizonPx * heightFractions[i]
+                val x = w * leftFractions[i] + sway
+                val fw = w * widthFractions[i]
+                list += RectGeom(x, horizonPx - fh, x + fw, horizonPx)
+            }
+            return list
+        }
+
+        /**
+         * Sun (fixed, no sway/drift — reads as a distant fixed object,
+         * unlike clouds' continuous drift) + 3 umbrella silhouettes at the
+         * horizon, built from [TreeGeom] itself (canopy circle + thin pole)
+         * rather than a new geometry type: [drawSceneShape]'s Canvas path
+         * draws a tree's canopy with `canvas.drawCircle(..., halfWidth,
+         * ...)` and GLES's `SceneDrawCommand.Circle` similarly only reads
+         * `halfWidth` — [OvalGeometry.halfHeight] is silently ignored by
+         * both, so an attempt at a flatter/wider elliptical umbrella canopy
+         * (tried first) would've silently rendered as a plain circle
+         * anyway. A plain circle reads fine as an umbrella top over a
+         * pole, so this reuses TreeGeom's exact composition instead of
+         * introducing a new geometry type with its own from-scratch
+         * Canvas+GLES parity work.
+         *
+         * Sizing is deliberately based on `min(w, h)`, not `horizonPx` the
+         * way city/tree height is — verified numerically (Python) that
+         * scaling the umbrella canopy off horizonPx overflows canvas width
+         * in portrait orientation at a low horizon line (horizonPx, based
+         * on the LARGER dimension h, can exceed w there), which a
+         * horizontally-scaled quantity must never be derived from.
+         */
+        fun computeBeachElements(w: Int, h: Int, horizonYFraction: Float, timeSec: Float): BeachGeom {
+            val horizonPx = h * horizonYFraction
+            val minDim = min(w, h).toFloat()
+            val sunR = minDim * 0.05f
+            val sun = OvalGeometry(w * 0.80f, horizonPx * 0.30f, sunR, sunR)
+            val umbrellaCount = 3
+            val spacing = w.toFloat() / umbrellaCount
+            val list = ArrayList<TreeGeom>(umbrellaCount)
+            for (i in 0 until umbrellaCount) {
+                val poleH = horizonPx * 0.12f
+                val canopyR = minDim * (0.05f + 0.02f * ((i * 31) % 3))
+                val sway = kotlin.math.sin(timeSec * 0.5f + i * 1.1f) * (canopyR * 0.08f)
+                val cx = spacing * i + spacing * 0.5f + sway
+                list += TreeGeom(
+                    canopy = OvalGeometry(cx, horizonPx - poleH - canopyR, canopyR, canopyR),
+                    trunk  = RectGeom(cx - canopyR * 0.06f, horizonPx - poleH, cx + canopyR * 0.06f, horizonPx)
+                )
+            }
+            return BeachGeom(sun, list)
         }
 
         /**

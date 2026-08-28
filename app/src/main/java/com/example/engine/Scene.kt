@@ -17,8 +17,10 @@ object SceneShape {
     const val CITY      = "city"
     const val TREES     = "trees"
     const val CLOUDS    = "clouds"
+    const val ROOM      = "room"
+    const val BEACH     = "beach"
 
-    private val ALL = setOf(NONE, MOUNTAINS, CITY, TREES, CLOUDS)
+    private val ALL = setOf(NONE, MOUNTAINS, CITY, TREES, CLOUDS, ROOM, BEACH)
 
     /** Unknown/blank strings fall back to NONE rather than throwing — a bad AI-generated value should degrade gracefully, not break the render. */
     fun fromString(value: String?): String = value?.lowercase()?.takeIf { it in ALL } ?: NONE

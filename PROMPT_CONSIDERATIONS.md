@@ -207,7 +207,7 @@ expression: normal | wide | squint | worried | angry | happy
   concern, adds eyebrows. angry = adds furrowed eyebrows. Eyebrows ONLY
   draw for worried/angry — no need to reason about them separately.)
 
-sceneShape: none | mountains | city | trees | clouds
+sceneShape: none | mountains | city | trees | clouds | room | beach
 sceneAtmosphere: none | rain | snow | fog | stars
   Scene shapes are drawn with their own constant subtle motion by the
   renderer already (gentle sway/drift) — you do not need to fake motion
@@ -830,7 +830,7 @@ matters as much as renderer correctness.
   can ask for color intent freely (e.g. "warm sunset tones") without
   needing hex-level precision or figure-color awareness.
 - `sceneShape`/`sceneAtmosphere` values must be one of the string
-  constants in `engine/Scene.kt` (`none|mountains|city|trees|clouds` and
+  constants in `engine/Scene.kt` (`none|mountains|city|trees|clouds|room|beach` and
   `none|rain|snow|fog|stars` respectively) — the prompt should enumerate
   these explicitly rather than let the AI invent new values, since
   `fromString()` silently falls back to `NONE` for anything unrecognized

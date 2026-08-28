@@ -1733,6 +1733,102 @@ approved by the person before implementing:**
   — GitHub Actions/the commit-status API wasn't reachable this session
   (rate limit exhausted on the shared sandbox IP) — or device.
 
+- **Walk cycle: analytic foot-plant hip-bob for walk_a/walk_b —
+  implemented, jog_a/jog_b deliberately excluded, NOT device-confirmed.**
+  Implements the priority-list decision above ("foot-plant IK for
+  walk_a/walk_b, scoped as a walk-cycle-specific analytic correction, not
+  a general arbitrary-target IK solver"), after confirming via source
+  read that the root (pelvis) really is vertically static except for
+  explicit script `figureY` overrides — see `StickFigureRig.kt`'s own
+  header comment — so the hip stays dead-still while walk_a/walk_b's
+  hand-authored leg angles scissor beneath it.
+
+  Derivation: computed FK foot positions for walk_a/walk_b directly from
+  `StickFigureRig.BONES`'/`BUILT_IN_POSES`' actual angle data (Python,
+  not eyeballed) to find each pose's stance (planted) foot depth. The two
+  depths differ (walk_a's stance foot: 0.19589 normalized units; walk_b's:
+  0.23861) — the hand-authored poses aren't a perfect mirror of each
+  other, confirmed by checking: bone *defaults* for the two legs mirror
+  exactly (100° = 180-80°), but walk_a's own per-leg pose deltas don't
+  mirror walk_b's the same way (e.g. 32° vs -28°) — likely intentional,
+  for a less robotic-looking gait, not a bug. Target ground Y is the
+  midpoint (0.21725), so a full walk_a<->walk_b cycle has zero net
+  vertical drift.
+
+  First implementation attempt (precompute each pose's offset from that
+  midpoint, LERP the two offsets across the transition using the same
+  eased progress as joint angles) was verified numerically in Python
+  before being kept — and failed the check: it's exact at the two
+  endpoints but drifts up to 0.06 normalized units (~65px at 1920x1088)
+  at the transition's midpoint, because both legs pass through a more-
+  extended, double-support-like configuration there that neither
+  endpoint's precomputed offset accounts for. Rejected; not shipped.
+
+  Second (implemented) version computes the correction fresh every frame
+  from the CURRENTLY blended leg angles — `target - liveStanceDepth`,
+  where `liveStanceDepth` is a small 2-bone FK calc done inline in
+  `PlaybackEngine.resolveBaseAngles` (not reusing
+  `RigRenderer.computeFkMatrices`, which is Android-`Matrix`-based —
+  `PlaybackEngine` has no Android Graphics dependency today and this
+  didn't seem like the place to introduce one for two sines). Verified
+  numerically: zero drift at every sampled point across the transition,
+  not just the endpoints, by construction.
+
+  Applied the same technique to jog_a/jog_b before deciding to ship it —
+  and rejected it. jog's own angle data needs the hip to swing up to
+  0.18 normalized units (~196px at 1920x1088) at the transition's
+  midpoint to keep the foot exactly planted, because jog's mid-blend
+  passes through an even more exaggerated double-support-like
+  configuration than walk's. That's worse, as a visual hip excursion,
+  than the dead-still-hip bug it would be fixing — a pose-authoring
+  problem (jog_a/jog_b would need a real mid-stride keyframe, not just
+  this technique applied more broadly), not something this fix should
+  paper over unverified. jog_a/jog_b keep today's existing (uncorrected)
+  behavior; this doesn't touch them.
+
+  Gated on `{fromPoseId, toPoseId} == {"walk_a","walk_b"}` (order-
+  independent, via `Set` equality) — required threading `fromPoseId`/
+  `toPoseId` through `TimelineCompiler`'s `BakedKeyframe` (previously
+  baked straight to angle arrays with no retained pose identity).
+  Gating on BOTH ends being walk_a/walk_b, rather than either end, means
+  a transition into/out of a walk sequence just holds the correction at
+  0f rather than live-correcting partway through an unrelated pose's own
+  leg geometry — accepts a small, localized pop at walk-sequence entry/
+  exit (correction jumps from 0 to walk_a's or walk_b's own live value
+  at that boundary) as a real but bounded, disclosed limitation, rather
+  than trying to eliminate it and risking a worse, less-understood
+  artifact elsewhere. Root X is untouched — walk_a/walk_b remain
+  walking-in-place, not translating across the canvas; that's a separate,
+  bigger design question, out of scope here.
+
+  Touches 6 files: `StickFigureRig.kt` (new `WALK_STANCE_TARGET_Y_NORMALIZED`
+  + `WALK_POSE_PAIR` constants), `TimelineCompiler.kt` (`fromPoseId`/
+  `toPoseId` on `BakedKeyframe`), `PlaybackEngine.kt` (new
+  `currentHipBobOffset` field + the live FK calc), `RigRenderer.kt` (new
+  `hipBobNormalized` param on `draw()`, applied to `rootY`),
+  `VideoExporter.kt` (threaded at both the real Canvas `export()` call
+  and the GLES smoke test's separate root computation), `AnimationSurfaceView.kt`
+  (threaded at the live-preview `draw()` call). Deliberately did NOT touch
+  `AnimationSurfaceView.kt`'s OTHER, separate `rootX`/`rootY` computation
+  (the pose-editor hit-test/drag path, `worldEndpoints`) — that's for
+  editing a single static pose, not playing an animated sequence, and a
+  mysteriously-shifting root while someone's trying to drag a bone into
+  place would be actively confusing, not a fix.
+
+  Verified: full diff review; brace/paren balance on all 6 files (one
+  file, `PlaybackEngine.kt`, shows a 1-off count from a PRE-EXISTING
+  `(last, current]` half-open-interval comment elsewhere in the file —
+  confirmed unrelated by isolating just the added lines, which balance
+  exactly); confirmed only one `BakedKeyframe(` construction site and one
+  `draw()` signature exist, so nothing was missed; confirmed the FK math
+  numerically in Python before writing the Kotlin, twice (rejecting the
+  first design, verifying the second). NOT verified: compiler (same
+  GitHub Actions rate-limit situation as the snow/rain entry above) or
+  device — this is a bigger, more central change than snow/rain (touches
+  core playback/timeline/render code, not an isolated atmosphere effect)
+  and needs a real look before trusting it, not just because the logic
+  checks out on paper.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -1875,7 +1971,9 @@ zoom in."
   write-back pattern rather than inventing a new interaction model;
   (4) the GLES export rewrite above; (5) foot-plant IK for
   `walk_a`/`walk_b`, scoped as a walk-cycle-specific analytic correction,
-  not a general arbitrary-target IK solver. (4) and (5) deliberately
+  not a general arbitrary-target IK solver — **(5) is now implemented,
+  NOT device-confirmed; see the "Walk cycle: analytic foot-plant hip-bob"
+  entry above.** (4) and (5) deliberately
   ordered last — export/IK are both self-contained "under the hood"
   work, while (2) and (3) directly affect whether AI-generated output
   actually looks distinctive rather than samey, which was judged higher

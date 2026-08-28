@@ -1829,6 +1829,72 @@ approved by the person before implementing:**
   and needs a real look before trusting it, not just because the logic
   checks out on paper.
 
+- **Background shapes: room + beach — implemented, NOT device-confirmed.**
+  Answers the standing "expanded procedural background shape vocabulary"
+  question that had been open for several sessions with no decision
+  either way. Scoped to 2 new shapes, not an open-ended set — same
+  reasoning as jog being excluded above: better to ship something small
+  and checkable than something broad and unverifiable.
+
+  Both reuse ONLY existing geometry primitives (`RectGeom`, `OvalGeometry`,
+  and `TreeGeom` itself for beach's umbrellas) rather than introducing a
+  new shape type — deliberately, since a new primitive would need its own
+  from-scratch Canvas+GLES draw-command parity work with no way to verify
+  it renders identically on both paths without a device. `room` is 3
+  furniture-silhouette rects at the floor line (same "sits at horizonPx"
+  composition as `computeCityBuildings`, just shorter/wider proportions
+  and only 3 of them so they read as discrete pieces). `beach` is a fixed
+  sun circle + 3 umbrella silhouettes built from `TreeGeom`'s own
+  canopy+pole shape — tried an elliptical (flatter/wider) umbrella canopy
+  first using `OvalGeometry.halfHeight`, then actually checked
+  `drawSceneShape`'s Canvas code and GLES's `SceneDrawCommand.Circle` and
+  found both only ever read `halfWidth` for a tree canopy — `halfHeight`
+  is silently ignored by both, so the ellipse attempt would've rendered
+  as a plain circle regardless. Reused the plain-circle version instead
+  of the dead code that would've resulted.
+
+  Numerically verified in Python (bounds-checked, not eyeballed) across
+  landscape/portrait/ultrawide/square and horizon fractions 0.3-0.9
+  before writing the Kotlin: first pass had umbrella canopy radius scaled
+  off `horizonPx` (matching how city/tree *height* scales), which
+  overflowed canvas width in portrait mode at a low horizon line, since
+  `horizonPx` is based on `h` and can exceed `w` there. Fixed by scaling
+  off `min(w, h)` instead — a horizontally-relevant size must never be
+  derived from a quantity that can be dominated by the vertical
+  dimension. Room furniture's per-piece width/height/position are literal
+  hand-placed fractions (no natural repeating-pattern formula the way
+  city's skyline has), checked the same way for overlap and on-canvas
+  bounds across the same sweep.
+
+  Touches: `Scene.kt` (new `ROOM`/`BEACH` constants), `ScriptValidator.kt`
+  (added to `VALID_SCENE_SHAPE`), `RigRenderer.kt` (`computeRoomFurniture`,
+  `computeBeachElements`, `BeachGeom`, both Canvas draw cases),
+  `GlesFigureFrame.kt` (matching GLES draw cases), `system_prompt.txt` AND
+  its byte-identical copy in `PROMPT_CONSIDERATIONS.md` (both updated
+  identically, confirmed via diff after editing — the AI needs to know
+  these values exist or it will never generate them, same as any other
+  valid enum value).
+
+  Verified: full diff review; brace/paren balance on all 4 touched Kotlin
+  files; confirmed no other consumer of `SceneShape`'s internal `ALL` set
+  needed updating; the geometry bounds-checking above. NOT verified:
+  compiler (same rate-limit situation as everything else this session) or
+  device — entirely new visual content, so this needs eyes on it more
+  than any of today's other fixes, not less.
+
+  **Also updated `AnimScript.DEMO`** to exercise this plus everything else
+  outstanding from today (walk cycle, snow/star/rain sizing, GLES audio
+  is smoke-test-only so NOT covered by this general export) in the one
+  video the next device check will actually look at — new `room` (255s),
+  `beach`+`stars` (258s) events inserted into the existing combo-test
+  window between the two `stressCycle` batches, resetting cleanly back to
+  `mountains`+`snow` before batch 2. This pushed batch 2's start from
+  258.0s to 264.0s (a fixed literal in three places — the `stressCycle`
+  call itself, its matching `stressCycleBlinks` call, and the boundary-
+  math comment above the combo test — all three updated together, checked
+  for any other stale `258.0` reference via grep after editing, found
+  none). Total runtime grows by ~6s (~8:05 instead of ~7:59).
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

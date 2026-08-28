@@ -88,6 +88,13 @@ class RigRenderer {
         cameraPanX: Float = 0f,
         cameraPanY: Float = 0f,
         cameraShakeIntensity: Float = 0f,
+        // Walk-cycle foot-plant correction — see
+        // StickFigureRig.WALK_STANCE_TARGET_Y_NORMALIZED's doc comment. Same
+        // normalized-length units as bone length, so it's scaled by `scale`
+        // below, not minDim/canvasH directly. 0f (the default) reproduces
+        // today's behavior exactly for every project with no walk_a/walk_b
+        // pair active in its timeline.
+        hipBobNormalized: Float = 0f,
         // V2 — scene, resolved by PlaybackEngine, null = no scripted override
         skyColor: Long? = null,
         groundColor: Long? = null,
@@ -122,7 +129,7 @@ class RigRenderer {
         val minDim  = min(canvasW, canvasH).toFloat()
         val scale   = minDim * (overrides.scale ?: appearance.characterScale)
         val rootX   = canvasW * (overrides.x ?: appearance.rootAnchorX)
-        val rootY   = canvasH * (overrides.y ?: appearance.rootAnchorY)
+        val rootY   = canvasH * (overrides.y ?: appearance.rootAnchorY) + hipBobNormalized * scale
 
         // ── Camera transform (V2, purely AI-JSON-driven — no automatic
         // behaviour derives this from amplitude). Wraps EVERYTHING below —

@@ -204,6 +204,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
                 cameraPanX             = engine.currentCameraPanX,
                 cameraPanY             = engine.currentCameraPanY,
                 cameraShakeIntensity   = engine.currentShakeIntensity,
+                hipBobNormalized       = engine.currentHipBobOffset,
                 skyColor               = engine.currentSkyColor,
                 groundColor            = engine.currentGroundColor,
                 horizonY               = engine.currentHorizonY,

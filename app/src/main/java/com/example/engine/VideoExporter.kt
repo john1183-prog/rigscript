@@ -383,6 +383,7 @@ object VideoExporter {
                         cameraPanX             = engine.currentCameraPanX,
                         cameraPanY             = engine.currentCameraPanY,
                         cameraShakeIntensity   = engine.currentShakeIntensity,
+                        hipBobNormalized       = engine.currentHipBobOffset,
                         skyColor               = engine.currentSkyColor,
                         groundColor            = engine.currentGroundColor,
                         horizonY               = engine.currentHorizonY,
@@ -641,7 +642,7 @@ object VideoExporter {
                         val overrides = engine.currentFigureOverrides
                         val scale = minDim * (overrides.scale ?: appearance.characterScale)
                         val rootX = width  * (overrides.x ?: appearance.rootAnchorX)
-                        val rootY = height * (overrides.y ?: appearance.rootAnchorY)
+                        val rootY = height * (overrides.y ?: appearance.rootAnchorY) + engine.currentHipBobOffset * scale
 
                         RigRenderer.computeFkMatrices(engine.currentAngles, rootX, rootY, scale, matrices)
                         val glesFrame = GlesFigureFrame.fromFkMatrices(

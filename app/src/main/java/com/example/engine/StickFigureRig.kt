@@ -265,4 +265,56 @@ object StickFigureRig {
 
     /** Index of built-in poses by ID for O(1) lookups during timeline compilation. */
     val BUILT_IN_POSE_INDEX: Map<String, PoseDef> = BUILT_IN_POSES.associateBy { it.id }
+
+    /**
+     * Foot-plant hip-bob correction for walk_a/walk_b — see
+     * V2_DECISIONS.md's "Walk cycle: analytic foot-plant hip-bob" entry for
+     * the full derivation. The root (pelvis) is otherwise vertically static
+     * (see this file's own header comment: rootY only moves via a script's
+     * explicit figureY override, never automatically from leg motion), so
+     * without this, the hip stays dead-still while the legs scissor beneath
+     * it — the "architecturally inverted" walk cycle bug.
+     *
+     * This is the single shared ground-contact Y (same normalized units as
+     * [BoneDef.normalizedLength] — multiply by the render path's own
+     * `scale`, not minDim/canvasH directly) both walk_a's and walk_b's
+     * stance (planted) foot should land on. It's the MIDPOINT of the two
+     * poses' own natural stance-foot depth, computed via forward kinematics
+     * from their actual authored angles (hip fixed at the origin) — not
+     * either pose's own raw depth — so a full walk_a<->walk_b cycle has
+     * zero net vertical drift.
+     *
+     * [PlaybackEngine.currentHipBobOffset] computes `this - liveStanceDepth`
+     * fresh EVERY FRAME from the currently-blended leg angles, not by
+     * interpolating a precomputed per-pose offset — that simpler approach
+     * was tried first and rejected: verified numerically (Python) that
+     * lerping a fixed walk_a/walk_b endpoint offset drifts up to ~0.06
+     * normalized units (real, non-trivial — around 65px at 1920x1088) at
+     * the transition's midpoint, because both legs pass through a more-
+     * extended, double-support-like configuration there that neither
+     * endpoint's offset accounts for. The live per-frame version is exact
+     * (zero drift) at every point in the transition, not just the two ends.
+     *
+     * jog_a/jog_b deliberately do NOT get this treatment (yet). The same
+     * live-correction technique, verified against jog's actual angle data,
+     * needs the hip to swing by up to ~0.18 normalized units (~196px) at
+     * the transition's midpoint to keep the foot exactly planted — WORSE,
+     * as a visual excursion, than the dead-still-hip bug it would be
+     * fixing. That's a pose-authoring problem (jog_a/jog_b's linear
+     * mid-blend passes through an unrealistically extended double-support-
+     * like pose), not something a hip-Y-only correction can paper over —
+     * it would need a real mid-stride keyframe, not just this fix applied
+     * more broadly. Left alone rather than shipped un-verifiable.
+     *
+     * NOT device-confirmed even for walk_a/walk_b — this corrects vertical
+     * foot-plant depth only; it does not address horizontal stride/travel
+     * (root X is untouched, matching how this codebase currently treats
+     * walk_a/walk_b as walking-in-place, not translating across the
+     * canvas). Needs an actual look on the next device check.
+     */
+    const val WALK_STANCE_TARGET_Y_NORMALIZED: Float = 0.21725f
+
+    /** Gate for [PlaybackEngine.currentHipBobOffset] — set comparison so
+     *  walk_a->walk_b and walk_b->walk_a both match, direction-independent. */
+    val WALK_POSE_PAIR: Set<String> = setOf("walk_a", "walk_b")
 }

@@ -102,6 +102,22 @@ class PlaybackEngine {
         private set
 
     /**
+     * Per-frame vertical root offset (same normalized units as
+     * [StickFigureRig.BoneDef.normalizedLength] — multiply by the render
+     * path's own `scale`, not minDim/canvasH directly) correcting for the
+     * walk_a/walk_b foot-plant bug — see
+     * [StickFigureRig.WALK_STANCE_TARGET_Y_NORMALIZED]'s doc comment for the full
+     * derivation. Always a plain non-null Float (unlike the nullable
+     * override fields above) because it's derived engine state, not an
+     * optional AI-script override layered onto AppearanceSettings — same
+     * category as [currentCameraZoom], which is why it's threaded to
+     * [RigRenderer.draw] as its own standalone parameter rather than folded
+     * into [currentFigureOverrides]/[FigureOverrides].
+     */
+    @Volatile var currentHipBobOffset: Float = 0f
+        private set
+
+    /**
      * Bundles all the figure/scene overrides above into one object for
      * [RigRenderer.draw] — same reasoning as [FigureOverrides]' own doc
      * comment: one param to thread through call sites instead of fifteen.
@@ -454,6 +470,7 @@ class PlaybackEngine {
             currentMouthColor = null
             currentEyeColor = null
             currentEyebrowColor = null
+            currentHipBobOffset = 0f
             return
         }
 
@@ -543,6 +560,32 @@ class PlaybackEngine {
         currentMouthColor  = lerpNullableColor(kf.fromMouthColor, kf.toMouthColor, easedT)
         currentEyeColor    = lerpNullableColor(kf.fromEyeColor, kf.toEyeColor, easedT)
         currentEyebrowColor = lerpNullableColor(kf.fromEyebrowColor, kf.toEyebrowColor, easedT)
+
+        // Live per-frame correction, not a lerped precomputed offset — see
+        // StickFigureRig.WALK_STANCE_TARGET_Y_NORMALIZED's doc comment for
+        // why (verified numerically: lerping a fixed offset drifts ~0.06
+        // normalized units at the transition's midpoint; this doesn't).
+        // Gated on BOTH ends being walk_a/walk_b (not "either end") so a
+        // transition into/out of the walk cycle just holds 0f rather than
+        // popping — the discontinuity that would cause is a smaller, more
+        // localized visual cost than trying to correct partway through an
+        // unrelated pose's own leg geometry.
+        currentHipBobOffset = if (setOf(kf.fromPoseId, kf.toPoseId) == StickFigureRig.WALK_POSE_PAIR) {
+            val idxUpperR = rig.BONE_INDEX.getValue("upper_leg_r")
+            val idxLowerR = rig.BONE_INDEX.getValue("lower_leg_r")
+            val idxUpperL = rig.BONE_INDEX.getValue("upper_leg_l")
+            val idxLowerL = rig.BONE_INDEX.getValue("lower_leg_l")
+            val absUpperR = baseAngles[idxUpperR]
+            val absLowerR = absUpperR + baseAngles[idxLowerR]
+            val absUpperL = baseAngles[idxUpperL]
+            val absLowerL = absUpperL + baseAngles[idxLowerL]
+            val footYR = bones[idxUpperR].normalizedLength * sin(Math.toRadians(absUpperR.toDouble())).toFloat() +
+                         bones[idxLowerR].normalizedLength * sin(Math.toRadians(absLowerR.toDouble())).toFloat()
+            val footYL = bones[idxUpperL].normalizedLength * sin(Math.toRadians(absUpperL.toDouble())).toFloat() +
+                         bones[idxLowerL].normalizedLength * sin(Math.toRadians(absLowerL.toDouble())).toFloat()
+            val liveStanceDepth = max(footYR, footYL)
+            StickFigureRig.WALK_STANCE_TARGET_Y_NORMALIZED - liveStanceDepth
+        } else 0f
     }
 
     /**

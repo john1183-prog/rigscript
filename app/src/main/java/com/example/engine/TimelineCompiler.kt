@@ -58,6 +58,14 @@ import com.example.data.PoseDef
  *                  the project's own setting" for either of these.
  * [fromGroundLineYFraction]/[toGroundLineYFraction] Interpolated like
  *                  [fromHorizonY], same null-means-no-override rule.
+ * [fromPoseId]/[toPoseId] The raw pose ID string at each end of this
+ *                  transition (e.g. "walk_a", "stand_straight") — [toAngles]
+ *                  already bakes the pose's angles in, so nothing else reads
+ *                  these for angle math; they exist purely so consumers can
+ *                  recognize specific named poses without re-deriving
+ *                  identity from angle values. Added for
+ *                  [StickFigureRig.WALK_STANCE_TARGET_Y_NORMALIZED] lookups —
+ *                  see [PlaybackEngine.currentHipBobOffset].
  */
 data class BakedKeyframe(
     val timeSec: Float,
@@ -116,7 +124,9 @@ data class BakedKeyframe(
     val fromEyeColor: Long?,
     val toEyeColor: Long?,
     val fromEyebrowColor: Long?,
-    val toEyebrowColor: Long?
+    val toEyebrowColor: Long?,
+    val fromPoseId: String,
+    val toPoseId: String
 )
 
 /**
@@ -178,6 +188,11 @@ object TimelineCompiler {
 
         val result = mutableListOf<BakedKeyframe>()
         var prevAngles = defaultAngles.copyOf()   // angles at the END of previous keyframe
+        // Matches prevAngles' own "as if we came from rest" initialization —
+        // stand_straight is the pose whose angles ARE defaultAngles (emptyMap
+        // deltas). See StickFigureRig.WALK_STANCE_TARGET_Y_NORMALIZED's doc comment
+        // for why this identity is threaded through at all.
+        var prevPoseId = "stand_straight"
 
         // V2 — carried state across events. Expression and camera both use
         // carry-forward semantics identical to pose: a null field on the event
@@ -318,10 +333,13 @@ object TimelineCompiler {
                 fromEyeColor    = prevEyeColor,
                 toEyeColor      = toEyeColor,
                 fromEyebrowColor = prevEyebrowColor,
-                toEyebrowColor    = toEyebrowColor
+                toEyebrowColor    = toEyebrowColor,
+                fromPoseId      = prevPoseId,
+                toPoseId        = event.pose
             )
 
             prevAngles = toAngles.copyOf()
+            prevPoseId = event.pose
             prevZoom = toZoom
             prevPanX = toPanX
             prevPanY = toPanY

@@ -250,17 +250,39 @@ data class AnimScript(
          * ~3s quick-check mode still renders, and every comment above still
          * describes exactly what it did before. Everything from 24.0s on
          * is new, generated rather than hand-authored (see [stressCycle]),
-         * existing purely to give the newer full-length stress-test mode a
-         * real ~8-minute duration to run against — not narrative
-         * choreography the way the original section is. Two deliberate,
-         * one-off exceptions inserted at 248-255s, not part of the
-         * generated cycle: gradient background + camera zoom/pan active
-         * together, and a glowing overlay active during a camera zoom —
-         * both flagged in V2_DECISIONS.md as never separately checked even
-         * after each feature was individually confirmed. A second
-         * shape+gradient+glow overlay (same combination as `intro_badge`)
-         * repeats at 300s so it's easy to spot again on a long playback
-         * review, not just in the first few seconds.
+         * existing to give the GLES stress-test mode a real multi-minute
+         * duration to run against — not narrative choreography the way the
+         * original section is.
+         *
+         * [stressCycle]'s repeat count is currently 1 per batch (was 7,
+         * ~8 minutes total) — shortened for a fast iteration turnaround
+         * while checking specific recent fixes, not doing the actual
+         * long-duration thermal/memory stress testing the repeat count
+         * exists for. Bump [stressCycle]'s `count` argument (both call
+         * sites) back up before relying on this for a real stress run —
+         * nothing else about the mechanism changed.
+         *
+         * Several deliberate, one-off insertions between the two
+         * [stressCycle] batches, not part of the generated cycle itself:
+         * a "lazy"-pose hold for a clean, arm-unoccluded rotation check
+         * (the wave pose's raised arm crosses the head, which made a
+         * previous device review's single-eye observation ambiguous);
+         * gradient background + camera zoom/pan active together, and a
+         * glowing overlay active during that same camera zoom — both
+         * flagged in V2_DECISIONS.md as never separately checked even
+         * after each feature was individually confirmed; and the room/
+         * beach scene shapes. A second shape+gradient+glow overlay (same
+         * combination as `intro_badge`) repeats later so it's easy to
+         * spot again on playback, not just in the first few seconds — was
+         * fixed at 300s back when this ran to ~8 minutes, retimed to land
+         * inside the (now much earlier) final stressCycle batch instead.
+         * This whole paragraph describes the ACTUAL current insertions —
+         * a version of it describing a "248-255s" window and a glow
+         * overlay's own timing had drifted out of sync with the real
+         * event list before this rewrite, independent of and predating
+         * this session's own shortening; treat this as the corrected,
+         * current source of truth rather than assume it'll stay accurate
+         * forever either.
          */
         // Pose/ease/expression for one entry in the repeating filler cycle
         // stressCycle() generates — plain data, not a ScriptEvent itself,
@@ -287,10 +309,13 @@ data class AnimScript(
         /**
          * [count] repetitions of [STRESS_CYCLE_TEMPLATE], starting at
          * [startSec] — purely to give the GLES stress-test mode a real
-         * multi-minute duration to run against (V2_DECISIONS.md). Reuses
-         * the pose library's fuller vocabulary (jog/jump/sit/tired/point_*)
+         * multi-minute duration to run against when [count] is large
+         * (V2_DECISIONS.md; current call sites use count=1 for a fast
+         * iteration turnaround, not the multi-minute run this exists for
+         * — see the class-level doc comment above [DEMO]). Reuses the
+         * pose library's fuller vocabulary (jog/jump/sit/tired/point_*)
          * rather than the smaller set the hand-authored section above
-         * needed, so 8 minutes doesn't feel identical on loop. Not meant
+         * needed, so a long run doesn't feel identical on loop. Not meant
          * to be edited by hand the way the events above are — regenerate
          * by changing [STRESS_CYCLE_TEMPLATE]/[STRESS_CYCLE_LEN_SEC]
          * instead of hand-patching individual generated events.
@@ -370,29 +395,50 @@ data class AnimScript(
                     // loop — figureX/figureScale don't need restating, they
                     // were already reset at 19.9f and haven't changed since.
                     boneColor = 0xFF0000FFL, bgColor = 0xFF1A1A2EL)
-            ) + stressCycle(25.0f, 7) + listOf(
-                // Combo test 1/2 (V2_DECISIONS.md, stress-test extension):
+            ) + stressCycle(25.0f, 1) + listOf(
+                // Shortened for a fast iteration turnaround (was 7 repeats
+                // per batch, ~8min total) — this is checking specific,
+                // recent fixes, not doing the long-duration thermal/memory
+                // stress testing stressCycle's repeat count exists for.
+                // Bump both counts back up before any real stress-test run.
+                //
+                // Clean, UNOCCLUDED rotation check: the wave pose (1.5s,
+                // above) raises an arm straight up past the head, which
+                // made the last device video's single-eye observation
+                // ambiguous — couldn't tell head-rotation bug from arm
+                // occlusion. "lazy" has real torso+head rotation deltas
+                // (22°/-14°) but its most-raised arm is only 28° (nothing
+                // near vertical, nowhere close to the head), so anything
+                // wrong with an eye here is unambiguously the rotation fix,
+                // not the pose's own arm position. Explicit scene/camera/
+                // background reset — stress-cycle beats above only ever
+                // touch pose/duration/ease/expression, so this would
+                // otherwise still be showing whatever the very first
+                // (t=0/1.5s) events set, undisturbed by anything in
+                // between, but resetting explicitly here is one less
+                // assumption to carry.
+                ScriptEvent(55.0f, "lazy", 1.0f, "ease_in_out",
+                    sceneShape = "mountains", sceneAtmosphere = "snow",
+                    skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f,
+                    backgroundStyle = "solid", cameraZoom = 1f, cameraPanX = 0f, cameraPanY = 0f),
+                // Combo test (V2_DECISIONS.md, stress-test extension):
                 // gradient background ACTIVE at the same time as a camera
                 // zoom/pan move — each confirmed individually, never
-                // together. 248.0s falls strictly between the two
-                // stressCycle batches (25 + 6*32 + 29 = 246.0 is batch 1's
-                // last event; batch 2 starts at 264.0), not inside either,
-                // so it can't collide with a generated event's timestamp.
-                ScriptEvent(248.0f, "explain", 1.0f, "ease_in_out",
+                // together.
+                ScriptEvent(58.0f, "explain", 1.0f, "ease_in_out",
                     backgroundStyle = "gradient", backgroundGradientColor = 0xFF283593L,
                     cameraZoom = 1.2f, cameraPanX = 0.05f, cameraPanY = -0.03f),
-                ScriptEvent(254.0f, "stand_straight", 1.0f, "ease_in_out",
+                ScriptEvent(63.0f, "stand_straight", 1.0f, "ease_in_out",
                     // Reset both back to defaults before the room/beach
                     // segment below.
                     backgroundStyle = "solid", cameraZoom = 1f, cameraPanX = 0f, cameraPanY = 0f),
-                // New scene shapes (V2_DECISIONS.md, "Background shapes:
-                // room + beach"). sceneShape/sceneAtmosphere both snap
-                // (carry-forward, no interpolation), so each of these holds
-                // until the next event changes it — explicit
-                // sceneAtmosphere = "none" here matters because "snow" (set
-                // once at 1.5s) would otherwise still be carrying forward
-                // through the entire stress cycle and into this segment.
-                ScriptEvent(255.0f, "explain", 0.6f, "ease_in_out",
+                // Scene shapes (V2_DECISIONS.md, "Background shapes: room +
+                // beach"). sceneShape/sceneAtmosphere both snap (carry-
+                // forward, no interpolation), so each of these holds until
+                // the next event changes it — explicit sceneAtmosphere =
+                // "none" here matters because "snow" would otherwise still
+                // be carrying forward from 1.5s.
+                ScriptEvent(64.0f, "explain", 0.6f, "ease_in_out",
                     sceneShape = "room", sceneAtmosphere = "none",
                     skyColor = 0xFFF3E5D0L, groundColor = 0xFFC9A876L, horizonY = 0.68f),
                 // Beach + stars together deliberately, same untested-combo
@@ -400,17 +446,17 @@ data class AnimScript(
                 // only place in this whole script sceneAtmosphere = "stars"
                 // appears — needed to exercise the star-radius resolution-
                 // scaling fix at all.
-                ScriptEvent(258.0f, "present", 0.6f, "ease_in_out",
+                ScriptEvent(67.0f, "present", 0.6f, "ease_in_out",
                     sceneShape = "beach", sceneAtmosphere = "stars",
                     skyColor = 0xFF1A2744L, groundColor = 0xFF0D1B2AL, horizonY = 0.62f),
-                ScriptEvent(261.0f, "stand_straight", 0.8f, "ease_in_out",
+                ScriptEvent(70.0f, "stand_straight", 0.8f, "ease_in_out",
                     // Reset to exactly the 1.5s event's own values — batch
                     // 2 of stressCycle below was authored against
                     // mountains+snow and shouldn't see anything different.
                     sceneShape = "mountains", sceneAtmosphere = "snow",
                     skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f)
-            ) + stressCycle(264.0f, 7),
-            blinkEvents = listOf(1.3f, 14.7f, 21.4f) + stressCycleBlinks(25.0f, 7) + stressCycleBlinks(264.0f, 7),
+            ) + stressCycle(73.0f, 1),
+            blinkEvents = listOf(1.3f, 14.7f, 21.4f) + stressCycleBlinks(25.0f, 1) + stressCycleBlinks(73.0f, 1),
             overlayLayers = listOf(
                 // Text phase (V2_DECISIONS.md) — gradient+glow text active
                 // 0.2-3.0s, inside the smoke test window, so this specific
@@ -507,22 +553,28 @@ data class AnimScript(
                 // Combo test 2/2 (V2_DECISIONS.md, stress-test extension):
                 // glowRadiusPx scaling under camera zoom — each confirmed
                 // individually, never together. Overlaps the
-                // cameraZoom=1.2f window above (248.0-254.0s) exactly.
+                // cameraZoom=1.2f window above (58.0-63.0s) exactly —
+                // retimed along with that event when the tail was
+                // shortened; was 248.5-253.5s against a 248.0-254.0s
+                // window, same 0.5s-in/0.5s-early-out offset kept here.
                 OverlayLayer(
                     id = "combo_glow_zoom_test", type = "shape", shape = "circle",
-                    startSec = 248.5f, endSec = 253.5f,
+                    startSec = 58.5f, endSec = 62.5f,
                     x = 0.5f, y = 0.3f, radius = 0.05f, color = 0xFF00E5FFL,
                     glow = true, glowRadius = 0.04f,
                     enterStyle = "fade", exitStyle = "fade"
                 ),
                 // Same shape+gradient+glow combination as intro_badge
-                // (0.3-2.6s) but at 300s, so it's easy to spot again on a
-                // long playback review instead of only in the first few
-                // seconds — shape-overlay glow was flagged unconfirmed for
-                // longer than any other phase (V2_DECISIONS.md).
+                // (0.3-2.6s), repeated later so it's easy to spot again on
+                // playback instead of only in the first few seconds —
+                // shape-overlay glow was flagged unconfirmed for longer
+                // than any other phase (V2_DECISIONS.md). Was 300s, back
+                // when the tail ran to ~8 minutes; retimed to land inside
+                // the last stressCycle's ~73-102s window now that it
+                // doesn't.
                 OverlayLayer(
                     id = "shape_glow_reprise", type = "shape", shape = "rect",
-                    startSec = 300.0f, endSec = 304.0f, slot = "lower",
+                    startSec = 92.0f, endSec = 96.0f, slot = "lower",
                     width = 0.3f, height = 0.025f, color = 0xFF26C6DAL, gradientColor = 0xFFFFF176L,
                     glow = true, glowRadius = 0.018f,
                     enterStyle = "slideup", exitStyle = "fade"

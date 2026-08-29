@@ -1976,6 +1976,51 @@ approved by the person before implementing:**
   change itself is new since this video was recorded and hasn't been
   seen rendered yet.
 
+- **DEMO shortened for fast iteration (~8min -> ~104s); caught a real
+  orphaned-overlay bug in the process, plus fixed a pre-existing stale
+  doc comment unrelated to this session.** `stressCycle`'s repeat count
+  dropped from 7 to 1 per batch (both call sites) — this iteration is
+  about confirming specific recent fixes, not the long-duration thermal/
+  memory testing that repeat count exists for; bump it back up before
+  relying on this for an actual stress run, nothing else about the
+  mechanism changed. Added a "lazy"-pose hold (55s) for a clean, arm-
+  unoccluded rotation check — the wave pose's raised arm crosses the
+  head, which made the previous device video's single-eye observation
+  ambiguous (rotation bug vs. arm occlusion, couldn't tell which).
+  "lazy" has real torso+head rotation (22°/-14°) with its most-raised arm
+  at only 28°, nowhere near the head.
+
+  Retiming the tail (stressCycle batch 1 end moved from ~246s to ~54s)
+  orphaned two `OverlayLayer`s that had hardcoded absolute timestamps
+  tied to the OLD schedule: `combo_glow_zoom_test` (was 248.5-253.5s,
+  meant to overlap the gradient+camera combo event) and
+  `shape_glow_reprise` (was fixed at 300s). Neither is touched by editing
+  the `events` list — `overlayLayers` is a separate list with its own
+  independent absolute timestamps, easy to miss. Caught by grepping every
+  `startSec =` in the file after the retime, not assumed clean. Retimed
+  both to land inside the new schedule (58.5-62.5s overlapping the
+  retimed combo event; 92-96s inside the now-much-earlier final
+  `stressCycle` batch).
+
+  Separately, found the class-level doc comment above `DEMO` was ALREADY
+  describing content that didn't match the real event list — a "248-255s"
+  window and a glow overlay timing that had drifted stale independent of
+  and predating this session's own shortening (unclear which earlier
+  change caused the drift; not investigated further, just fixed).
+  Rewritten to describe what's actually there now, with an explicit note
+  not to assume it'll stay accurate forever either — the mechanism for
+  catching this (grep every `startSec`, cross-check against what the
+  prose claims) is worth repeating next time this file gets touched, not
+  just this once.
+
+  Verified: full diff review; brace/paren balance; grepped for every
+  `startSec =` in the file post-edit to confirm no other overlay was
+  similarly orphaned; grepped for stale "8-minute"/old-timestamp mentions
+  across the whole file, not just the section directly edited. NOT
+  verified: compiler or device — this is script/data changes, not new
+  rendering code, so the risk profile is different (a bad timestamp is a
+  content bug, not a crash), but still unverified until it's actually run.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

@@ -1895,6 +1895,87 @@ approved by the person before implementing:**
   for any other stale `258.0` reference via grep after editing, found
   none). Total runtime grows by ~6s (~8:05 instead of ~7:59).
 
+- **First real device video review of today's session's work: eye/mouth
+  rotation, walk cycle, snow/star sizing, room/beach all CONFIRMED on
+  screen; mouth position pushed further up (0.36 -> 0.24).** Reviewed
+  `test_gles_test_1788007871315.mp4` (real Canvas `export()`, 1088x1920
+  portrait, 486.5s video / 72.5s test narration audio) via `ffmpeg` frame
+  extraction + pixel analysis, not eyeballing — same discipline as the
+  "feature-check script + device video review" entry above.
+
+  Confirmed working via pixel measurement, not just visual impression:
+  - **Walk cycle hip-bob**: head-top Y measured at 537px (t=18.0s) vs
+    510px (t=18.4s) — a real 27px vertical shift between two points in
+    the same walk cycle. The hip is not dead-still; the fix is doing
+    what it was built to do.
+  - **Snow/stars**: both clearly visible as distinct dots in the actual
+    export, not the "barely-visible specks" the original bug report
+    described. Confirms the resolution-scaling fix, not just the source
+    read that motivated it.
+  - **Eyes**: both render as proper ovals in a non-rotated frontal frame
+    (checked directly, pixel bbox measured). Did NOT get a clean
+    confirmation on the ROTATED wave-pose frame specifically — only one
+    eye was visible there, but the figure's raised arm crosses right
+    through that part of the head in that exact pose, which is a
+    plausible enough explanation on its own that this isn't being called
+    a regression. Worth a dedicated look at an unoccluded rotated pose
+    before fully closing this out.
+  - **Room/beach**: both render as designed — furniture rects and
+    umbrella circles visible, stars visible against beach's dark sky
+    (that combination was this session's own choice, pairing beach with
+    stars specifically to test both at once — beach alone, in a script
+    that doesn't also set a night sky, would use whatever sky color that
+    script picks, not always this dark).
+
+  **New, minor, not fixed**: in both the room and beach frames, the
+  MIDDLE furniture/umbrella piece sits almost exactly behind the
+  character's own standing position and is mostly occluded by it. Not a
+  bug — nothing renders incorrectly — just a wasted composition choice.
+  `leftFractions`/`spacing` in `computeRoomFurniture`/
+  `computeBeachElements` could shift that middle piece off-center. Left
+  alone for now — noted here rather than fixed blind, since "would this
+  look better" is exactly the kind of call that benefits from being
+  bundled with other device-observed feedback rather than guessed at
+  separately.
+
+  **Mouth position — directly measured, then fixed.** Cropped and pixel-
+  measured a frontal (non-rotated) frame precisely: at the existing 0.36
+  anchor coefficient, the mouth's own bounding box sat 82% of the way
+  down the visible head circle, its bottom edge only ~13px above the
+  chin (head circle ~172px tall in that frame). Back-solved the head's
+  actual `hy`/`ny` values from that measurement plus the eye anchor's own
+  known coefficient (0.08, measured independently in the same frame) to
+  get an exact pixel-to-coefficient mapping, rather than nudging by feel
+  a second time. Landed on 0.24, targeting the mouth center at ~72% down
+  — a real, visible correction (~17px up in that reference frame) without
+  going as far as the 68%/0.19 alternative also computed. This is the
+  math being exact about a chosen target, not the target itself being
+  verified — "72% down looks right" is a judgment call this session made,
+  not something Python confirmed. GLES needed no separate edit — it calls
+  `RigRenderer.computeMouthGeometry` directly, same function, already
+  shared.
+
+  **Mouth amplitude/lip-sync — checked, inconclusive, not changed.**
+  Tried to independently verify audio-amplitude-to-mouth-openness
+  correlation: measured mouth pixel height at a quiet audio moment (RMS
+  ~8.3k) vs. a loud one (~17.5k) 0.3s apart in a matched frontal pose —
+  35px vs 41px, only a 1.17x ratio, well under the ~2x the openness
+  formula's own range implies. But a separate side-by-side (closed vs.
+  clearly open mouth, different frames) showed the full range clearly
+  does get used elsewhere in this same clip, which weighs against "the
+  lip-sync is broken" as the explanation. More likely this session's own
+  naive 0.1s-window RMS proxy doesn't line up closely enough with
+  `EnvelopeStore`'s actual extraction to make a fair two-point
+  comparison — not verified either way, not confident enough to act on.
+  Flagged rather than acted on; worth deciding by ear on playback rather
+  than from this proxy measurement.
+
+  NOT verified: compiler (same rate-limit situation as all session) —
+  device confirmation IS what this whole entry is, for the parts of
+  today's work a video could actually confirm, but the mouth position
+  change itself is new since this video was recorded and hasn't been
+  seen rendered yet.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

@@ -1280,8 +1280,24 @@ class RigRenderer {
             mouthShape: Int, mouthOpenness: Float, expression: Int,
             headScaleMultiplier: Float
         ): OvalGeometry {
-            val cx = hx + (nx - hx) * 0.36f * headScaleMultiplier
-            var cy = hy + (ny - hy) * 0.36f * headScaleMultiplier
+            // Anchor coefficient history: 0.42 (original) -> 0.36 (first
+            // upward nudge, per direct feedback) -> 0.24 (this pass).
+            // Measured directly from a real exported frame (1088x1920,
+            // frontal, non-rotated): at 0.36 the mouth's own bounding box
+            // sat at 82% of the way down the visible head circle -- its
+            // bottom edge only ~13px above the chin, with the head circle
+            // itself spanning ~172px there. Back-solved hy/ny from that
+            // measurement plus the eye anchor's own known coefficient
+            // (0.08, at a measured 46% down) to get an exact pixel-to-
+            // coefficient mapping rather than guessing -- 0.24 targets the
+            // mouth center at roughly 72% down, a real but not extreme
+            // correction (target 68% would need 0.19; went with the
+            // more conservative end of the range verified). Still not
+            // device-confirmed against this specific new value -- the
+            // math is exact, but "72% down looks right" is a judgment
+            // call, not something Python can verify.
+            val cx = hx + (nx - hx) * 0.24f * headScaleMultiplier
+            var cy = hy + (ny - hy) * 0.24f * headScaleMultiplier
 
             val (wFrac, hFrac) = when (mouthShape) {
                 MouthShape.WIDE   -> 0.44f to 0.28f

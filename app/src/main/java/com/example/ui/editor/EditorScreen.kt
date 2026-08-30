@@ -930,7 +930,11 @@ private fun AppearancePanel(
         LabeledSlider("Eye spacing", appearance.eyeSpacingNormalized, 0.15f..0.6f) {
             onAppearance(appearance.copy(eyeSpacingNormalized = it))
         }
-        LabeledSlider("Eye vertical position", appearance.eyeVerticalOffsetNormalized, 0.0f..0.3f) {
+        // Range extended to include negative values when the default
+        // became -0.03f (AppearanceSettings.kt) — the old 0.0f..0.3f
+        // range would have clamped a new project's own default the
+        // moment anyone touched this slider.
+        LabeledSlider("Eye vertical position", appearance.eyeVerticalOffsetNormalized, -0.1f..0.3f) {
             onAppearance(appearance.copy(eyeVerticalOffsetNormalized = it))
         }
         LabeledSlider("Eye shape (round \u2194 oval)", appearance.eyeAspectRatio, 0.5f..2.0f) {

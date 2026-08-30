@@ -1281,29 +1281,21 @@ class RigRenderer {
             headScaleMultiplier: Float
         ): OvalGeometry {
             // Anchor coefficient history: 0.42 (original) -> 0.36 (first
-            // upward nudge) -> 0.24 (tried, reverted) -> back to 0.36.
+            // upward nudge) -> 0.24 (tried, reverted after overlapping the
+            // eyes) -> 0.24 again.
             //
-            // 0.24 was computed from a real exported frame and looked
-            // correct on paper, but the NEXT device video showed it
-            // overlapping the eyes outright (measured: mouth top above
-            // eye bottom by ~12px at that frame's mouth-openness). Traced
-            // this to a real constraint, not a bad guess: between the
-            // eyes' own bottom edge (~655) and the chin (~702) there's
-            // only ~47px of room total, and the mouth itself needs ~37px
-            // of that just for its own height at a fairly open (not even
-            // fully-open) moment -- leaving only ~10px of slack to
-            // position it anywhere in the gap at all. 0.36 sits almost
-            // exactly in the middle of that 10px window (measured: +5px
-            // clear of the eyes, +5px clear of the chin, at that same
-            // moment's mouth height) -- it was already close to the best
-            // available position given the mouth's current max size,
-            // not actually the source of whatever looked "too low."
-            // Going meaningfully higher than ~0.32-0.34 isn't safe
-            // without also shrinking the mouth's max height (hFrac below)
-            // or the eyes -- a bigger, more deliberate call than
-            // repositioning alone, not made unilaterally a third time.
-            val cx = hx + (nx - hx) * 0.36f * headScaleMultiplier
-            var cy = hy + (ny - hy) * 0.36f * headScaleMultiplier
+            // The revert to 0.36 was itself reverted: direct feedback was
+            // that 0.24's mouth position was correct, and the eyes/mouth
+            // overlap it exposed should be fixed by moving the EYES up
+            // (see eyeVerticalOffsetNormalized in AppearanceSettings.kt,
+            // and that field's own doc comment for the clearance math this
+            // now pairs with), not by moving the mouth back down. The
+            // ~10px-of-total-slack constraint documented in the previous
+            // version of this comment is still real -- it just means the
+            // eyes needed to move to free up room, not that 0.24 itself
+            // was wrong.
+            val cx = hx + (nx - hx) * 0.24f * headScaleMultiplier
+            var cy = hy + (ny - hy) * 0.24f * headScaleMultiplier
 
             val (wFrac, hFrac) = when (mouthShape) {
                 MouthShape.WIDE   -> 0.44f to 0.28f

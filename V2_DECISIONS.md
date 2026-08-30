@@ -2075,6 +2075,51 @@ approved by the person before implementing:**
   it hasn't been seen through the actual production export path yet,
   which still isn't wired to GLES at all regardless.
 
+- **Mouth back to 0.24; eyes moved up instead (eyeVerticalOffsetNormalized
+  0.08 -> -0.03) — reframes the previous entry's conclusion.** Direct
+  feedback: the 0.24 mouth position was correct, and the eyes/mouth
+  overlap it exposed should be fixed by moving the eyes, not reverting
+  the mouth a second time. The ~10px-of-total-slack constraint found
+  previously was real, but the conclusion drawn from it — "0.36 is
+  already near-optimal" — assumed the mouth was the side that had to
+  move; it wasn't.
+
+  Recomputed properly rather than re-guessing. Along the way, corrected
+  an error in the previous session's own model: `r` (head radius) had
+  been estimated from pixel measurement (~86px) instead of read from
+  source, which is off from the real value — `headScaleMultiplier`
+  defaults to 1.5, not 1.0 as assumed, giving `r = 0.048 * 1088 * 1.5 =
+  78.3px`. This didn't invalidate the earlier clearance conclusion
+  (that was built from empirically *measured* pixel positions, not from
+  a theoretical `r`), but it mattered for computing the true worst case
+  going forward: WIDE mouth shape at 100% amplitude gives half-height
+  21.9px (`0.28 * 78.3`), the largest the mouth can ever get.
+
+  Solved for the eye coefficient that clears that theoretical worst case
+  by a small margin, then checked it against the empirically-observed
+  real narration moment too (half-height 18.5px, from the previous
+  video): -0.03 gives +0.2px clearance at the theoretical extreme
+  (effectively zero-overlap even there) and +3.6px at the real observed
+  case — versus the old 0.08's -11 to -15px of actual overlap in both
+  checks. Negative is intentional: it places the eye anchor slightly
+  toward the head tip from the head's own center, not toward the neck.
+
+  Caught and fixed a real, separate bug this surfaced: `EditorScreen.kt`'s
+  manual slider for this same field has a `0.0f..0.3f` range, which
+  would have clamped a new project's own -0.03 default the moment anyone
+  touched the slider. Extended to `-0.1f..0.3f`. Grepped for every other
+  consumer of `eyeVerticalOffsetNormalized` to confirm nothing else
+  reads it in a way that assumes non-negative.
+
+  Verified: full diff review; brace balance (also found and confirmed
+  PRE-EXISTING, not introduced, paren/bracket count drift in
+  `EditorScreen.kt` — same false-positive pattern as `PlaybackEngine.kt`
+  earlier this session, not chased down to its source this time since it
+  provably isn't from this edit). NOT verified: compiler or device —
+  this is the third mouth/eye positioning pass this session; genuinely
+  want eyes on this before treating it as settled, more than any of the
+  first two attempts.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

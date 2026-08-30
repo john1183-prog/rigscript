@@ -2021,6 +2021,60 @@ approved by the person before implementing:**
   rendering code, so the risk profile is different (a bad timestamp is a
   content bug, not a crash), but still unverified until it's actually run.
 
+- **Second device video review: mouth 0.24 overlapped the eyes, reverted
+  to 0.36; rotation fix now cleanly confirmed (no more ambiguity);
+  discovered both review videos are the GLES smoke test, not the real
+  Canvas export.** Reviewed `new_gles_test_1788027194118.mp4` the same
+  way as the first (`ffmpeg` extraction + pixel measurement).
+
+  **Mouth 0.24 was a real overcorrection.** Cropped/zoomed the head:
+  eyes and mouth had merged into one connected blob, no gap at all.
+  Measured precisely and found a genuine geometric constraint, not just
+  a bad number: between the eyes' own bottom edge and the chin there's
+  only ~47px of room at this head size, and the mouth needs ~37px of
+  that just for its own height at a fairly open (not even fully-open)
+  moment — leaving ~10px of slack to position it in at all. 0.36 turned
+  out to sit almost exactly in the middle of that 10px window (+5px
+  clear of eyes, +5px clear of chin) — it was already close to the best
+  available position given the mouth's current max size, not actually
+  the source of whatever read as "too low." Reverted to 0.36. Going
+  meaningfully higher isn't safe without also shrinking the mouth's max
+  height (`hFrac`) or the eyes — flagged as a real option, not acted on
+  unilaterally a third time without it being asked for.
+
+  **Rotation fix: no longer ambiguous.** The new `lazy`-pose check (added
+  specifically for this) showed both eyes as clean, well-formed ovals
+  under real head rotation, arms nowhere near the head. Combined with the
+  first video's frontal-frame confirmation, this closes out the eye-
+  rotation fix — no longer resting on an "the arm probably explains it"
+  assumption.
+
+  **Room/beach/walk cycle/snow**: all re-confirmed unaffected by the
+  demo-shortening retime — walk cycle head-Y measured 537->510px, same
+  27px shift as the first video, exact same timestamps.
+
+  **Solved the video-length mystery**: the file was 291s, not the ~104s
+  the retimed script should produce. Not a script bug — checked
+  `exportGlesSmokeTest`'s signature and found `durationSec` is an
+  independently-configured parameter (default 3f), unrelated to script
+  content length entirely. Once the script's own ~103s of content ends,
+  the export just holds the last pose while atmosphere (snow) keeps
+  animating on raw elapsed time — confirmed by sampling frames well past
+  103s and seeing the same held pose with visibly-different, still-
+  falling snow. Spot-checked near the very end (288s) too — stable, no
+  degradation.
+
+  **Also newly noticed**: both this and the previous review video have
+  filenames ending `_gles_test`, and `VideoExporter.exportGlesSmokeTest`
+  is confirmed (by reading its own filename-construction line) to be
+  the source of that exact suffix. Everything confirmed on-device this
+  entire session has been through the GLES smoke-test render path
+  specifically, not the real Canvas `export()` button. The underlying
+  fixes are in shared compute functions both paths call, so this is
+  still real confirmation of the logic — just worth being precise that
+  it hasn't been seen through the actual production export path yet,
+  which still isn't wired to GLES at all regardless.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

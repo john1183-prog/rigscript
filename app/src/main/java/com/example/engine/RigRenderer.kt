@@ -1281,23 +1281,29 @@ class RigRenderer {
             headScaleMultiplier: Float
         ): OvalGeometry {
             // Anchor coefficient history: 0.42 (original) -> 0.36 (first
-            // upward nudge, per direct feedback) -> 0.24 (this pass).
-            // Measured directly from a real exported frame (1088x1920,
-            // frontal, non-rotated): at 0.36 the mouth's own bounding box
-            // sat at 82% of the way down the visible head circle -- its
-            // bottom edge only ~13px above the chin, with the head circle
-            // itself spanning ~172px there. Back-solved hy/ny from that
-            // measurement plus the eye anchor's own known coefficient
-            // (0.08, at a measured 46% down) to get an exact pixel-to-
-            // coefficient mapping rather than guessing -- 0.24 targets the
-            // mouth center at roughly 72% down, a real but not extreme
-            // correction (target 68% would need 0.19; went with the
-            // more conservative end of the range verified). Still not
-            // device-confirmed against this specific new value -- the
-            // math is exact, but "72% down looks right" is a judgment
-            // call, not something Python can verify.
-            val cx = hx + (nx - hx) * 0.24f * headScaleMultiplier
-            var cy = hy + (ny - hy) * 0.24f * headScaleMultiplier
+            // upward nudge) -> 0.24 (tried, reverted) -> back to 0.36.
+            //
+            // 0.24 was computed from a real exported frame and looked
+            // correct on paper, but the NEXT device video showed it
+            // overlapping the eyes outright (measured: mouth top above
+            // eye bottom by ~12px at that frame's mouth-openness). Traced
+            // this to a real constraint, not a bad guess: between the
+            // eyes' own bottom edge (~655) and the chin (~702) there's
+            // only ~47px of room total, and the mouth itself needs ~37px
+            // of that just for its own height at a fairly open (not even
+            // fully-open) moment -- leaving only ~10px of slack to
+            // position it anywhere in the gap at all. 0.36 sits almost
+            // exactly in the middle of that 10px window (measured: +5px
+            // clear of the eyes, +5px clear of the chin, at that same
+            // moment's mouth height) -- it was already close to the best
+            // available position given the mouth's current max size,
+            // not actually the source of whatever looked "too low."
+            // Going meaningfully higher than ~0.32-0.34 isn't safe
+            // without also shrinking the mouth's max height (hFrac below)
+            // or the eyes -- a bigger, more deliberate call than
+            // repositioning alone, not made unilaterally a third time.
+            val cx = hx + (nx - hx) * 0.36f * headScaleMultiplier
+            var cy = hy + (ny - hy) * 0.36f * headScaleMultiplier
 
             val (wFrac, hFrac) = when (mouthShape) {
                 MouthShape.WIDE   -> 0.44f to 0.28f

@@ -204,11 +204,17 @@ object StickFigureRig {
             "lower_arm_l"  to  5f
         )),
 
+        // Elbow bend intentionally near-straight (+/-5deg), matching
+        // point_right/point_left's own style -- was +18 (a 28deg bend,
+        // an outlier against those two's +/-5deg), found by computing
+        // actual elbow bend angle for the whole point_* family rather
+        // than eyeballing individual deltas. -5 gives the same +5deg
+        // bend point_right has.
         PoseDef("point_up", "Point Up", "builtin", true, mapOf(
             "torso"        to -5f,
             "head"         to -5f,
             "upper_arm_r"  to -148f,
-            "lower_arm_r"  to  18f
+            "lower_arm_r"  to -5f
         )),
 
         PoseDef("celebrate", "Celebrate", "builtin", true, mapOf(

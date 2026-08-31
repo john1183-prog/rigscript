@@ -2120,6 +2120,39 @@ approved by the person before implementing:**
   want eyes on this before treating it as settled, more than any of the
   first two attempts.
 
+- **Room/beach: repositioned furniture/umbrellas off the character's
+  standing zone (previously noted as minor, fixed now); audited the
+  whole DEMO script for landscape/portrait safety ahead of testing both
+  orientations for the first time.** The middle piece in each was almost
+  exactly behind `rootAnchorX`'s default 0.5, mostly hidden — room's
+  `leftFractions` moved from `[0.08,0.42,0.62]` to `[0.03,0.22,0.72]`,
+  beach's umbrellas switched from even `w/count` spacing (which put one
+  exactly at x=0.5 by construction) to explicit positions
+  `[0.10,0.25,0.85]`. Verified in Python, same landscape/portrait/
+  ultrawide/square/horizon-fraction sweep as the original bounds check,
+  that no piece's center now falls in the character's rough 0.30-0.62
+  occupied band.
+
+  Separately, audited the ENTIRE `DEMO` script (not just the code this
+  session touched) for anything that could behave differently in
+  landscape vs. portrait — grepped every `x`/`y`/`width`/`height`/
+  `radius`/`figureX`/`figureY`/`cameraPan*`/`cameraZoom`/`horizonY`
+  literal in the file for anything above 3.0 (a proxy for "looks like a
+  raw pixel value, not a normalized fraction or a zoom multiplier around
+  1.0"). Found nothing — the whole script is fraction-based throughout,
+  consistent with how `OverlayLayer`'s own fields are typed (`x`/`y`
+  default `0.5f`, not pixel-scale). No script CONTENT changes needed for
+  orientation-safety specifically; this was a verification pass, not a
+  rewrite. The only actual code change this round is the reposition
+  above, which isn't orientation-specific either — it fixes the same
+  overlap in every aspect ratio.
+
+  Verified: full diff review; brace/paren balance on `RigRenderer.kt`;
+  the geometry re-check in Python; the file-wide literal-value grep. NOT
+  verified: compiler or device — landscape specifically has never been
+  rendered and checked this session; everything confirmed so far has
+  been portrait only.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

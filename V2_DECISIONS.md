@@ -2153,6 +2153,81 @@ approved by the person before implementing:**
   rendered and checked this session; everything confirmed so far has
   been portrait only.
 
+- **Full pose-library audit (all 23 built-in poses) — one real fix found
+  (point_up), everything else checked and cleared; DEMO extended with
+  left/right/all caption-position tests, first time testing landscape
+  alongside portrait.**
+
+  Audit method, not eyeballing: (1) grepped every bone-id key used across
+  every pose against the real bone IDs in `BONES` — zero typos, every
+  key matches. (2) Computed actual elbow-bend angle (lower-arm absolute
+  angle minus upper-arm absolute angle) for every pose with both arm
+  segments set, rather than trusting the raw delta numbers looked
+  reasonable — found `point_up`'s forearm bent 28° relative to the upper
+  arm, an outlier against `point_right`/`point_left`'s own consistent
+  +/-5° near-straight style for the same family of "pointing" gesture.
+  Fixed `point_up`'s `lower_arm_r` delta from 18 to -5, giving it the
+  same +5° bend point_right has (computed exactly, not approximated).
+  (3) Computed foot/knee FK positions for `jump` and `sit` — the two
+  poses with the largest leg deltas not already checked for the walk-
+  cycle work — confirmed no self-intersection or inverted-looking
+  geometry, and confirmed both mirror correctly (r/l are exact x-axis
+  negations). Poses with real but small one-sided arm/leg deltas (lazy,
+  confused's left arm, tired/excited/celebrate's leg nudges) were left
+  alone — checked they're intentionally asymmetric/subtle, not missing a
+  counterpart that would look broken, the same test applied to
+  `point_up`. `sit`'s arms staying at the default standing hang while
+  seated is a real, if minor, opportunity (resting-on-knees would read
+  more natural) — noted, not changed; wasn't broken, just not maximally
+  polished, and this pass was about correctness over polish.
+
+  `point_up` is already exercised inside `STRESS_CYCLE_TEMPLATE`
+  (offset 3.0s per repeat) — no new dedicated event needed for the fix
+  to actually show up in the next export.
+
+  **Caption-position tests**: top/center/bottom (upper/center/lower
+  slot) were already covered by existing text overlays, but never left/
+  right horizontal placement, and never more than one caption visible at
+  once. Added sequential LEFT (71-74s) and RIGHT (74-77s) tests, then
+  all four positions simultaneously (78-82s, distinct short words —
+  TOP/BOTTOM/SIDE/EDGE — so each is identifiable at a glance in one
+  frame rather than needing to track which is which). Held over the
+  existing 70.0s `stand_straight` reset's neutral pose; overlays resolve
+  independently of the pose timeline, so no new pose event was needed,
+  only the overlay entries themselves.
+
+  First attempt used invented `enterStyle` values (`slide_from_left`/
+  `slide_from_right`) that don't exist — checked `OverlayResolver`'s
+  actual `animate()` function before trusting them and found the real
+  set is `fade`/`pop`/`zoom`/`slideup`/`slidedown`/`none`, with an
+  `else` branch that silently falls back to fade-like behavior for
+  anything else. Not a compile error (the field is a plain `String`) —
+  would have been a silent content bug, the captions just fading instead
+  of sliding as intended, discovered only by someone actually watching
+  closely enough to notice a claimed "slide" wasn't one. Fixed to `pop`
+  before that happened.
+
+  This pushed `stressCycle` batch 2's start from 73.0s to 84.0s to make
+  room — grepped every `startSec =` in the file afterward (same
+  discipline as the previous retime) and confirmed `shape_glow_reprise`
+  (92-96s) still lands inside the new 84-113s batch-2 window without
+  needing its own retime; only the comment above it needed updating to
+  the new numbers.
+
+  **First time testing landscape.** Confirmed last round that the whole
+  script is fraction-based with no hardcoded pixel values, so no script
+  changes were made specifically for orientation — this round's
+  additions (point_up, captions) don't introduce any new pixel-based
+  values either, checked the same way.
+
+  Verified: full diff review; brace/paren balance on both files; grepped
+  every `startSec` post-edit; grepped every `OverlayLayer` field name
+  used against the real data class definition (not just the enterStyle
+  mistake — checked all of them, since that mistake was found only by
+  chance of double-checking one specific field, not a systematic pass at
+  first). NOT verified: compiler or device — landscape especially, since
+  it's never been rendered at all this session.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

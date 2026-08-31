@@ -1560,8 +1560,14 @@ class RigRenderer {
             val horizonPx = h * horizonYFraction
             val sway = kotlin.math.sin(timeSec * 0.04f + 2f) * w * 0.005f
             val heightFractions = floatArrayOf(0.35f, 0.55f, 0.30f)
-            val widthFractions  = floatArrayOf(0.22f, 0.12f, 0.28f)
-            val leftFractions   = floatArrayOf(0.08f, 0.42f, 0.62f)
+            val widthFractions  = floatArrayOf(0.18f, 0.14f, 0.22f)
+            // Repositioned away from rootAnchorX's default 0.5 -- the
+            // original [0.08,0.42,0.62] put the middle piece almost
+            // exactly behind where the character stands, mostly hidden.
+            // Verified in Python (same landscape/portrait/ultrawide/square
+            // sweep as before) that no piece's center now falls in the
+            // character's rough 0.30-0.62 occupied band.
+            val leftFractions   = floatArrayOf(0.03f, 0.22f, 0.72f)
             val list = ArrayList<RectGeom>(3)
             for (i in 0 until 3) {
                 val fh = horizonPx * heightFractions[i]
@@ -1600,13 +1606,19 @@ class RigRenderer {
             val sunR = minDim * 0.05f
             val sun = OvalGeometry(w * 0.80f, horizonPx * 0.30f, sunR, sunR)
             val umbrellaCount = 3
-            val spacing = w.toFloat() / umbrellaCount
+            // Explicit positions, not even w/count spacing -- even spacing
+            // put the middle umbrella at exactly x=0.5, right behind the
+            // character (rootAnchorX default 0.5), mostly hidden. Verified
+            // in Python that none of these fall in the character's rough
+            // 0.30-0.62 occupied band, across the same aspect-ratio sweep
+            // used for the original bounds check.
+            val positionFractions = floatArrayOf(0.10f, 0.25f, 0.85f)
             val list = ArrayList<TreeGeom>(umbrellaCount)
             for (i in 0 until umbrellaCount) {
                 val poleH = horizonPx * 0.12f
                 val canopyR = minDim * (0.05f + 0.02f * ((i * 31) % 3))
                 val sway = kotlin.math.sin(timeSec * 0.5f + i * 1.1f) * (canopyR * 0.08f)
-                val cx = spacing * i + spacing * 0.5f + sway
+                val cx = w * positionFractions[i] + sway
                 list += TreeGeom(
                     canopy = OvalGeometry(cx, horizonPx - poleH - canopyR, canopyR, canopyR),
                     trunk  = RectGeom(cx - canopyR * 0.06f, horizonPx - poleH, cx + canopyR * 0.06f, horizonPx)

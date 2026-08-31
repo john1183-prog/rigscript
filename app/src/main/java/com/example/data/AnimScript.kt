@@ -453,10 +453,14 @@ data class AnimScript(
                     // Reset to exactly the 1.5s event's own values — batch
                     // 2 of stressCycle below was authored against
                     // mountains+snow and shouldn't see anything different.
+                    // Also the neutral hold pose for the caption-position
+                    // tests below — captions are their own independent
+                    // overlayLayers list, don't need a dedicated pose
+                    // event, just something calm to hold behind them.
                     sceneShape = "mountains", sceneAtmosphere = "snow",
                     skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f)
-            ) + stressCycle(73.0f, 1),
-            blinkEvents = listOf(1.3f, 14.7f, 21.4f) + stressCycleBlinks(25.0f, 1) + stressCycleBlinks(73.0f, 1),
+            ) + stressCycle(84.0f, 1),
+            blinkEvents = listOf(1.3f, 14.7f, 21.4f) + stressCycleBlinks(25.0f, 1) + stressCycleBlinks(84.0f, 1),
             overlayLayers = listOf(
                 // Text phase (V2_DECISIONS.md) — gradient+glow text active
                 // 0.2-3.0s, inside the smoke test window, so this specific
@@ -570,14 +574,69 @@ data class AnimScript(
                 // shape-overlay glow was flagged unconfirmed for longer
                 // than any other phase (V2_DECISIONS.md). Was 300s, back
                 // when the tail ran to ~8 minutes; retimed to land inside
-                // the last stressCycle's ~73-102s window now that it
-                // doesn't.
+                // the last stressCycle's window, now 84-113s (was
+                // 73-102s before the caption tests below pushed batch 2
+                // out further) — 92-96 is comfortably inside either way,
+                // so this specific overlay didn't need re-retiming, just
+                // this comment catching up to the real number.
                 OverlayLayer(
                     id = "shape_glow_reprise", type = "shape", shape = "rect",
                     startSec = 92.0f, endSec = 96.0f, slot = "lower",
                     width = 0.3f, height = 0.025f, color = 0xFF26C6DAL, gradientColor = 0xFFFFF176L,
                     glow = true, glowRadius = 0.018f,
                     enterStyle = "slideup", exitStyle = "fade"
+                ),
+                // Caption-position tests (V2_DECISIONS.md) — top/center/
+                // bottom (upper/center/lower slot) were already exercised
+                // above (wordmark_intro, accent_underline, etc.), but
+                // never left/right horizontal placement, and never more
+                // than one caption on screen at once. Held over the
+                // 70.0s stand_straight reset's neutral pose — no new pose
+                // event needed, overlayLayers resolve independently of
+                // the pose timeline.
+                OverlayLayer(
+                    id = "caption_left_test", type = "text", text = "LEFT",
+                    startSec = 71.0f, endSec = 74.0f, slot = "center", x = 0.15f, align = "left",
+                    fontSize = 0.07f, color = 0xFFFFFFFFL,
+                    enterStyle = "pop", exitStyle = "fade"
+                ),
+                OverlayLayer(
+                    id = "caption_right_test", type = "text", text = "RIGHT",
+                    startSec = 74.0f, endSec = 77.0f, slot = "center", x = 0.85f, align = "right",
+                    fontSize = 0.07f, color = 0xFFFFFFFFL,
+                    enterStyle = "pop", exitStyle = "fade"
+                ),
+                // All four simultaneously — the actual point of this
+                // addition. Individually-correct positions don't
+                // guarantee no collision/crowding once several are on
+                // screen together; this is the only way to actually see
+                // that. Distinct short words (not "LEFT"/"RIGHT" again)
+                // so all four are readable as different at a glance in a
+                // single frame, rather than needing to track which one is
+                // which across the earlier sequential tests.
+                OverlayLayer(
+                    id = "caption_all_top", type = "text", text = "TOP",
+                    startSec = 78.0f, endSec = 82.0f, slot = "upper", x = 0.5f, align = "center",
+                    fontSize = 0.07f, color = 0xFFFFEB3BL,
+                    enterStyle = "fade", exitStyle = "fade"
+                ),
+                OverlayLayer(
+                    id = "caption_all_bottom", type = "text", text = "BOTTOM",
+                    startSec = 78.0f, endSec = 82.0f, slot = "lower", x = 0.5f, align = "center",
+                    fontSize = 0.07f, color = 0xFF69F0AEL,
+                    enterStyle = "fade", exitStyle = "fade"
+                ),
+                OverlayLayer(
+                    id = "caption_all_left", type = "text", text = "SIDE",
+                    startSec = 78.0f, endSec = 82.0f, slot = "center", x = 0.15f, align = "left",
+                    fontSize = 0.07f, color = 0xFFFF8A65L,
+                    enterStyle = "fade", exitStyle = "fade"
+                ),
+                OverlayLayer(
+                    id = "caption_all_right", type = "text", text = "EDGE",
+                    startSec = 78.0f, endSec = 82.0f, slot = "center", x = 0.85f, align = "right",
+                    fontSize = 0.07f, color = 0xFF80D8FFL,
+                    enterStyle = "fade", exitStyle = "fade"
                 )
             )
         )

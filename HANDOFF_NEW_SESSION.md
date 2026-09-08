@@ -70,6 +70,32 @@ Confirmed via pixel comparison: at t=5s, Canvas portrait shows a small
 orange secondary figure; GLES portrait shows nothing there. Root cause is
 known and already documented in `GlesFigureFrame.kt`'s own class doc comment
 (line ~44): `"figure"` overlay type falls through to `null` at line ~803.
+
+---
+
+## CORRECTION: Additional issues found in second analysis pass
+
+The initial review was incomplete. A second analysis pass (triggered by
+pushback on "those are the only issues") found three real problems missed
+the first time:
+
+### A. Camera zoom is unusable in landscape (BOTH paths, not a bug per se)
+Portrait: figure is 41% of canvas height. Landscape: figure is 77% of canvas
+height. Both use `minDim=1088` for scaling. A `cameraZoom=1.2` that reads as
+"subtle zoom-in" in portrait takes the figure to 92% of canvas height in
+landscape — unusable. The math is correct; the same value has radically
+different visual consequences per orientation. Fix options: orientation-aware
+zoom clamping, per-orientation script values, or constrain max zoom based on
+the figure's current frame-fill fraction.
+
+### B. Ground line carries forward through entire video (BOTH paths)
+`showGroundLine=true` at t=0 is never reset. Carries through mountains, room,
+beach scenes as a jarring cyan line. Fix: add `showGroundLine = false` to the
+t=1.5s event in `AnimScript.DEMO`.
+
+### C. Secondary figure missing in GLES (confirmed — already in main list)
+See priority item 1 in the "Remaining work" section above.
+
 The Canvas implementation lives in `RigRenderer.drawSecondaryFigure()` (~line
 769). The GLES path needs the equivalent: a full FK matrix walk (same
 structure as the main figure's own bone loop in `fromFkMatrices`) sized to

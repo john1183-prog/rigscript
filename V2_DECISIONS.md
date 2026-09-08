@@ -2447,3 +2447,83 @@ zoom in."
   the uninstall-first treatment one last time (moving off whichever
   random key the last pre-fix CI build happened to generate onto this
   new stable one) — every install after that one should update in place.
+
+- **Four-way video review: Canvas portrait/landscape, GLES portrait/landscape
+  — everything confirmed; one new bug found (GLES secondary figure missing).**
+  `new_test_9x16_1788738892995.mp4`, `new_test_16x9_1788738893524.mp4`,
+  `new_test_gles_test_1788739601841.mp4`, `new_test_gles_test_1788740506300.mp4`.
+
+  **Confirmed across all 4 renders via pixel measurement**: eyes at ~51-52%
+  down the head (clear of mouth), mouth at ~76-77% down (clear of eyes and
+  chin), walk cycle 26-27px bob (not dead-still), snow/stars visible,
+  room/beach positioned off character, captions LEFT/RIGHT/all-four correct
+  and legible. Rotation fix: 2 distinct eye clusters measured in lazy-pose
+  frame across all 4 renders — no occlusion ambiguity remaining.
+
+  **Canvas vs GLES parity**: face, scene shapes, atmospheres, captions all
+  pixel-match between paths at matched timestamps.
+
+  **One confirmed bug**: GLES does not render `"figure"`-type overlays
+  (secondary figures). Orange secondary figure visible in Canvas at ~t=5s,
+  absent in GLES. Root cause confirmed in source: `GlesFigureFrame.kt`
+  line ~803 falls through to `null` for `"figure"` type — already noted
+  in the class doc comment as unimplemented. Fix: implement the FK bone
+  walk in `fromFkMatrices` for this type, mirroring Canvas's
+  `drawSecondaryFigure()` which already handles it. Added to priority list.
+
+  **Caption layout note**: in the all-four-simultaneously frame, "TOP"
+  overlaps the head noticeably in portrait — `slot="upper"` at `y`=0.22
+  puts it right at the figure's head height when the character stands at
+  the default `rootAnchorY`. Not a rendering bug (it's rendering exactly
+  where specified); just a useful data point that scripts placing "upper"
+  text over a standing figure should use a lower font size or bump `y`
+  down slightly.
+
+- **Follow-up analysis of four-way video review: three more real issues found
+  that the initial review missed.** Same four videos, more systematic
+  second pass triggered by pushback on the initial "these are the only issues"
+  assessment.
+
+  **Issue 1 — Camera zoom useless in landscape (both paths):** At
+  `cameraZoom=1.2f`, portrait figure goes from 41% to ~50% of canvas height
+  (a subtle, intended effect). The SAME zoom in landscape takes the figure
+  from 77% to ~92% of canvas height — nearly filling the entire frame, limbs
+  filling the view, completely unusable. Root cause: `scale = minDim *
+  characterScale`, and `minDim = min(canvasW, canvasH) = 1088` in both
+  orientations, so the figure is the same size in pixels regardless of
+  aspect ratio. In portrait (height=1920) that's 41% of frame height. In
+  landscape (height=1088) that's 77% — already close to filling the vertical
+  frame before any zoom is applied. The zoom formula itself is correct; the
+  zoom VALUE that reads as "subtle" in portrait reads as "maxed out" in
+  landscape. This needs either (a) orientation-aware zoom clamping or scaling,
+  or (b) the demo script's zoom values being landscape-aware, or (c) both.
+  Not fixed yet — documenting here as the real issue rather than a camera bug.
+
+  **Issue 2 — Ground line carries forward through entire video (both paths):**
+  `showGroundLine = true, groundLineColor = 0xFF4FC3F7` is set at t=0.0s and
+  NEVER reset. Since `showGroundLine` is a snap field (carry-forward, no
+  interpolation), the cyan line persists through every scene including
+  mountains, room, beach — visually jarring in scenes where a cyan line
+  doesn't belong. Fix: add `showGroundLine = false` to the t=1.5s event
+  (scene transition to mountains) in `AnimScript.DEMO`. Or, if the intent
+  is for the ground line to be on throughout: use a scene-appropriate color
+  per scene. Neither is implemented yet.
+
+  **Issue 3 — Secondary figure missing in GLES (confirmed more precisely):**
+  Already documented in the initial review entry above. The zoomed-in
+  orange figure visible in Canvas at t=4-5s is entirely absent from GLES.
+  Confirmed `GlesFigureFrame.kt` line ~803 explicitly falls to `null`.
+
+  **NOT confirmed as issues on re-analysis:**
+  - Face (eyes/mouth) at open-mouth audio moment: re-examined zoomed. Eyes
+    clearly separated from mouth — two distinct black circles with visible
+    blue gap between them and the open mouth below. The overlap concern from
+    the previous iteration (0.24 causing the eyes/mouth to merge) is fixed;
+    the current positions (eyes 51-52% down, mouth 76-77% down at closed;
+    mouth expands upward when open) leave adequate separation. Not reopening.
+  - Walk cycle feet in landscape: feet land at 77% of canvas height,
+    horizonY is 68% — feet are below the horizon by 102px, correct.
+  - EDGE caption in landscape: cyan pixels confirmed present in the rightmost
+    20% of the landscape frame in both Canvas and GLES.
+  - Ground line at bottom of landscape: the visible cyan line IS the scripted
+    ground line from t=0, not an artifact. It just needs to be reset.

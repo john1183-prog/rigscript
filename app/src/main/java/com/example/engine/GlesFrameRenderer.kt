@@ -654,7 +654,13 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         val camera = RigRenderer.CameraTransform(frame.cameraZoom, frame.cameraOffsetX, frame.cameraOffsetY)
         val bgL = camera.tx(-w);      val bgR = camera.tx(2f * w)
         val bgT = camera.ty(-h);      val bgB = camera.ty(2f * h)
-        if (frame.skyColor != null || frame.groundColor != null) {
+        if (frame.overrideBackgroundStyle == "gradient") {
+            val top0 = camera.ty(0f)
+            val bot0 = camera.ty(h)
+            drawSolidRect(bgL, bgT, bgR, top0, frame.bgColor, w, h)
+            drawSolidGradientRect(bgL, top0, bgR, bot0, frame.bgColor, frame.backgroundGradientColor, w, h)
+            drawSolidRect(bgL, bot0, bgR, bgB, frame.backgroundGradientColor, w, h)
+        } else if (frame.skyColor != null || frame.groundColor != null) {
             val sky    = frame.skyColor ?: frame.bgColor
             val ground = frame.groundColor ?: frame.bgColor
             val hz     = camera.ty(frame.canvasH * frame.horizonYFraction)
@@ -683,9 +689,9 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         // separate list from drawCommands rather than folded into it.
         for (cmd in frame.sceneCommands) {
             when (cmd) {
-                is GlesFigureFrame.SceneDrawCommand.Polygon -> {
+                is GlesFigureFrame.SceneDrawCommand.Triangles -> {
                     val colors = IntArray(cmd.points.size / 2) { cmd.color }
-                    drawSolidFan(cmd.points, colors, w, h)
+                    drawSolidTriangles(cmd.points, colors, w, h)
                 }
                 is GlesFigureFrame.SceneDrawCommand.Rect -> {
                     drawSolidRect(cmd.l, cmd.t, cmd.r, cmd.b, cmd.color, w, h)
@@ -1029,6 +1035,44 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLES20.glVertexAttribPointer(aColor, 4, GLES20.GL_FLOAT, false, strideBytes, colorBuf)
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_FAN, 0, n)
+
+        GLES20.glDisableVertexAttribArray(aPos)
+        GLES20.glDisableVertexAttribArray(aColor)
+    }
+
+    /**
+     * Draws explicit triangles as GL_TRIANGLES, with an independent per-vertex
+     * ARGB color in [colorsArgb]. [xy] is a flat (x0,y0,x1,y1,...) canvas-pixel
+     * array whose length is a multiple of 6 (3 vertices per triangle);
+     * `colorsArgb.size` must equal `xy.size / 2`.
+     */
+    private fun drawSolidTriangles(xy: FloatArray, colorsArgb: IntArray, canvasW: Float, canvasH: Float) {
+        val n = xy.size / 2
+        if (n < 3) return
+
+        GLES20.glUseProgram(solidProgram)
+        val aPos   = GLES20.glGetAttribLocation(solidProgram, "a_pos")
+        val aColor = GLES20.glGetAttribLocation(solidProgram, "a_color")
+
+        val stride = 6   // x, y, r, g, b, a per vertex
+        val buf = getVertexBuffer(n * stride)
+        for (i in 0 until n) {
+            val c = argbToGlColor(colorsArgb[i])
+            buf.put(toClipX(xy[i * 2], canvasW))
+            buf.put(toClipY(xy[i * 2 + 1], canvasH))
+            buf.put(c[0]); buf.put(c[1]); buf.put(c[2]); buf.put(c[3])
+        }
+        buf.position(0)
+
+        val strideBytes = stride * 4
+        GLES20.glEnableVertexAttribArray(aPos)
+        GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, strideBytes, buf)
+
+        val colorBuf = buf.duplicate().also { it.position(2) }
+        GLES20.glEnableVertexAttribArray(aColor)
+        GLES20.glVertexAttribPointer(aColor, 4, GLES20.GL_FLOAT, false, strideBytes, colorBuf)
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, n)
 
         GLES20.glDisableVertexAttribArray(aPos)
         GLES20.glDisableVertexAttribArray(aColor)

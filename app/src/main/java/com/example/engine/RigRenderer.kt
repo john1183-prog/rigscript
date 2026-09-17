@@ -167,11 +167,20 @@ class RigRenderer {
         // bgColor (WebM alpha export) still behaves correctly: Canvas draws
         // under SRC_OVER by default, so alpha=0 here is a no-op and preserves
         // whatever transparency the caller already established on the Bitmap.
-        // V2 — scripted sky/ground scene bands take priority over the plain
-        // solid/gradient background WHEN either is actually set. Null-for-both
-        // (no scene events in the script) falls straight through to the
-        // original behaviour below, unchanged.
-        if (skyColor != null || groundColor != null) {
+        // V2 — explicit scripted gradient override takes priority so that a
+        // timeline event setting backgroundStyle="gradient" is not preempted
+        // by carried-forward skyColor/groundColor from an earlier scene.
+        // If not explicitly overridden to gradient, scripted sky/ground scene
+        // bands take priority over the default appearance solid/gradient background.
+        if (overrides.backgroundStyle == "gradient") {
+            val gradientEnd = overrides.backgroundGradientColor ?: appearance.backgroundGradientColor
+            backgroundPaint.shader = LinearGradient(
+                0f, 0f, 0f, canvasH.toFloat(),
+                bgColor.toInt(), gradientEnd.toInt(),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(-canvasW.toFloat(), -canvasH.toFloat(), canvasW * 2f, canvasH * 2f, backgroundPaint)
+        } else if (skyColor != null || groundColor != null) {
             val sky    = (skyColor ?: bgColor).toInt()
             val ground = (groundColor ?: bgColor).toInt()
             val hz     = canvasH * (horizonY ?: groundLineYFraction)
@@ -181,13 +190,6 @@ class RigRenderer {
             backgroundPaint.color = ground
             canvas.drawRect(-canvasW.toFloat(), hz, canvasW * 2f, canvasH * 2f, backgroundPaint)
         } else if ((overrides.backgroundStyle ?: appearance.backgroundStyle) == "gradient") {
-            // Bounded to the VISIBLE frame (0..canvasH), not the oversized
-            // safety rect below — CLAMP already extends the start/end colours
-            // flat across the oversized margin on its own. Spanning the
-            // gradient across the oversized rect instead would mean the
-            // visible viewport only ever shows the middle third of the
-            // configured colour transition, which was a real bug caught on
-            // review (reasoned through the maths, not seen rendered).
             val gradientEnd = overrides.backgroundGradientColor ?: appearance.backgroundGradientColor
             backgroundPaint.shader = LinearGradient(
                 0f, 0f, 0f, canvasH.toFloat(),
@@ -1481,6 +1483,52 @@ class RigRenderer {
             pts.add(w * 1.2f + sway); pts.add(horizonPx + h * 0.01f)
             pts.add(-w * 0.2f + sway); pts.add(horizonPx + h * 0.01f)
             return pts.toFloatArray()
+        }
+
+        /**
+         * Triangulates [pts] (from [computeMountainPolygon]) into non-overlapping
+         * triangles with consistent CCW winding in clip space for [GlesFrameRenderer].
+         *
+         * The mountain skyline consists of [peakCount] disjoint triangular peaks above
+         * the horizon line, and a 2-triangle base rectangle below it. Zero overlapping
+         * area, so with semi-transparent sceneColor (alpha = 0x66), every pixel is blended
+         * exactly once, matching the single-pass fill of Canvas [drawPath].
+         */
+        fun computeMountainTriangles(pts: FloatArray, peakCount: Int = 4): FloatArray {
+            val triPts = FloatArray(peakCount * 6 + 12)
+            var dst = 0
+            // Peaks: each peak i is a single non-overlapping triangle.
+            // Vertices in pts: baseL (4*i), tip (4*i + 2), baseR (4*i + 4).
+            // In canvas space (Y down): baseL -> baseR -> tip has positive cross product
+            // in OpenGL clip space (Y up), guaranteeing CCW front-facing winding.
+            for (i in 0 until peakCount) {
+                val baseL = 4 * i
+                val tip   = 4 * i + 2
+                val baseR = 4 * i + 4
+                triPts[dst++] = pts[baseL]; triPts[dst++] = pts[baseL + 1]
+                triPts[dst++] = pts[baseR]; triPts[dst++] = pts[baseR + 1]
+                triPts[dst++] = pts[tip];   triPts[dst++] = pts[tip + 1]
+            }
+            // Base rectangle below horizon: 2 triangles (v0, vBl, vBr) and (v0, vBr, vEnd)
+            val vEnd = 2 * peakCount + 1
+            val vBr  = 2 * peakCount + 2
+            val vBl  = 2 * peakCount + 3
+            val v0x = pts[0]; val v0y = pts[1]
+            val vEndx = pts[vEnd * 2]; val vEndy = pts[vEnd * 2 + 1]
+            val vBrx = pts[vBr * 2];   val vBry = pts[vBr * 2 + 1]
+            val vBlx = pts[vBl * 2];   val vBly = pts[vBl * 2 + 1]
+
+            // T1: v0 -> vBl -> vBr (CCW in clip space)
+            triPts[dst++] = v0x;   triPts[dst++] = v0y
+            triPts[dst++] = vBlx;  triPts[dst++] = vBly
+            triPts[dst++] = vBrx;  triPts[dst++] = vBry
+
+            // T2: v0 -> vBr -> vEnd (CCW in clip space)
+            triPts[dst++] = v0x;   triPts[dst++] = v0y
+            triPts[dst++] = vBrx;  triPts[dst++] = vBry
+            triPts[dst++] = vEndx; triPts[dst++] = vEndy
+
+            return triPts
         }
 
         fun computeCityBuildings(w: Int, h: Int, horizonYFraction: Float, timeSec: Float): List<RectGeom> {

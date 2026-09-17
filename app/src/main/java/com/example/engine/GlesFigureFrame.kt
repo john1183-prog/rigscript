@@ -74,6 +74,8 @@ data class GlesFigureFrame(
     val groundColor: Int?,
     /** "gradient" or anything else — same string appearance/overrides field [RigRenderer.draw] itself checks, only consulted when sky/ground are both null. */
     val backgroundStyle: String,
+    /** Non-null when an explicit script timeline event set backgroundStyle (e.g. "gradient" or "solid"). Takes priority over carried-forward sky/ground scene colors. */
+    val overrideBackgroundStyle: String? = null,
     /** Gradient end color (top = [bgColor], bottom = this) — only used when [backgroundStyle] == "gradient" and sky/ground are null. */
     val backgroundGradientColor: Int,
     /** Fraction of canvasH where sky meets ground / where scene-shape elements sit on — resolved the same `horizonY ?: groundLineYFraction` way [RigRenderer.draw] resolves it. NOT the same value the ground line itself uses — see [groundLineYFraction]. */
@@ -217,15 +219,14 @@ data class GlesFigureFrame(
      */
     sealed class SceneDrawCommand {
         /**
-         * A filled arbitrary polygon, drawn as a GL_TRIANGLE_FAN from
-         * [points]'s first vertex — see [RigRenderer.computeMountainPolygon]'s
-         * doc comment for why that's a correct triangulation for THIS shape
-         * specifically (star-shaped from its first point), not a general
-         * polygon fill. [points] is a flat (x0,y0,x1,y1,...) array. Not a
-         * data class — FloatArray breaks structural equals/hashCode, and
-         * this is only ever constructed-then-consumed, never compared.
+         * Filled non-overlapping triangles, drawn via GL_TRIANGLES — see
+         * [RigRenderer.computeMountainTriangles]. [points] is a flat
+         * (x0,y0,x1,y1,x2,y2,...) array of triangle vertices with consistent
+         * CCW front-facing winding. Not a data class — FloatArray breaks
+         * structural equals/hashCode, and this is only ever constructed-then-consumed,
+         * never compared.
          */
-        class Polygon(val points: FloatArray, val color: Int) : SceneDrawCommand()
+        class Triangles(val points: FloatArray, val color: Int) : SceneDrawCommand()
 
         data class Rect(val l: Float, val t: Float, val r: Float, val b: Float, val color: Int) : SceneDrawCommand()
 
@@ -561,8 +562,9 @@ data class GlesFigureFrame(
                 val sceneColor = RigRenderer.constrainSceneColor(currentBoneColor, currentBoneColor, alpha = 0x66)
                 when (sceneShape) {
                     SceneShape.MOUNTAINS -> {
-                        val pts = RigRenderer.computeMountainPolygon(canvasW, canvasH, horizonYFraction, timeSec)
-                        sceneCommands += SceneDrawCommand.Polygon(pts, sceneColor)
+                        val polyPts = RigRenderer.computeMountainPolygon(canvasW, canvasH, horizonYFraction, timeSec)
+                        val triPts = RigRenderer.computeMountainTriangles(polyPts)
+                        sceneCommands += SceneDrawCommand.Triangles(triPts, sceneColor)
                     }
                     SceneShape.CITY -> {
                         for (b in RigRenderer.computeCityBuildings(canvasW, canvasH, horizonYFraction, timeSec)) {
@@ -637,6 +639,7 @@ data class GlesFigureFrame(
                 skyColor                = skyColor?.toInt(),
                 groundColor             = groundColor?.toInt(),
                 backgroundStyle         = overrides.backgroundStyle ?: appearance.backgroundStyle,
+                overrideBackgroundStyle = overrides.backgroundStyle,
                 backgroundGradientColor = (overrides.backgroundGradientColor ?: appearance.backgroundGradientColor).toInt(),
                 horizonYFraction        = horizonYFraction,
                 // Camera-transformed here — everything drawn from these
@@ -690,13 +693,13 @@ data class GlesFigureFrame(
 
         /** Same reasoning as [transformDrawCommand] — applied once, at the end, over the whole list. */
         private fun transformSceneCommand(cmd: SceneDrawCommand, cam: RigRenderer.CameraTransform): SceneDrawCommand = when (cmd) {
-            is SceneDrawCommand.Polygon -> {
+            is SceneDrawCommand.Triangles -> {
                 val pts = FloatArray(cmd.points.size)
                 var i = 0
                 while (i < cmd.points.size) {
                     pts[i] = cam.tx(cmd.points[i]); pts[i + 1] = cam.ty(cmd.points[i + 1]); i += 2
                 }
-                SceneDrawCommand.Polygon(pts, cmd.color)
+                SceneDrawCommand.Triangles(pts, cmd.color)
             }
             is SceneDrawCommand.Rect   -> SceneDrawCommand.Rect(cam.tx(cmd.l), cam.ty(cmd.t), cam.tx(cmd.r), cam.ty(cmd.b), cmd.color)
             is SceneDrawCommand.Circle -> SceneDrawCommand.Circle(cam.tx(cmd.cx), cam.ty(cmd.cy), cam.tLen(cmd.radius), cmd.color)

@@ -1,7 +1,9 @@
 package com.example.engine
 
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.util.Log
+import com.example.data.AppearanceSettings
 import com.example.data.ReferenceOverlay
 
 /**
@@ -40,9 +42,8 @@ import com.example.data.ReferenceOverlay
  * [OverlayTextDraw]/[OverlayDraw] doc comments) — the latter in the SAME
  * ordered [behindOverlays]/[frontOverlays] lists as shape overlays, not
  * separate ones, so a script mixing shape and text overlays in one group
- * keeps their relative Z-order. Scoped deliberately narrow still: `type ==
- * "figure"` overlays, particle trails, and reference overlay (image or
- * text) all remain unimplemented in GLES — see V2_DECISIONS.md for the
+ * keeps their relative Z-order. Scoped deliberately narrow still: particle
+ * trails remain unimplemented in GLES — see V2_DECISIONS.md for the
  * exact boundary and why.
  */
 data class GlesFigureFrame(
@@ -261,12 +262,14 @@ data class GlesFigureFrame(
      * scope" note in V2_DECISIONS.md); [Circle] only carries one color.
      */
     sealed class OverlayDrawCommand {
-        /** Not a data class — see [SceneDrawCommand.Polygon]'s identical reasoning (FloatArray breaks structural equals/hashCode; never compared, only consumed). */
+        /** Not a data class — see [SceneDrawCommand.Triangles]' identical reasoning (FloatArray breaks structural equals/hashCode; never compared, only consumed). */
         class Polygon(val points: FloatArray, val colors: IntArray) : OverlayDrawCommand()
 
         data class Circle(val cx: Float, val cy: Float, val radius: Float, val color: Int) : OverlayDrawCommand()
 
         data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val halfWidth: Float, val color: Int) : OverlayDrawCommand()
+
+        data class Oval(val cx: Float, val cy: Float, val halfWidth: Float, val halfHeight: Float, val color: Int, val rotationDeg: Float = 0f) : OverlayDrawCommand()
     }
 
     /**
@@ -405,6 +408,9 @@ data class GlesFigureFrame(
             val bones  = rig.BONES
             val n      = rig.BONE_COUNT
             val minDim = minOf(canvasW, canvasH).toFloat()
+            val figureScaleDim =
+                if (canvasW < canvasH) canvasW.toFloat()
+                else canvasH * (9f / 16f)
             val pts    = FloatArray(4)
 
             // Camera transform (V2_DECISIONS.md, camera phase) — computed
@@ -425,8 +431,8 @@ data class GlesFigureFrame(
             val mouthColor   = (overrides.mouthColor ?: appearance.mouthColor).toInt()
             val eyeColor     = (overrides.eyeColor ?: appearance.eyeColor).toInt()
             val eyebrowColor = (overrides.eyebrowColor ?: appearance.eyebrowColor).toInt()
-            val boneHalfWidth = appearance.boneStrokeNormalized * minDim * 0.5f
-            val jointRadius   = appearance.jointRadiusNormalized * minDim
+            val boneHalfWidth = appearance.boneStrokeNormalized * figureScaleDim * 0.5f
+            val jointRadius   = appearance.jointRadiusNormalized * figureScaleDim
             val headScaleMultiplier = overrides.headScale ?: appearance.headScaleMultiplier
 
             val commands = ArrayList<DrawCommand>(n * 2)
@@ -541,8 +547,8 @@ data class GlesFigureFrame(
                 OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
             else emptyList()
             val (behindResolved, frontResolved) = resolvedOverlays.partition { !it.inFrontOfFigure }
-            val behindOverlays = behindResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim) }
-            val frontOverlays  = frontResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim) }
+            val behindOverlays = behindResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
+            val frontOverlays  = frontResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
 
             val bgColor = (overrides.bgColor ?: appearance.exportBgColor).toInt()
             // These two are DELIBERATELY independent — see groundLineYFraction's
@@ -763,6 +769,9 @@ data class GlesFigureFrame(
                     is OverlayDrawCommand.Line   -> OverlayDrawCommand.Line(
                         cam.tx(cmd.x1), cam.ty(cmd.y1), cam.tx(cmd.x2), cam.ty(cmd.y2), cam.tLen(cmd.halfWidth), cmd.color
                     )
+                    is OverlayDrawCommand.Oval   -> OverlayDrawCommand.Oval(
+                        cam.tx(cmd.cx), cam.ty(cmd.cy), cam.tLen(cmd.halfWidth), cam.tLen(cmd.halfHeight), cmd.color, cmd.rotationDeg
+                    )
                 }
             }
             return overlay.copy(commands = transformed, glowRadiusPx = cam.tLen(overlay.glowRadiusPx))
@@ -799,11 +808,18 @@ data class GlesFigureFrame(
             )
         }
 
-        /** Dispatches to [buildOverlayShapeDraw] or [buildOverlayTextDraw] by [ResolvedOverlay.type] — see [OverlayDraw] doc comment for why this is one list, not two. */
-        private fun buildOverlayDraw(layer: ResolvedOverlay, canvasW: Int, canvasH: Int, minDim: Float): OverlayDraw? = when (layer.type) {
-            "shape" -> buildOverlayShapeDraw(layer, canvasW, canvasH, minDim)?.let { OverlayDraw.Shape(it) }
-            "text"  -> buildOverlayTextDraw(layer, canvasW, canvasH)?.let { OverlayDraw.Text(it) }
-            else    -> null   // "figure" overlays, particle trails — still unimplemented, see class doc comment.
+        /** Dispatches to [buildOverlayShapeDraw], [buildOverlayTextDraw], or [buildOverlayFigureDraw] by [ResolvedOverlay.type] — see [OverlayDraw] doc comment for why this is one list, not two. */
+        private fun buildOverlayDraw(
+            layer: ResolvedOverlay,
+            canvasW: Int,
+            canvasH: Int,
+            minDim: Float,
+            appearance: AppearanceSettings
+        ): OverlayDraw? = when (layer.type) {
+            "shape"  -> buildOverlayShapeDraw(layer, canvasW, canvasH, minDim)?.let { OverlayDraw.Shape(it) }
+            "text"   -> buildOverlayTextDraw(layer, canvasW, canvasH)?.let { OverlayDraw.Text(it) }
+            "figure" -> buildOverlayFigureDraw(layer, canvasW, canvasH, minDim, appearance)?.let { OverlayDraw.Shape(it) }
+            else     -> null   // particle trails — still unimplemented, see class doc comment.
         }
 
         /**
@@ -962,6 +978,169 @@ data class GlesFigureFrame(
                 return (a + (b - a) * ct + 0.5f).toInt().coerceIn(0, 255)
             }
             return (lerpChannel(24) shl 24) or (lerpChannel(16) shl 16) or (lerpChannel(8) shl 8) or lerpChannel(0)
+        }
+
+        /**
+         * Reusable matrix array for secondary figure FK walk, matching [RigRenderer]'s
+         * `secondaryFigureMatrices`. Wrapped in ThreadLocal for thread safety.
+         */
+        private val secondaryFigureMatrices = ThreadLocal.withInitial { Array(StickFigureRig.BONE_COUNT) { Matrix() } }
+
+        /**
+         * Approximates a quadratic Bézier curve from [p0x],[p0y] through control point
+         * [p1x],[p1y] to [p2x],[p2y] using [segments] round-capped line segments.
+         * Each vertex is mapped from local figure space to world space via
+         * [RigRenderer.localToWorld]. Round caps fill the joints between segments.
+         */
+        private fun appendQuadraticBezier(
+            commands: ArrayList<OverlayDrawCommand>,
+            p0x: Float, p0y: Float,
+            p1x: Float, p1y: Float,
+            p2x: Float, p2y: Float,
+            halfWidth: Float,
+            color: Int,
+            originX: Float, originY: Float,
+            rotationDeg: Float, scale: Float,
+            segments: Int = 6
+        ) {
+            val p0 = RigRenderer.localToWorld(p0x, p0y, originX, originY, rotationDeg, scale)
+            var prevWx = p0.first
+            var prevWy = p0.second
+            for (k in 1..segments) {
+                val t = k.toFloat() / segments.toFloat()
+                val oneMinusT = 1f - t
+                val lx = oneMinusT * oneMinusT * p0x + 2f * oneMinusT * t * p1x + t * t * p2x
+                val ly = oneMinusT * oneMinusT * p0y + 2f * oneMinusT * t * p1y + t * t * p2y
+                val (wx, wy) = RigRenderer.localToWorld(lx, ly, originX, originY, rotationDeg, scale)
+                commands += OverlayDrawCommand.Line(prevWx, prevWy, wx, wy, halfWidth, color)
+                prevWx = wx
+                prevWy = wy
+            }
+        }
+
+        /**
+         * Builds an [OverlayShapeDraw] for a `type == "figure"` secondary figure layer,
+         * mirroring [RigRenderer.drawSecondaryFigure] and [RigRenderer.drawSecondaryFace]
+         * exactly. Pre-transforms all geometry into world canvas pixels using
+         * [RigRenderer.localToWorld], preserving the layer's translation, scale, and
+         * rotation (including eye oval rotation).
+         */
+        private fun buildOverlayFigureDraw(
+            layer: ResolvedOverlay,
+            canvasW: Int,
+            canvasH: Int,
+            minDim: Float,
+            appearance: AppearanceSettings
+        ): OverlayShapeDraw? {
+            if (layer.opacity <= 0.001f || layer.type != "figure") return null
+            val angles = layer.figurePoseAngles ?: return null
+            val bones = StickFigureRig.BONES
+            val n = StickFigureRig.BONE_COUNT
+            if (angles.size < n) return null
+
+            val originX = canvasW * layer.x
+            val originY = canvasH * layer.y
+            val baseColor = layer.color.toInt()
+            val crispAlpha = RigRenderer.combinedAlphaChannel(baseColor, layer.opacity)
+            val crispColor = (crispAlpha shl 24) or (baseColor and 0xFFFFFF)
+
+            val figureScaleDim =
+                if (canvasW < canvasH) canvasW.toFloat()
+                else canvasH * (9f / 16f)
+            val figScale = figureScaleDim * 0.3f
+            val localMatrices = secondaryFigureMatrices.get()
+            val pts = FloatArray(4)
+
+            val commands = ArrayList<OverlayDrawCommand>(20)
+            val worldBoneHalfWidth = 0.03f * figScale * layer.scale
+            var headCx = 0f
+            var headCy = 0f
+            var headR = 0f
+
+            for (i in 0 until n) {
+                val bone = bones[i]
+                val matrix = localMatrices[i]
+                if (bone.parentId == null) {
+                    matrix.reset()
+                    matrix.preRotate(angles[i])
+                } else {
+                    val pIdx = StickFigureRig.BONE_INDEX[bone.parentId] ?: continue
+                    matrix.set(localMatrices[pIdx])
+                    matrix.preTranslate(bones[pIdx].normalizedLength * figScale, 0f)
+                    matrix.preRotate(angles[i])
+                }
+
+                val lengthSF = bone.normalizedLength * figScale * (if (bone.isHeadBone) appearance.neckLengthMultiplier else 1f)
+                pts[0] = 0f; pts[1] = 0f
+                pts[2] = lengthSF; pts[3] = 0f
+                matrix.mapPoints(pts)
+                val startX = pts[0]; val startY = pts[1]
+                val endX = pts[2]; val endY = pts[3]
+
+                if (bone.isHeadBone) {
+                    headCx = endX; headCy = endY
+                    headR = bone.headNormalizedRadius * figScale
+                    val (wHeadCx, wHeadCy) = RigRenderer.localToWorld(headCx, headCy, originX, originY, layer.rotationDeg, layer.scale)
+                    val wHeadR = headR * layer.scale
+                    commands += OverlayDrawCommand.Circle(wHeadCx, wHeadCy, wHeadR, crispColor)
+                } else {
+                    val (wx1, wy1) = RigRenderer.localToWorld(startX, startY, originX, originY, layer.rotationDeg, layer.scale)
+                    val (wx2, wy2) = RigRenderer.localToWorld(endX, endY, originX, originY, layer.rotationDeg, layer.scale)
+                    commands += OverlayDrawCommand.Line(wx1, wy1, wx2, wy2, worldBoneHalfWidth, crispColor)
+                }
+            }
+
+            if (headR > 0f) {
+                // Eyes
+                val eyeRx = headR * 0.12f
+                val eyeRy = when (layer.figureExpression) {
+                    Expression.SQUINT -> eyeRx * 0.35f
+                    Expression.WIDE, Expression.HAPPY -> eyeRx * 1.3f
+                    else -> eyeRx
+                }
+                val eyeOffsetX = headR * 0.35f
+                val eyeOffsetY = -headR * 0.1f
+                val (wEye1X, wEye1Y) = RigRenderer.localToWorld(headCx - eyeOffsetX, headCy + eyeOffsetY, originX, originY, layer.rotationDeg, layer.scale)
+                val (wEye2X, wEye2Y) = RigRenderer.localToWorld(headCx + eyeOffsetX, headCy + eyeOffsetY, originX, originY, layer.rotationDeg, layer.scale)
+                val wEyeRx = eyeRx * layer.scale
+                val wEyeRy = eyeRy * layer.scale
+                commands += OverlayDrawCommand.Oval(wEye1X, wEye1Y, wEyeRx, wEyeRy, crispColor, layer.rotationDeg)
+                commands += OverlayDrawCommand.Oval(wEye2X, wEye2Y, wEyeRx, wEyeRy, crispColor, layer.rotationDeg)
+
+                // Mouth
+                val mouthHalfWidth = headR * 0.04f * layer.scale
+                val mouthY = headCy + headR * 0.4f
+                val mouthHalfW = headR * 0.3f
+                when (layer.figureExpression) {
+                    Expression.HAPPY -> {
+                        appendQuadraticBezier(
+                            commands,
+                            headCx - mouthHalfW, mouthY,
+                            headCx, mouthY + headR * 0.35f,
+                            headCx + mouthHalfW, mouthY,
+                            mouthHalfWidth, crispColor,
+                            originX, originY, layer.rotationDeg, layer.scale
+                        )
+                    }
+                    Expression.ANGRY, Expression.WORRIED -> {
+                        appendQuadraticBezier(
+                            commands,
+                            headCx - mouthHalfW, mouthY + headR * 0.15f,
+                            headCx, mouthY - headR * 0.2f,
+                            headCx + mouthHalfW, mouthY + headR * 0.15f,
+                            mouthHalfWidth, crispColor,
+                            originX, originY, layer.rotationDeg, layer.scale
+                        )
+                    }
+                    else -> {
+                        val (wx1, wy1) = RigRenderer.localToWorld(headCx - mouthHalfW, mouthY, originX, originY, layer.rotationDeg, layer.scale)
+                        val (wx2, wy2) = RigRenderer.localToWorld(headCx + mouthHalfW, mouthY, originX, originY, layer.rotationDeg, layer.scale)
+                        commands += OverlayDrawCommand.Line(wx1, wy1, wx2, wy2, mouthHalfWidth, crispColor)
+                    }
+                }
+            }
+
+            return OverlayShapeDraw(commands = commands, glow = false, glowColor = 0, glowRadiusPx = 0f)
         }
     }
 }

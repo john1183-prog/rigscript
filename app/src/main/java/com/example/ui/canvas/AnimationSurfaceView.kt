@@ -235,8 +235,10 @@ class AnimationSurfaceView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!poseEditorMode) return false
         val tx = event.x; val ty = event.y
-        val minDim = minOf(width, height).toFloat()
-        val scale  = minDim * appearance.characterScale
+        val figureScaleDim =
+            if (width < height) width.toFloat()
+            else height * (9f / 16f)
+        val scale  = figureScaleDim * appearance.characterScale
         val rootX  = width  * appearance.rootAnchorX
         val rootY  = height * appearance.rootAnchorY
 

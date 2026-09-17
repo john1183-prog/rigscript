@@ -127,7 +127,10 @@ class RigRenderer {
         overrides: FigureOverrides = FigureOverrides()
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
-        val scale   = minDim * (overrides.scale ?: appearance.characterScale)
+        val figureScaleDim =
+            if (canvasW < canvasH) canvasW.toFloat()
+            else canvasH * (9f / 16f)
+        val scale   = figureScaleDim * (overrides.scale ?: appearance.characterScale)
         val rootX   = canvasW * (overrides.x ?: appearance.rootAnchorX)
         val rootY   = canvasH * (overrides.y ?: appearance.rootAnchorY) + hipBobNormalized * scale
 
@@ -235,7 +238,7 @@ class RigRenderer {
         }
 
         bonePaint.color          = (overrides.boneColor ?: appearance.boneColor).toInt()
-        bonePaint.strokeWidth    = appearance.boneStrokeNormalized * minDim
+        bonePaint.strokeWidth    = appearance.boneStrokeNormalized * figureScaleDim
         headPaint.color          = (overrides.headColor ?: overrides.boneColor ?: appearance.headColor).toInt()
         jointPaint.color         = (overrides.jointColor ?: overrides.boneColor ?: appearance.jointColor).toInt()
         mouthPaint.color         = (overrides.mouthColor ?: appearance.mouthColor).toInt()
@@ -246,7 +249,7 @@ class RigRenderer {
         // inside drawEyebrows() instead of once with a fixed absolute value.
         // A fixed value here looked disproportionately thick on a shrunk head
         // and disproportionately thin on an enlarged one.
-        val jointR               = appearance.jointRadiusNormalized * minDim
+        val jointR               = appearance.jointRadiusNormalized * figureScaleDim
         val showJoints           = if (forExport) appearance.showJointsOnExport else appearance.showJoints
         val headScaleMultiplier  = overrides.headScale ?: appearance.headScaleMultiplier
         // Resolved 0..1 figure opacity — see FigureOverrides.opacity's doc
@@ -770,11 +773,13 @@ class RigRenderer {
      */
     private fun drawSecondaryFigure(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay, appearance: AppearanceSettings) {
         val angles = layer.figurePoseAngles ?: return
-        val minDim = min(w, h).toFloat()
+        val figureScaleDim =
+            if (w < h) w.toFloat()
+            else h * (9f / 16f)
         // Base size at layer.scale==1.0 — deliberately smaller than the
         // main figure's usual footprint, so a supporting figure reads as
         // secondary by default rather than competing with the main one.
-        val figScale = minDim * 0.3f
+        val figScale = figureScaleDim * 0.3f
 
         val bones = StickFigureRig.BONES
         val n = StickFigureRig.BONE_COUNT

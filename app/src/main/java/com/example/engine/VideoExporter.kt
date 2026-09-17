@@ -498,7 +498,9 @@ object VideoExporter {
             val fps        = settings.fps
             val appearance = project.appearance
             val (width, height) = settings.dimensions(settings.aspectRatio)
-            val minDim     = minOf(width, height).toFloat()
+            val figureScaleDim =
+                if (width < height) width.toFloat()
+                else height * (9f / 16f)
 
             // Text phase, sub-phase 3 (V2_DECISIONS.md) — decoded ONCE up
             // front, same reasoning and same pattern as export()'s own
@@ -640,7 +642,7 @@ object VideoExporter {
                         engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
 
                         val overrides = engine.currentFigureOverrides
-                        val scale = minDim * (overrides.scale ?: appearance.characterScale)
+                        val scale = figureScaleDim * (overrides.scale ?: appearance.characterScale)
                         val rootX = width  * (overrides.x ?: appearance.rootAnchorX)
                         val rootY = height * (overrides.y ?: appearance.rootAnchorY) + engine.currentHipBobOffset * scale
 

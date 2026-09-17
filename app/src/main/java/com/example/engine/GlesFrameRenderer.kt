@@ -1537,7 +1537,8 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * Draws a resolved overlay shape's already-world-space geometry via the
      * existing primitives — [drawSolidFan] for [GlesFigureFrame.OverlayDrawCommand.Polygon],
      * [drawCircle] for [Circle][GlesFigureFrame.OverlayDrawCommand.Circle],
-     * [drawRoundCappedLine] for [Line][GlesFigureFrame.OverlayDrawCommand.Line].
+     * [drawRoundCappedLine] for [Line][GlesFigureFrame.OverlayDrawCommand.Line],
+     * [drawOval] for [Oval][GlesFigureFrame.OverlayDrawCommand.Oval].
      * No new shader needed for the crisp draw — only glow needed new
      * infrastructure (FBOs + blur). [colorOverride], when non-null, replaces
      * every command's own baked-in color — used ONLY for the glow pass (see
@@ -1561,6 +1562,10 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                 is GlesFigureFrame.OverlayDrawCommand.Line -> {
                     val c = argbToGlColor(colorOverride ?: cmd.color)
                     drawRoundCappedLine(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.halfWidth, canvasW, canvasH, c[0], c[1], c[2], c[3])
+                }
+                is GlesFigureFrame.OverlayDrawCommand.Oval -> {
+                    val c = argbToGlColor(colorOverride ?: cmd.color)
+                    drawOval(cmd.cx, cmd.cy, cmd.halfWidth, cmd.halfHeight, canvasW, canvasH, c[0], c[1], c[2], c[3], cmd.rotationDeg)
                 }
             }
         }

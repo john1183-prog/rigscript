@@ -123,7 +123,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "shape": "string",               // only used when type=="shape": "rect" | "circle" | "line" | "arrow" | "cross". Default "rect".
   "startSec": number,             // REQUIRED. When this layer's enter animation begins.
   "endSec": number,               // REQUIRED. When this layer is fully gone. Must be > startSec.
-  "x": number,                    // center X, fraction of canvas width (0..1). Default 0.5.
+  "x": number,                    // horizontal position, fraction of canvas width (0..1). Text center when align=="center"; left edge when align=="left"; right edge when align=="right". Default 0.5.
   "y": number,                    // center Y, fraction of canvas height (0..1). Default 0.5. Ignored if "slot" is set.
   "slot": "string" | null,        // shorthand for y: "upper" | "center" | "lower". Overrides y when set.
   "width": number | null,         // shape width, fraction of canvas width (rect)
@@ -134,7 +134,7 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "text": "string" | null,        // REQUIRED when type=="text"
   "fontSize": number,             // fraction of canvas HEIGHT (not width). Default 0.08.
   "bold": boolean,                // Default true.
-  "align": "string",              // "left" | "center" | "right". Default "center".
+  "align": "string",              // horizontal text alignment relative to x: "center" (x is center) | "left" (x is left edge, extends rightward) | "right" (x is right edge, extends leftward). Default "center".
   "color": number,                 // ARGB as a decimal integer — see COLOR VALUES below. Default opaque white.
   "gradientColor": number | null,  // if set, top-to-bottom gradient from color to this instead of a flat fill
   "glow": boolean,                 // Default false.
@@ -534,6 +534,24 @@ of aspect, and content pushed to the extreme left/right edge is the
 part most likely to sit differently, or get cropped, between the two
 exported framings.
 
+SIDE TEXT & PORTRAIT CLEARANCE — because fontSize is a fraction of canvas
+HEIGHT, a given font-size fraction occupies much more horizontal space in
+9:16 portrait than in 16:9 landscape. When side text is placed beside a
+centered figure, account for the full text width, not just its x anchor.
+align:"left" at a left-side x position extends rightward toward the
+figure; align:"right" at a right-side x position extends leftward toward
+the figure. For a centered figure, roughly x 0.35-0.65 is the central
+figure corridor for typical poses (a rough composition heuristic, not a
+rigid collision box), so side text should remain clear of that region
+unless the composition intentionally overlaps. An explicitly approximate
+rule of thumb for planning in 9:16 portrait (planning heuristic only, not
+an exact renderer formula): estimated text width fraction ≈ (character
+count) * fontSize. In portrait, safe side-text composition patterns
+include: (1) keeping side text shorter or smaller so its inward edge stays
+outside the central corridor; (2) moving side text vertically to slot
+"upper" or "lower" to avoid the figure's arm span; or (3) moving the figure
+toward one side when prominent text needs the center region.
+
 QUOTE/VERSE REVEAL — the schema has no way to recolor or highlight part
 of a single text string (no per-character/per-word styling), so true
 karaoke-style highlighting isn't possible. The real technique: break a
@@ -888,6 +906,18 @@ matters as much as renderer correctness.
   extra reasoning needed. `fontSize` specifically is a fraction of canvas
   HEIGHT so text reads at a consistent relative size on both aspect
   ratios instead of looking tiny on one and oversized on the other.
+  In 9:16 portrait, this height-normalization means text takes up
+  substantially more horizontal space than in 16:9 landscape. Combined
+  with `align` semantics — where `align: "left"` anchors the left text edge
+  at `x` and extends rightward, and `align: "right"` anchors the right edge
+  at `x` and extends leftward — side-placed text grows inward toward a
+  centered figure. The prompt gives the AI a rough planning heuristic
+  (`estimated width fraction ≈ charCount * fontSize` in 9:16), identifies
+  the rough `x 0.35–0.65` central figure corridor for typical poses, and
+  explains safe composition patterns (shorter/smaller side text, vertical
+  separation via `slot`, or shifting the figure aside) rather than imposing
+  an artificial blanket font-size cap or relying on runtime collision
+  avoidance.
 - The AI should reach for `slot` (upper/center/lower) over raw `y` in the
   common case — it's shorthand for the same handful of vertical positions
   a wordmark/caption-adjacent burst usually wants, and it's also what

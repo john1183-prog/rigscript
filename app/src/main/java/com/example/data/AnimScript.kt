@@ -347,6 +347,7 @@ data class AnimScript(
                 ScriptEvent(1.5f,  "wave",           0.6f, "spring", expression = "happy",
                     sceneShape = "mountains", sceneAtmosphere = "snow",
                     skyColor = 0xFF87CEEBL, groundColor = 0xFFE8F4F8L, horizonY = 0.68f,
+                    showGroundLine = false,
                     // Zoom settles back to 1x, pan shifts vertically, and a
                     // shake burst lands on the wave beat — exercises all
                     // four camera fields together within the same ~3s

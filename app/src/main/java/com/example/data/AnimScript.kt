@@ -630,13 +630,13 @@ data class AnimScript(
                 OverlayLayer(
                     id = "caption_all_left", type = "text", text = "SIDE",
                     startSec = 78.0f, endSec = 82.0f, slot = "center", x = 0.15f, align = "left",
-                    fontSize = 0.07f, color = 0xFFFF8A65L,
+                    fontSize = 0.045f, color = 0xFFFF8A65L,
                     enterStyle = "fade", exitStyle = "fade"
                 ),
                 OverlayLayer(
                     id = "caption_all_right", type = "text", text = "EDGE",
                     startSec = 78.0f, endSec = 82.0f, slot = "center", x = 0.85f, align = "right",
-                    fontSize = 0.07f, color = 0xFF80D8FFL,
+                    fontSize = 0.045f, color = 0xFF80D8FFL,
                     enterStyle = "fade", exitStyle = "fade"
                 )
             )

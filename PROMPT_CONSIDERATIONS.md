@@ -976,6 +976,46 @@ matters as much as renderer correctness.
   parentLayer != null) && slot != null` — flagged here as a reasonable
   follow-up, not done as part of this prompt-only audit pass).
 
+### Planned V2 overlay-text extensions (PLANNED — DO NOT PROMPT YET)
+- A 5-step expansion to on-screen text capabilities and caption styling is
+  currently in architectural planning.
+- **CRITICAL SCHEMA DISCIPLINE**: None of these features or fields exist in
+  the current engine or schema. The production prompt must NEVER reference,
+  suggest, or invent these fields until each corresponding implementation step
+  is completed, verified on device, and landed on `main`:
+  1. **Caption clamping & styling (PLANNED — NOT IMPLEMENTED)**:
+     Planned `AppearanceSettings` controls for subtitle box wrapping, sizing,
+     and layout:
+     - `captionTextSizeFraction`
+     - `captionMaxWidthFraction`
+     - `captionBottomMarginFraction`
+     - `captionPaddingFraction`
+     - `captionBgColor`
+     - `captionTextColor`
+     - `captionMaxLines`
+  2. **Multiline overlay text with automatic word wrapping (PLANNED — NOT IMPLEMENTED)**:
+     Planned text overlay layout engine supporting automatic word wrapping,
+     not merely `\n` splitting. Planned behavior:
+     - StaticLayout-based automatic word wrapping
+     - bounded maximum width
+     - explicit `\n` preserved
+     - multiline measurement
+     - visual-center anchoring
+  3. **`screenSpace` coordinate mode**: planned boolean flag allowing overlays to
+     anchor directly to viewport coordinates, ignoring camera pan/zoom/shake.
+  4. **Overlay `anim` keyframes**: planned sub-timeline keyframes for interpolating
+     overlay transforms (position, scale, opacity, rotation) over time.
+  5. **Prompt synchronization**: the production prompt (`system_prompt.txt`) will
+     be updated only after steps 1-4 are fully implemented.
+- **Explicit out-of-scope boundaries**:
+  - Motion-path curves (e.g. bezier trajectories)
+  - Per-character or per-word animation (karaoke reveals)
+  - Layer blend-modes or masks
+  - Continuous particle emitters (bursts remain single-beat)
+  - Timeline editor UI
+- Until these land, maintain the strict closed-vocabulary discipline: never prompt
+  for or generate fields outside the currently supported schema.
+
 ## Workflow notes (not schema — just how to use what already exists)
 
 - **Highlight reels / recaps**: no special schema support needed and none

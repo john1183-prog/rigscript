@@ -5,7 +5,7 @@ implicit — see the project's own working principle on this. It's the
 second time this file has been written: the first version was lost when a
 development sandbox reset wiped an unpushed session (see "History" below).
 Everything in this version is verified against what's actually on `main`
-as of commit `fb36363`, not against what a prior session believed it had
+as of commit `4ec852a`, not against what a prior session believed it had
 pushed.
 
 ## History
@@ -2527,3 +2527,59 @@ zoom in."
     20% of the landscape frame in both Canvas and GLES.
   - Ground line at bottom of landscape: the visible cyan line IS the scripted
     ground line from t=0, not an artifact. It just needs to be reset.
+
+- **Resolution of follow-up video issues & recent renderer fixes (`6a396a1`, `3fddab3`, `fb01edf`, `d04c069`, `4ec852a`):**
+  The three issues documented in the follow-up analysis above, along with related
+  renderer parity and overlay authoring gaps, have all been resolved and verified on device:
+
+  - **GLES mountain geometry & gradient parity (`6a396a1`)**: Mountain geometry
+    peak calculation and background gradient rendering parity unified between GLES
+    and Canvas.
+  - **Issue 1 resolved — Aspect-aware figure framing across orientations (`3fddab3`)**:
+    Character scale dimension refactored from raw `minDim = min(w, h)` to
+    `figureScaleDim = if (w < h) w.toFloat() else h * (9f / 16f)` across `RigRenderer`,
+    `VideoExporter`, `AnimationSurfaceView`, and `GlesFigureFrame`. Anchoring scale
+    to the 9:16 portrait reference prevents the figure from expanding to 77% of
+    canvas height in 16:9 landscape before zoom, restoring camera zoom usability
+    across orientations.
+  - **Issue 3 resolved — GLES secondary figure rendering (`3fddab3`)**: Implemented
+    `"figure"` overlay type in `GlesFigureFrame.kt` via `OverlayDrawCommand.Oval` and
+    full FK matrix walk in `buildSecondaryFigureDraw`, matching `RigRenderer`'s
+    Canvas implementation.
+  - **Portrait-safe overlay text authoring guidance (`fb01edf`)**: Updated
+    `PROMPT_CONSIDERATIONS.md` and `system_prompt.txt` with explicit planning heuristics
+    for side-placed text in 9:16 portrait, accounting for horizontal text expansion
+    relative to the central figure corridor.
+  - **Issue 2 resolved — DEMO ground-line persistence (`d04c069`)**: Added
+    `showGroundLine = false` to the `t = 1.5s` `ScriptEvent` in `AnimScript.DEMO`.
+    Because `showGroundLine` is a snap field (carry-forward), setting it explicitly
+    to `false` at the mountains scene transition ensures it is cleanly suppressed
+    through all subsequent scenes (mountains, room, beach).
+  - **Portrait DEMO caption clearance (`4ec852a`)**: Reduced `fontSize` from `0.07f`
+    to `0.045f` for `caption_all_left` ("SIDE") and `caption_all_right` ("EDGE")
+    in `AnimScript.DEMO`. Verified on physical device via exported MP4 pixel analysis:
+    left clearance gap is 71 px (9.86% canvas width) and right clearance gap is
+    55 px (7.64% canvas width), completely eliminating collision with the central figure.
+
+- **Upcoming V2 Overlay-Text Extension (PLANNED — NOT IMPLEMENTED):**
+  A 5-step expansion to on-screen text capabilities and caption styling is planned.
+  **CRITICAL**: None of these features or fields exist in the engine or schema yet.
+  They are documented here for architectural planning only and must NOT be documented
+  as existing features or exposed to the script-generation prompt until implemented:
+  1. **Caption clamping + AppearanceSettings wiring**: dynamic max lines, box padding,
+     and appearance overrides for subtitles.
+  2. **Multiline overlay text**: `\n` line splitting, multi-line measurement, and
+     bounding box alignment.
+  3. **`screenSpace` coordinate mode**: optional overlay flag to anchor layers to
+     viewport space rather than camera world space.
+  4. **Overlay `anim` keyframes**: sub-timeline keyframing for overlay properties
+     (position, scale, opacity, rotation) over time within its active window.
+  5. **Documentation & prompt updates**: synchronizing AI prompts only once engine
+     code is implemented and verified.
+
+  **Explicit out-of-scope follow-ups from this plan**:
+  - Motion-path curves (e.g. bezier trajectories)
+  - Per-character / per-word animation (karaoke text reveals)
+  - Layer blend-modes or masking
+  - Continuous particle emitters (burst-only remains the model)
+  - Timeline editor UI

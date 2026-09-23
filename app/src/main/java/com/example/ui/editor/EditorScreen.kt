@@ -53,7 +53,8 @@ fun EditorScreen(
     projectId: String,
     vm: MainViewModel,
     onBack: () -> Unit,
-    onOpenPoseLibrary: () -> Unit
+    onOpenPoseLibrary: () -> Unit,
+    onOpenScriptEditor: (Float) -> Unit
 ) {
     val context      = LocalContext.current
     val scope        = rememberCoroutineScope()
@@ -316,22 +317,16 @@ fun EditorScreen(
         }
     ) { padding ->
 
-        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
 
             // ── Animation canvas ───────────────────────────────────────────────
-            // Shrunk (not hidden — still useful to confirm which project/pose
-            // you're looking at) specifically on the Script tab: that's a text-
-            // editing tab, not a watch-the-animation tab, and it's the one tab
-            // where the on-screen keyboard is in play. Combined with imePadding
-            // above, this is what actually fixes "I can't see what I'm editing" —
-            // previously the canvas claimed a fixed 38% of height regardless of
-            // keyboard state, squeezing the script editor into whatever sliver
-            // was left once the keyboard appeared, to the point of being fully
-            // covered rather than just cramped.
+            // Fixed 38% height across all tabs: script editing now has its own
+            // dedicated full-screen destination (ScriptEditorScreen), so the
+            // inline 14% canvas height hack and imePadding layout jumps are eliminated.
             // Preview aspect toggle — tap-only segmented control, same
             // interaction discipline as every other control added this
             // project (no gestures). Only shown once a project is loaded.
-            if (project != null && selectedTab != 0) {
+            if (project != null) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.Center
@@ -350,7 +345,7 @@ fun EditorScreen(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(if (selectedTab == 0) 0.14f else 0.38f)
+                    .fillMaxHeight(0.38f)
                     .background(Color(project?.appearance?.previewBgColor?.toInt() ?: 0xFF1A1A2E.toInt())),
                 contentAlignment = Alignment.Center
             ) {
@@ -539,17 +534,15 @@ fun EditorScreen(
             }
 
             when (selectedTab) {
-                0 -> ScriptPanel(
-                    scriptText   = scriptText,
-                    scriptError  = scriptError,
-                    scriptWarnings = scriptWarnings,
-                    onDismissScriptWarnings = { vm.dismissScriptWarnings() },
-                    onTextChange = { vm.onScriptTextChanged(it) },
-                    onInsertPose = onOpenPoseLibrary,
-                    onInsertOverlay = { vm.insertOverlayLayer(it) },
-                    currentTimeSec = scrubberPos,
-                    onImport     = { scriptPicker.launch(arrayOf("application/json", "*/*")) },
-                    onCopyPrompt = {
+                0 -> ScriptSummaryPanel(
+                    project            = project,
+                    scriptText         = scriptText,
+                    scriptError        = scriptError,
+                    scriptWarnings     = scriptWarnings,
+                    currentTimeSec     = scrubberPos,
+                    onOpenScriptEditor = onOpenScriptEditor,
+                    onImport           = { scriptPicker.launch(arrayOf("application/json", "*/*")) },
+                    onCopyPrompt       = {
                         scope.launch {
                             val text = vm.buildPromptForClipboard(context)
                             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
@@ -557,7 +550,7 @@ fun EditorScreen(
                             vm.notify("AI prompt copied to clipboard")
                         }
                     },
-                    modifier     = Modifier.fillMaxSize()
+                    modifier           = Modifier.fillMaxSize()
                 )
                 1 -> AppearancePanel(
                     appearance        = project?.appearance ?: AppearanceSettings(),
@@ -640,143 +633,175 @@ private fun AudioBar(
     }
 }
 
-// ── Script panel ──────────────────────────────────────────────────────────────
+// ── Script summary panel ──────────────────────────────────────────────────────
 
 @Composable
-private fun ScriptPanel(
+private fun ScriptSummaryPanel(
+    project: com.example.data.ProjectDef?,
     scriptText: String,
     scriptError: String?,
     scriptWarnings: List<String>,
-    onDismissScriptWarnings: () -> Unit,
-    onTextChange: (String) -> Unit,
-    onInsertPose: () -> Unit,
-    onInsertOverlay: (com.example.data.OverlayLayer) -> Unit,
     currentTimeSec: Float,
+    onOpenScriptEditor: (Float) -> Unit,
     onImport: () -> Unit,
     onCopyPrompt: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.padding(12.dp)) {
-        Text("Script JSON", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(6.dp))
-        // Fixed screen-width real estate for 3 buttons was compressing/
-        // clipping the rightmost one on narrower phones. horizontalScroll is
-        // a safety net (should rarely actually need to scroll now that
-        // labels are shorter), not the primary fix — the primary fix is
-        // giving these their own row instead of sharing one with the title.
         Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // V2 — copies the full AI script-generation prompt (+ this
-            // project's live sound-effect id list) to the clipboard, ready
-            // to paste as a system prompt wherever the person generates the
-            // JSON. See MainViewModel.buildPromptForClipboard.
-            OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.height(32.dp)) {
-                Icon(Icons.Default.ContentCopy, null, Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Prompt", fontSize = 12.sp)
+            Column {
+                Text(
+                    "Script",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                val eventCount = project?.script?.events?.size ?: 0
+                val overlayCount = project?.script?.overlayLayers?.size ?: 0
+                Text(
+                    "$eventCount event${if (eventCount == 1) "" else "s"} • $overlayCount overlay${if (overlayCount == 1) "" else "s"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
             }
-            // F1: Import a .json script file directly — avoids copy-paste for AI-generated scripts
-            OutlinedButton(onClick = onImport, modifier = Modifier.height(32.dp)) {
-                Icon(Icons.Default.FileOpen, null, Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Import", fontSize = 12.sp)
-            }
-            OutlinedButton(onClick = onInsertPose, modifier = Modifier.height(32.dp)) {
-                Icon(Icons.Default.Add, null, Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Pose", fontSize = 12.sp)
-            }
-            // Motion-graphics overlay layers — inserts a ready-made default
-            // at the current playhead time, same "tap only, JSON text is
-            // the real edit surface" philosophy as the strip above and
-            // "Pose" here: a Compose DropdownMenu (a standard, well-tested
-            // built-in widget, not custom gesture code) rather than any
-            // drag-based layer placement.
-            var showOverlayMenu by remember { mutableStateOf(false) }
-            Box {
-                OutlinedButton(onClick = { showOverlayMenu = true }, modifier = Modifier.height(32.dp)) {
-                    Icon(Icons.Default.Add, null, Modifier.size(14.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Overlay", fontSize = 12.sp)
-                }
-                DropdownMenu(expanded = showOverlayMenu, onDismissRequest = { showOverlayMenu = false }) {
-                    val t = currentTimeSec
-                    DropdownMenuItem(text = { Text("Text burst") }, onClick = {
-                        showOverlayMenu = false
-                        onInsertOverlay(com.example.data.OverlayLayer(
-                            id = "text_%.1f".format(t), type = "text", text = "TEXT",
-                            startSec = t, endSec = t + 2f, slot = "upper",
-                            enterStyle = "pop", enterEase = "back"
-                        ))
-                    })
-                    DropdownMenuItem(text = { Text("Shape") }, onClick = {
-                        showOverlayMenu = false
-                        onInsertOverlay(com.example.data.OverlayLayer(
-                            id = "shape_%.1f".format(t), type = "shape", shape = "rect",
-                            startSec = t, endSec = t + 2f, width = 0.3f, height = 0.05f
-                        ))
-                    })
-                    DropdownMenuItem(text = { Text("Particle burst") }, onClick = {
-                        showOverlayMenu = false
-                        onInsertOverlay(com.example.data.OverlayLayer(
-                            id = "burst_%.1f".format(t), type = "particles",
-                            startSec = t, endSec = t + 1.2f, particleCount = 20
-                        ))
-                    })
-                }
+
+            Button(
+                onClick = { onOpenScriptEditor(currentTimeSec) },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = null, Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Edit Script", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
+
         Spacer(Modifier.height(8.dp))
 
-        if (scriptError != null) {
-            Text("⚠ $scriptError", color = MaterialTheme.colorScheme.error,
-                fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
-        }
-        // V2 — semantic warnings (unknown pose/ease/scene/sound-effect ids,
-        // near-duplicate timestamps): these are NOT parse failures — the
-        // script is valid JSON and will render — but something in it will
-        // silently be skipped/ignored/defaulted at render time. Surfaced
-        // separately from scriptError (a real parse failure blocks the
-        // script from applying at all; a warning doesn't).
-        if (scriptWarnings.isNotEmpty()) {
-            Column(Modifier.padding(bottom = 6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${scriptWarnings.size} warning${if (scriptWarnings.size == 1) "" else "s"}",
-                        color = Color(0xFFE0A030), fontSize = 11.sp,
-                        modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismissScriptWarnings, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                        Text("Dismiss", fontSize = 11.sp, color = Color(0xFFE0A030))
-                    }
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.height(30.dp)) {
+                Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Prompt", fontSize = 11.sp)
+            }
+            OutlinedButton(onClick = onImport, modifier = Modifier.height(30.dp)) {
+                Icon(Icons.Default.FileOpen, null, Modifier.size(13.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Import", fontSize = 11.sp)
+            }
+
+            if (scriptError != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Invalid JSON",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
-                Column(Modifier.heightIn(max = 100.dp).verticalScroll(rememberScrollState())) {
-                    scriptWarnings.forEach { w ->
-                        Text("⚠ $w", color = Color(0xFFE0A030), fontSize = 11.sp)
-                    }
+            } else if (scriptWarnings.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFE0A030),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "${scriptWarnings.size} warning${if (scriptWarnings.size == 1) "" else "s"}",
+                        color = Color(0xFFE0A030),
+                        fontSize = 11.sp
+                    )
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Valid",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 11.sp
+                    )
                 }
             }
         }
 
+        Spacer(Modifier.height(8.dp))
+
+        // Read-only monospace preview card that also navigates on tap
         Box(
-            Modifier.fillMaxSize()
+            Modifier
+                .fillMaxSize()
                 .background(Color(0xFF0A0A14), RoundedCornerShape(8.dp))
-                .border(1.dp,
+                .border(
+                    1.dp,
                     if (scriptError != null) MaterialTheme.colorScheme.error
                     else if (scriptWarnings.isNotEmpty()) Color(0xFFE0A030)
                     else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                    RoundedCornerShape(8.dp))
+                    RoundedCornerShape(8.dp)
+                )
+                .clickable { onOpenScriptEditor(currentTimeSec) }
+                .padding(12.dp)
         ) {
-            BasicTextField(
-                value = scriptText,
-                onValueChange = onTextChange,
-                textStyle = TextStyle(
-                    color = Color(0xFFB0C4DE), fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp, lineHeight = 18.sp
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                modifier = Modifier.fillMaxSize().padding(12.dp).verticalScroll(rememberScrollState())
-            )
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "PREVIEW",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        "Tap to open full editor",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                }
+                Text(
+                    text = scriptText,
+                    style = TextStyle(
+                        color = Color(0xFFB0C4DE),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    ),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            }
         }
     }
 }

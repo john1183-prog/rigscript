@@ -4,15 +4,17 @@ import androidx.compose.runtime.*
 import androidx.navigation.*
 import androidx.navigation.compose.*
 import com.example.ui.editor.EditorScreen
+import com.example.ui.editor.ScriptEditorScreen
 import com.example.ui.home.HomeScreen
 import com.example.ui.poses.PoseEditorScreen
 import com.example.ui.settings.SettingsScreen
 import com.example.viewmodel.MainViewModel
 
-private const val HOME     = "home"
-private const val EDITOR   = "editor/{projectId}"
-private const val POSES    = "poses"
-private const val SETTINGS = "settings"
+private const val HOME          = "home"
+private const val EDITOR        = "editor/{projectId}"
+private const val SCRIPT_EDITOR = "editor/{projectId}/script?time={time}"
+private const val POSES         = "poses"
+private const val SETTINGS      = "settings"
 
 @Composable
 fun MainNavGraph(vm: MainViewModel) {
@@ -45,7 +47,29 @@ fun MainNavGraph(vm: MainViewModel) {
         ) { backStack ->
             val projectId = backStack.arguments?.getString("projectId") ?: return@composable
             EditorScreen(
+                projectId          = projectId,
+                vm                 = vm,
+                onBack             = { navController.popBackStack() },
+                onOpenPoseLibrary  = { navController.navigate(POSES) },
+                onOpenScriptEditor = { time -> navController.navigate("editor/$projectId/script?time=$time") }
+            )
+        }
+
+        composable(
+            route = SCRIPT_EDITOR,
+            arguments = listOf(
+                navArgument("projectId") { type = NavType.StringType },
+                navArgument("time") {
+                    type = NavType.FloatType
+                    defaultValue = 0f
+                }
+            )
+        ) { backStack ->
+            val projectId = backStack.arguments?.getString("projectId") ?: return@composable
+            val time = backStack.arguments?.getFloat("time") ?: 0f
+            ScriptEditorScreen(
                 projectId         = projectId,
+                currentTimeSec    = time,
                 vm                = vm,
                 onBack            = { navController.popBackStack() },
                 onOpenPoseLibrary = { navController.navigate(POSES) }

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -835,15 +836,97 @@ private fun AppearancePanel(
     onDeletePreset: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    var selectedCategory by rememberSaveable { mutableIntStateOf(0) }
+    val categories = listOf("Character", "Scene", "Motion", "Reference", "Audio")
 
-        // Switchable saved appearance presets — save the current look once,
-        // reuse it on any project. Tap-only (apply on tap, delete via a
-        // trailing IconButton), same interaction discipline as the overlay
-        // layer list — no drag-to-reorder, no long-press.
+    Column(modifier = modifier) {
+        // Switchable saved appearance presets — pinned persistent strip above the
+        // category selector so users can switch or save presets at any time.
+        PresetsStrip(
+            presets = presets,
+            onApplyPreset = onApplyPreset,
+            onDeletePreset = onDeletePreset,
+            onSavePreset = onSavePreset
+        )
+
+        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+        ScrollableTabRow(
+            selectedTabIndex = selectedCategory,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
+            edgePadding = 16.dp
+        ) {
+            categories.forEachIndexed { index, label ->
+                Tab(
+                    selected = selectedCategory == index,
+                    onClick = { selectedCategory = index },
+                    text = { Text(label) }
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            when (selectedCategory) {
+                0 -> CharacterCategoryContent(
+                    appearance = appearance,
+                    onAppearance = onAppearance
+                )
+                1 -> SceneCategoryContent(
+                    appearance = appearance,
+                    onAppearance = onAppearance
+                )
+                2 -> MotionCategoryContent(
+                    ampSettings = ampSettings,
+                    onAmplitude = onAmplitude
+                )
+                3 -> ReferenceCategoryContent(
+                    referenceOverlay = referenceOverlay,
+                    onReferenceOverlay = onReferenceOverlay,
+                    onPickReferenceImage = onPickReferenceImage,
+                    onRemoveReferenceImage = onRemoveReferenceImage
+                )
+                4 -> AudioCategoryContent(
+                    backgroundMusic = backgroundMusic,
+                    soundEffects = soundEffects,
+                    onBackgroundMusic = onBackgroundMusic,
+                    onPickBackgroundMusic = onPickBackgroundMusic,
+                    onRemoveBackgroundMusic = onRemoveBackgroundMusic,
+                    onPickSoundEffect = onPickSoundEffect,
+                    onRemoveSoundEffect = onRemoveSoundEffect,
+                    onSoundEffectVolume = onSoundEffectVolume,
+                    onRenameSoundEffect = onRenameSoundEffect,
+                    onPickBuiltInSoundEffect = onPickBuiltInSoundEffect,
+                    onAddAllBuiltInSoundEffects = onAddAllBuiltInSoundEffects
+                )
+            }
+        }
+    }
+}
+
+// ── Appearance sub-category components ────────────────────────────────────────
+
+@Composable
+private fun PresetsStrip(
+    presets: List<com.example.data.AppearancePreset>,
+    onApplyPreset: (com.example.data.AppearancePreset) -> Unit,
+    onDeletePreset: (String) -> Unit,
+    onSavePreset: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showSaveDialog by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text("Presets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        var showSaveDialog by remember { mutableStateOf(false) }
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -870,27 +953,43 @@ private fun AppearancePanel(
                 }
             }
         }
-        if (showSaveDialog) {
-            var presetName by remember { mutableStateOf("") }
-            AlertDialog(
-                onDismissRequest = { showSaveDialog = false },
-                title = { Text("Save current look as preset") },
-                text = {
-                    OutlinedTextField(
-                        value = presetName, onValueChange = { presetName = it },
-                        label = { Text("Preset name") }, singleLine = true
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (presetName.isNotBlank()) onSavePreset(presetName)
-                        showSaveDialog = false
-                    }) { Text("Save") }
-                },
-                dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } }
-            )
-        }
+    }
 
+    if (showSaveDialog) {
+        var presetName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text("Save current look as preset") },
+            text = {
+                OutlinedTextField(
+                    value = presetName, onValueChange = { presetName = it },
+                    label = { Text("Preset name") }, singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (presetName.isNotBlank()) onSavePreset(presetName)
+                    showSaveDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } }
+        )
+    }
+}
+
+@Composable
+private fun CharacterCategoryContent(
+    appearance: AppearanceSettings,
+    onAppearance: (AppearanceSettings) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("Colors", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         ColorPickerRow("Figure color", appearance.boneColor) { newColor ->
             onAppearance(appearance.copy(boneColor = newColor, headColor = newColor, jointColor = newColor))
@@ -972,7 +1071,25 @@ private fun AppearancePanel(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
 
-        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        TextButton(onClick = { onAppearance(AppearanceSettings()) }) {
+            Text("Reset appearance to defaults")
+        }
+    }
+}
+
+@Composable
+private fun SceneCategoryContent(
+    appearance: AppearanceSettings,
+    onAppearance: (AppearanceSettings) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("Scene", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
         LabeledSwitch("Gradient background", appearance.backgroundStyle == "gradient") { on ->
@@ -994,12 +1111,22 @@ private fun AppearancePanel(
                 onAppearance(appearance.copy(groundLineYFraction = it))
             }
         }
+    }
+}
 
-        TextButton(onClick = { onAppearance(AppearanceSettings()) }) {
-            Text("Reset appearance to defaults")
-        }
-
-        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+@Composable
+private fun MotionCategoryContent(
+    ampSettings: com.example.data.AmplitudeSettings,
+    onAmplitude: (com.example.data.AmplitudeSettings) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("Audio Response", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text("These apply to every project — edit shared defaults in Settings too.",
             style = MaterialTheme.typography.bodySmall,
@@ -1051,8 +1178,24 @@ private fun AppearancePanel(
         TextButton(onClick = { onAmplitude(com.example.data.AmplitudeSettings()) }) {
             Text("Reset audio response to defaults")
         }
+    }
+}
 
-        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+@Composable
+private fun ReferenceCategoryContent(
+    referenceOverlay: com.example.data.ReferenceOverlay,
+    onReferenceOverlay: ((com.example.data.ReferenceOverlay) -> com.example.data.ReferenceOverlay) -> Unit,
+    onPickReferenceImage: () -> Unit,
+    onRemoveReferenceImage: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("Reference Overlay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text("Manual image or text overlay you position yourself — never touched by AI-generated scripts.",
             style = MaterialTheme.typography.bodySmall,
@@ -1113,8 +1256,31 @@ private fun AppearancePanel(
                 onReferenceOverlay { it.copy(inFrontOfFigure = v) }
             }
         }
+    }
+}
 
-        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+@Composable
+private fun AudioCategoryContent(
+    backgroundMusic: com.example.data.BackgroundMusicSettings,
+    soundEffects: List<com.example.data.SoundEffectClip>,
+    onBackgroundMusic: ((com.example.data.BackgroundMusicSettings) -> com.example.data.BackgroundMusicSettings) -> Unit,
+    onPickBackgroundMusic: () -> Unit,
+    onRemoveBackgroundMusic: () -> Unit,
+    onPickSoundEffect: () -> Unit,
+    onRemoveSoundEffect: (String) -> Unit,
+    onSoundEffectVolume: (String, Float) -> Unit,
+    onRenameSoundEffect: (String, String) -> Unit,
+    onPickBuiltInSoundEffect: (com.example.data.BuiltInSoundEffect) -> Unit,
+    onAddAllBuiltInSoundEffects: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("Background Music", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text("Mixed under the narration on export. Previewed here as a separate track, not a live mix — see export for the real mixed result.",
             style = MaterialTheme.typography.bodySmall,

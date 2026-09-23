@@ -17,6 +17,7 @@ import android.opengl.GLUtils
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import android.util.Log
 import android.view.Surface
 import com.example.data.ReferenceOverlay
@@ -808,7 +809,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         // camera can't pan away from, on top of everything else.
         val caption = frame.captionText
         if (!caption.isNullOrBlank()) {
-            val tex = ensureCaptionTexture(caption, frame.canvasW, frame.canvasH)
+            val tex = ensureCaptionTexture(caption, frame)
             drawTexturedQuad(
                 tex.texId,
                 tex.boxL, tex.boxT,   tex.boxR, tex.boxT,
@@ -1126,24 +1127,49 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * (full-canvas) preview canvas and can afford absolute coordinates;
      * this can't reuse that function as-is for exactly that reason.
      */
-    private fun ensureCaptionTexture(text: String, canvasW: Int, canvasH: Int): CaptionTexture {
-        val key = "$canvasW|$canvasH|$text"
+    private fun ensureCaptionTexture(text: String, frame: GlesFigureFrame): CaptionTexture {
+        val canvasW = frame.canvasW
+        val canvasH = frame.canvasH
+        val key = "$canvasW|$canvasH|$text|${frame.captionTextSizeFraction}|${frame.captionMaxWidthFraction}|${frame.captionBottomMarginFraction}|${frame.captionPaddingFraction}|${frame.captionBgColor}|${frame.captionTextColor}|${frame.captionMaxLines}"
         captionTextureCache[key]?.let { return it }
 
-        captionTextPaint.textSize = canvasH * 0.045f
-        val maxWidth = (canvasW * 0.88f).toInt().coerceAtLeast(1)
-        val layout = StaticLayout.Builder
-            .obtain(text, 0, text.length, captionTextPaint, maxWidth)
-            .setAlignment(Layout.Alignment.ALIGN_CENTER)
-            .setLineSpacing(0f, 1.1f)
-            .build()
+        captionBgPaint.color = frame.captionBgColor
+        captionTextPaint.color = frame.captionTextColor
 
-        val padding      = canvasH * 0.02f
-        val bottomMargin = canvasH * 0.06f
+        val maxWidth = (canvasW * frame.captionMaxWidthFraction).toInt().coerceAtLeast(1)
+        val padding      = canvasH * frame.captionPaddingFraction
+        val bottomMargin = canvasH * frame.captionBottomMarginFraction
+        val boxBottom = canvasH - bottomMargin
+        val maxLayoutHeight = (boxBottom - padding * 2f).coerceAtLeast(0f)
+
+        var textSize = canvasH * frame.captionTextSizeFraction
+
+        fun buildLayout(size: Float): StaticLayout {
+            captionTextPaint.textSize = size
+            val builder = StaticLayout.Builder
+                .obtain(text, 0, text.length, captionTextPaint, maxWidth)
+                .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                .setLineSpacing(0f, 1.1f)
+            if (frame.captionMaxLines > 0) {
+                builder.setMaxLines(frame.captionMaxLines)
+                builder.setEllipsize(TextUtils.TruncateAt.END)
+                builder.setEllipsizedWidth(maxWidth)
+            }
+            return builder.build()
+        }
+
+        var layout = buildLayout(textSize)
+        val minTextSize = (canvasH * 0.01f).coerceAtLeast(1f)
+        var iterations = 0
+        while (layout.height > maxLayoutHeight && textSize > minTextSize && iterations++ < 25) {
+            textSize = (textSize * 0.9f).coerceAtLeast(minTextSize)
+            layout = buildLayout(textSize)
+            if (textSize == minTextSize) break
+        }
+
         val boxLeft   = (canvasW - maxWidth) / 2f - padding
         val boxRight  = boxLeft + maxWidth + padding * 2f
-        val boxBottom = canvasH - bottomMargin
-        val boxTop    = boxBottom - layout.height - padding * 2f
+        val boxTop    = (boxBottom - layout.height - padding * 2f).coerceAtLeast(0f)
 
         val texW = (boxRight - boxLeft).toInt().coerceAtLeast(1)
         val texH = (boxBottom - boxTop).toInt().coerceAtLeast(1)

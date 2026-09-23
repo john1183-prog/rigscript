@@ -2561,13 +2561,24 @@ zoom in."
     left clearance gap is 71 px (9.86% canvas width) and right clearance gap is
     55 px (7.64% canvas width), completely eliminating collision with the central figure.
 
-- **Upcoming V2 Overlay-Text Extension (PLANNED — NOT IMPLEMENTED):**
-  A 5-step expansion to on-screen text capabilities and caption styling is planned.
-  **CRITICAL**: None of these features or fields exist in the engine or schema yet.
-  They are documented here for architectural planning only and must NOT be documented
-  as existing features or exposed to the script-generation prompt until implemented:
-  1. **Caption clamping + AppearanceSettings wiring**: dynamic max lines, box padding,
-     and appearance overrides for subtitles.
+- **V2 Overlay-Text Extension — Step 1: Caption Clamping + AppearanceSettings Wiring:**
+  - **New `AppearanceSettings` caption fields & exact defaults**:
+    - `captionTextSizeFraction: Float = 0.045f` (text size as a fraction of canvas height)
+    - `captionMaxWidthFraction: Float = 0.88f` (maximum text block width as a fraction of canvas width)
+    - `captionBottomMarginFraction: Float = 0.06f` (distance from bottom of canvas to bottom of caption box as fraction of canvas height)
+    - `captionPaddingFraction: Float = 0.02f` (inner padding of caption box as fraction of canvas height)
+    - `captionBgColor: Long = 0x99000000L` (semi-opaque black ARGB Long, identical to existing hard-coded `captionBgPaint`)
+    - `captionTextColor: Long = 0xFFFFFFFFL` (white ARGB Long, identical to existing hard-coded `captionTextPaint` / `Color.WHITE`)
+    - `captionMaxLines: Int = 0` (`0` means unlimited lines; positive integers enforce maximum rendered lines via `StaticLayout.Builder.setMaxLines` and end-line ellipsizing)
+  - **Top-of-screen height clamp**:
+    - Prevents caption boxes from extending off the top of the canvas (`boxTop >= 0f`). Available layout height is constrained to `(boxBottom - padding * 2f).coerceAtLeast(0f)`.
+    - If layout height exceeds available height, `captionMaxLines` is applied (if positive) and `textSize` is iteratively reduced while preserving width constraints until the layout fits within available height or minimum font size is reached, and `boxTop` is safely clamped to `>= 0f`.
+  - **Backward compatibility & rendering parity**:
+    - Projects without explicit caption appearance settings default to the exact existing values, maintaining pixel-identical rendering for non-overflowing captions.
+    - The new fields and height clamping logic are wired into both Canvas (`RigRenderer.drawCaption`) and GLES (`GlesFigureFrame` and `GlesFrameRenderer.ensureCaptionTexture`) rendering paths, ensuring full visual parity across 9:16 portrait and 16:9 landscape.
+
+- **Upcoming V2 Overlay-Text Extension (PLANNED — Steps 2-5 NOT IMPLEMENTED):**
+  Remaining steps planned for subsequent iterations:
   2. **Multiline overlay text**: `\n` line splitting, multi-line measurement, and
      bounding box alignment.
   3. **`screenSpace` coordinate mode**: optional overlay flag to anchor layers to

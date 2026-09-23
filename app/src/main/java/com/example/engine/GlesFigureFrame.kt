@@ -125,6 +125,13 @@ data class GlesFigureFrame(
      * "after canvas.restore()" placement.
      */
     val captionText: String?,
+    val captionTextSizeFraction: Float = 0.045f,
+    val captionMaxWidthFraction: Float = 0.88f,
+    val captionBottomMarginFraction: Float = 0.06f,
+    val captionPaddingFraction: Float = 0.02f,
+    val captionBgColor: Int = 0x99000000L.toInt(),
+    val captionTextColor: Int = -1,
+    val captionMaxLines: Int = 0,
 
     /**
      * Reference overlay (text phase, sub-phase 3 — V2_DECISIONS.md), or
@@ -664,8 +671,15 @@ data class GlesFigureFrame(
                 // NOT camera-transformed — screen-space atmosphere, unchanged
                 // from before this phase. See class doc comment.
                 atmosphereCommands      = atmosphereCommands,
-                captionText             = captionText,
-                referenceOverlayDraw    = referenceOverlayDraw
+                captionText                 = captionText,
+                captionTextSizeFraction     = appearance.captionTextSizeFraction,
+                captionMaxWidthFraction     = appearance.captionMaxWidthFraction,
+                captionBottomMarginFraction = appearance.captionBottomMarginFraction,
+                captionPaddingFraction      = appearance.captionPaddingFraction,
+                captionBgColor              = appearance.captionBgColor.toInt(),
+                captionTextColor            = appearance.captionTextColor.toInt(),
+                captionMaxLines             = appearance.captionMaxLines,
+                referenceOverlayDraw        = referenceOverlayDraw
             )
         }
 

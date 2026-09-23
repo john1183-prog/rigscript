@@ -4,6 +4,7 @@ import android.graphics.*
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import com.example.data.AppearanceSettings
 import com.example.data.ReferenceOverlay
 import kotlin.math.min
@@ -391,7 +392,7 @@ class RigRenderer {
             drawAtmosphere(canvas, canvasW, canvasH, sceneAtmosphere, currentTimeSec)
         }
         if (!captionText.isNullOrBlank()) {
-            drawCaption(canvas, canvasW, canvasH, captionText)
+            drawCaption(canvas, canvasW, canvasH, captionText, appearance)
         }
     }
 
@@ -527,22 +528,50 @@ class RigRenderer {
      * legibility over any scene. Screen-space (drawn after camera restore) —
      * captions should read like burned-in subtitles, not an object the camera
      * can pan away from.
+     *
+     * Safely clamped so the caption box cannot extend off the top of the
+     * screen. If the text would overflow the available vertical height,
+     * it respects [AppearanceSettings.captionMaxLines] and iteratively reduces
+     * text size so the entire caption box remains within canvas bounds.
      */
-    private fun drawCaption(canvas: Canvas, w: Int, h: Int, text: String) {
-        captionTextPaint.textSize = h * 0.045f
-        val maxWidth = (w * 0.88f).toInt().coerceAtLeast(1)
-        val layout = StaticLayout.Builder
-            .obtain(text, 0, text.length, captionTextPaint, maxWidth)
-            .setAlignment(Layout.Alignment.ALIGN_CENTER)
-            .setLineSpacing(0f, 1.1f)
-            .build()
+    private fun drawCaption(canvas: Canvas, w: Int, h: Int, text: String, appearance: AppearanceSettings) {
+        captionBgPaint.color = appearance.captionBgColor.toInt()
+        captionTextPaint.color = appearance.captionTextColor.toInt()
 
-        val padding = h * 0.02f
-        val bottomMargin = h * 0.06f
+        val maxWidth = (w * appearance.captionMaxWidthFraction).toInt().coerceAtLeast(1)
+        val padding = h * appearance.captionPaddingFraction
+        val bottomMargin = h * appearance.captionBottomMarginFraction
+        val boxBottom = h - bottomMargin
+        val maxLayoutHeight = (boxBottom - padding * 2f).coerceAtLeast(0f)
+
+        var textSize = h * appearance.captionTextSizeFraction
+
+        fun buildLayout(size: Float): StaticLayout {
+            captionTextPaint.textSize = size
+            val builder = StaticLayout.Builder
+                .obtain(text, 0, text.length, captionTextPaint, maxWidth)
+                .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                .setLineSpacing(0f, 1.1f)
+            if (appearance.captionMaxLines > 0) {
+                builder.setMaxLines(appearance.captionMaxLines)
+                builder.setEllipsize(TextUtils.TruncateAt.END)
+                builder.setEllipsizedWidth(maxWidth)
+            }
+            return builder.build()
+        }
+
+        var layout = buildLayout(textSize)
+        val minTextSize = (h * 0.01f).coerceAtLeast(1f)
+        var iterations = 0
+        while (layout.height > maxLayoutHeight && textSize > minTextSize && iterations++ < 25) {
+            textSize = (textSize * 0.9f).coerceAtLeast(minTextSize)
+            layout = buildLayout(textSize)
+            if (textSize == minTextSize) break
+        }
+
         val boxLeft = (w - maxWidth) / 2f - padding
         val boxRight = boxLeft + maxWidth + padding * 2f
-        val boxBottom = h - bottomMargin
-        val boxTop = boxBottom - layout.height - padding * 2f
+        val boxTop = (boxBottom - layout.height - padding * 2f).coerceAtLeast(0f)
 
         canvas.drawRoundRect(boxLeft, boxTop, boxRight, boxBottom, padding, padding, captionBgPaint)
         canvas.save()

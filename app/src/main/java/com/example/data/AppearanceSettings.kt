@@ -104,5 +104,21 @@ data class AppearanceSettings(
      */
     val eyeVerticalOffsetNormalized: Float = -0.03f,
     /** Eye height-to-width ratio at full openness (blinking still flattens toward a thin line regardless of this setting). 1.0 = perfectly round. The reference look this was built toward has genuinely oval eyes, but exactly how oval is a matter of taste — hence adjustable rather than hardcoded. */
-    val eyeAspectRatio: Float = 1.2f
+    val eyeAspectRatio: Float = 1.2f,
+
+    // ── Captions (V2) ─────────────────────────────────────────────────────────
+    /** Text size for captions as a fraction of canvas height. */
+    val captionTextSizeFraction: Float = 0.045f,
+    /** Maximum width of the caption text block as a fraction of canvas width. */
+    val captionMaxWidthFraction: Float = 0.88f,
+    /** Distance from the bottom of the canvas to the bottom of the caption box as a fraction of canvas height. */
+    val captionBottomMarginFraction: Float = 0.06f,
+    /** Inner padding around caption text inside the backdrop box as a fraction of canvas height. */
+    val captionPaddingFraction: Float = 0.02f,
+    /** Background colour for the caption backdrop box (ARGB Long). Default: semi-opaque black (0x99000000L). */
+    val captionBgColor: Long = 0x99000000L,
+    /** Text colour for captions (ARGB Long). Default: white (0xFFFFFFFFL). */
+    val captionTextColor: Long = 0xFFFFFFFFL,
+    /** Maximum number of rendered caption lines. 0 = unlimited. */
+    val captionMaxLines: Int = 0
 )

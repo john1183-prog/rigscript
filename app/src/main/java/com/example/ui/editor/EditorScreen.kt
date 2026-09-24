@@ -6,8 +6,12 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -22,10 +26,12 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -452,23 +458,7 @@ fun EditorScreen(
                 }
             )
 
-            // F4: Amplitude waveform — visual reference for where speech is, so
-            //     script events can be aligned to audio content without counting seconds.
-            //     Only shown when audio has been imported (envelope is non-empty).
-            if (envelopeArray.isNotEmpty()) {
-                AmplitudeWaveform(
-                    envelope      = envelopeArray.toList(),
-                    scrubberPos   = scrubberPos,
-                    totalDuration = totalDuration,
-                    modifier      = Modifier.fillMaxWidth().height(28.dp)
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 4.dp)
-                )
-            }
-
-            // Shared by the timeline strip below and the scrubber Slider —
-            // was duplicated inline when the strip was added; one definition
-            // means the two controls can't quietly drift apart later.
+            // Sole path for changing current playback time from timeline scrubbing/tapping.
             val seekPlayback: (Float) -> Unit = { pos ->
                 scrubberPos = pos
                 surfaceView?.seekTo(pos)
@@ -478,45 +468,22 @@ fun EditorScreen(
                 }
             }
 
-            // V2 — visual overview of event pacing over the waveform. Tap a
-            // marker to seek there; see EventTimelineStrip's own doc comment
-            // for why this is tap-only rather than the full drag/long-press
-            // editor originally scoped.
             val scriptEvents = project?.script?.events ?: emptyList()
-            if (scriptEvents.isNotEmpty() && totalDuration > 0f) {
-                EventTimelineStrip(
-                    events        = scriptEvents,
-                    totalDuration = totalDuration,
-                    onSeek        = seekPlayback,
-                    modifier      = Modifier.fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                )
-            }
-
-            // Motion-graphics overlay layers — same tap-only strip as
-            // EventTimelineStrip above, same rationale (see that composable's
-            // doc comment). Shows each layer's [startSec, endSec) span rather
-            // than a single point, since a layer's whole window — not just
-            // its start — is usually what you're trying to see at a glance.
             val overlayLayersList = project?.script?.overlayLayers ?: emptyList()
-            if (overlayLayersList.isNotEmpty() && totalDuration > 0f) {
-                OverlayTimelineStrip(
-                    layers        = overlayLayersList,
-                    totalDuration = totalDuration,
-                    onSeek        = seekPlayback,
-                    modifier      = Modifier.fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                )
-            }
 
-            // F3: Playback scrubber — seek to any time; updates every 100ms while playing
-            Slider(
-                value         = scrubberPos.coerceIn(0f, totalDuration),
-                onValueChange = seekPlayback,
-                valueRange = 0f..totalDuration.coerceAtLeast(1f),
-                modifier   = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(20.dp)
+            // Consolidated interactive timeline combining amplitude waveform,
+            // overlay layer spans, event markers, and direct drag/tap playhead scrubbing.
+            ConsolidatedTimeline(
+                envelope      = envelopeArray.toList(),
+                events        = scriptEvents,
+                overlayLayers = overlayLayersList,
+                scrubberPos   = scrubberPos,
+                totalDuration = totalDuration,
+                onSeek        = seekPlayback,
+                modifier      = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             )
 
             Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
@@ -1572,105 +1539,311 @@ private fun seekMusicForTimelinePos(musicPlayer: com.example.engine.BackgroundMu
     }
 }
 
+/**
+ * Consolidated interactive timeline surface combining:
+ * 1. Audio amplitude waveform (base layer)
+ * 2. Overlay layer spans ([com.example.data.OverlayLayer.startSec]..[com.example.data.OverlayLayer.endSec])
+ * 3. Script event markers ([ScriptEvent.timeSec] ticks + top pips)
+ * 4. High-contrast vertical playhead with handle cap
+ *
+ * Supports direct press-and-drag scrubbing anywhere across the surface as well
+ * as tap-to-nearest-event/overlay snapping. Smoothly expands from 36.dp to 68.dp
+ * while actively touched/dragged and settles back after a short post-release delay.
+ */
 @Composable
-private fun EventTimelineStrip(
+private fun ConsolidatedTimeline(
+    envelope: List<Float>,
     events: List<ScriptEvent>,
+    overlayLayers: List<com.example.data.OverlayLayer>,
+    scrubberPos: Float,
     totalDuration: Float,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val primary = MaterialTheme.colorScheme.primary
+    val accent = MaterialTheme.colorScheme.tertiary
+    val playheadColor = MaterialTheme.colorScheme.onSurface
+    val trackBgColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    val baselineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    var nearestLabel by remember { mutableStateOf<String?>(null) }
 
-    Column(modifier) {
+    var nearestLabel by remember(events, overlayLayers) { mutableStateOf<String?>(null) }
+    var isPointerDown by remember { mutableStateOf(false) }
+    var releaseTick by remember { mutableIntStateOf(0) }
+    var isInteracting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isPointerDown, releaseTick) {
+        if (isPointerDown) {
+            isInteracting = true
+        } else if (releaseTick > 0) {
+            kotlinx.coroutines.delay(1200L)
+            isInteracting = false
+        }
+    }
+
+    val canvasHeight by animateDpAsState(
+        targetValue = if (isInteracting) 68.dp else 36.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "ConsolidatedTimelineHeight"
+    )
+
+    val currentEvents by rememberUpdatedState(events)
+    val currentLayers by rememberUpdatedState(overlayLayers)
+    val currentDuration by rememberUpdatedState(totalDuration)
+    val currentOnSeek by rememberUpdatedState(onSeek)
+
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${formatTimelineClock(scrubberPos)} / ${formatTimelineClock(totalDuration)}",
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = labelColor
+            )
+            val rightText = nearestLabel ?: "Drag or tap to scrub"
+            Text(
+                text = rightText,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (nearestLabel != null) labelColor else labelColor.copy(alpha = 0.6f)
+            )
+        }
+
         androidx.compose.foundation.Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp)
-                .pointerInput(events, totalDuration) {
-                    detectTapGestures { offset ->
-                        if (events.isEmpty() || totalDuration <= 0f) return@detectTapGestures
-                        val tapSec = (offset.x / size.width).coerceIn(0f, 1f) * totalDuration
-                        val nearest = events.minByOrNull { kotlin.math.abs(it.timeSec - tapSec) }
-                        if (nearest != null) {
-                            onSeek(nearest.timeSec)
-                            nearestLabel = "${nearest.pose} @ %.1fs".format(nearest.timeSec)
+                .height(canvasHeight)
+                .pointerInput(Unit) {
+                    fun xToTime(x: Float, width: Int, dur: Float): Float {
+                        if (dur <= 0f || width <= 0) return 0f
+                        return ((x / width.toFloat()).coerceIn(0f, 1f) * dur).coerceIn(0f, dur)
+                    }
+
+                    fun updateLabelForTime(timeSec: Float, width: Int, dur: Float) {
+                        if (dur <= 0f || width <= 0) {
+                            nearestLabel = null
+                            return
+                        }
+                        val thresholdSec = (18.dp.toPx() / width.toFloat()).coerceIn(0f, 1f) * dur
+                        val nearEv = currentEvents.minByOrNull { kotlin.math.abs(it.timeSec - timeSec) }
+                        val evDiff = nearEv?.let { kotlin.math.abs(it.timeSec - timeSec) } ?: Float.MAX_VALUE
+                        val activeLayer = currentLayers.firstOrNull { timeSec >= it.startSec && timeSec <= it.endSec }
+                            ?: currentLayers.minByOrNull { kotlin.math.abs(it.startSec - timeSec) }
+                        val layDiff = activeLayer?.let { kotlin.math.abs(it.startSec - timeSec) } ?: Float.MAX_VALUE
+
+                        nearestLabel = when {
+                            nearEv != null && evDiff <= thresholdSec && evDiff <= layDiff -> {
+                                "${nearEv.pose} @ %.1fs".format(nearEv.timeSec)
+                            }
+                            activeLayer != null && (
+                                (timeSec >= activeLayer.startSec && timeSec <= activeLayer.endSec) ||
+                                    layDiff <= thresholdSec
+                                ) -> {
+                                val label = activeLayer.id.ifBlank { activeLayer.type }
+                                "$label  %.1fs\u2013%.1fs".format(activeLayer.startSec, activeLayer.endSec)
+                            }
+                            else -> null
+                        }
+                    }
+
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        isPointerDown = true
+                        val startX = down.position.x
+                        val touchSlop = viewConfiguration.touchSlop
+                        var isDragging = false
+                        var lastX = startX
+
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: event.changes.firstOrNull()
+                                    ?: break
+                                if (!change.pressed) {
+                                    lastX = change.position.x
+                                    change.consume()
+                                    break
+                                }
+                                lastX = change.position.x
+                                if (!isDragging && kotlin.math.abs(lastX - startX) > touchSlop) {
+                                    isDragging = true
+                                }
+                                if (isDragging) {
+                                    change.consume()
+                                    val dur = currentDuration
+                                    if (dur > 0f && size.width > 0) {
+                                        val newTime = xToTime(lastX, size.width, dur)
+                                        currentOnSeek(newTime)
+                                        updateLabelForTime(newTime, size.width, dur)
+                                    }
+                                }
+                            }
+
+                            if (!isDragging) {
+                                val dur = currentDuration
+                                val w = size.width
+                                if (dur > 0f && w > 0) {
+                                    val tapSec = xToTime(lastX, w, dur)
+                                    val hitRadiusSec = (18.dp.toPx() / w.toFloat()).coerceIn(0f, 1f) * dur
+                                    val nearestEv = currentEvents.minByOrNull {
+                                        kotlin.math.abs(it.timeSec - tapSec)
+                                    }
+                                    val evDiffSec = nearestEv?.let {
+                                        kotlin.math.abs(it.timeSec - tapSec)
+                                    } ?: Float.MAX_VALUE
+
+                                    val nearestLay = currentLayers.minByOrNull {
+                                        kotlin.math.abs(it.startSec - tapSec)
+                                    }
+                                    val layDiffSec = nearestLay?.let {
+                                        kotlin.math.abs(it.startSec - tapSec)
+                                    } ?: Float.MAX_VALUE
+
+                                    when {
+                                        nearestEv != null && evDiffSec <= hitRadiusSec && evDiffSec <= layDiffSec -> {
+                                            val target = nearestEv.timeSec.coerceIn(0f, dur)
+                                            currentOnSeek(target)
+                                            nearestLabel = "${nearestEv.pose} @ %.1fs".format(nearestEv.timeSec)
+                                        }
+                                        nearestLay != null && layDiffSec <= hitRadiusSec -> {
+                                            val target = nearestLay.startSec.coerceIn(0f, dur)
+                                            currentOnSeek(target)
+                                            val label = nearestLay.id.ifBlank { nearestLay.type }
+                                            nearestLabel = "$label  %.1fs\u2013%.1fs".format(nearestLay.startSec, nearestLay.endSec)
+                                        }
+                                        else -> {
+                                            currentOnSeek(tapSec)
+                                            updateLabelForTime(tapSec, w, dur)
+                                        }
+                                    }
+                                }
+                            }
+                        } finally {
+                            isPointerDown = false
+                            releaseTick++
                         }
                     }
                 }
         ) {
-            if (totalDuration <= 0f) return@Canvas
-            events.forEach { ev ->
-                val x = (ev.timeSec / totalDuration).coerceIn(0f, 1f) * size.width
+            val w = size.width
+            val h = size.height
+            if (w <= 0f || h <= 0f) return@Canvas
+
+            val safeDuration = totalDuration.coerceAtLeast(0.001f)
+            fun timeToX(timeSec: Float): Float =
+                (timeSec / safeDuration).coerceIn(0f, 1f) * w
+
+            // Subtle rounded track background + horizontal baseline
+            val cornerPx = 6.dp.toPx()
+            drawRoundRect(
+                color = trackBgColor,
+                size = Size(w, h),
+                cornerRadius = CornerRadius(cornerPx, cornerPx)
+            )
+            drawLine(
+                color = baselineColor,
+                start = Offset(0f, h * 0.5f),
+                end = Offset(w, h * 0.5f),
+                strokeWidth = 1.dp.toPx()
+            )
+
+            // 1. Amplitude waveform (base layer)
+            if (envelope.isNotEmpty()) {
+                val n = envelope.size
+                val step = w / n
+                val barW = step.coerceAtLeast(1f)
+                envelope.forEachIndexed { i, amp ->
+                    val barH = (amp.coerceIn(0f, 1f) * h * 0.85f)
+                    if (barH > 0.5f) {
+                        drawRect(
+                            color = primary.copy(alpha = 0.45f),
+                            topLeft = Offset(i * step, h - barH),
+                            size = Size(barW, barH)
+                        )
+                    }
+                }
+            }
+
+            // 2. Overlay spans (upper-mid band, tertiary accent)
+            if (overlayLayers.isNotEmpty() && totalDuration > 0f) {
+                val spanY = h * 0.26f
+                val spanStroke = (h * 0.20f).coerceIn(4.dp.toPx(), 10.dp.toPx())
+                val minSpanW = 3.dp.toPx()
+                overlayLayers.forEach { layer ->
+                    val x0 = timeToX(layer.startSec)
+                    val x1 = timeToX(layer.endSec)
+                    drawLine(
+                        color = accent.copy(alpha = 0.82f),
+                        start = Offset(x0, spanY),
+                        end = Offset(kotlin.math.max(x1, x0 + minSpanW), spanY),
+                        strokeWidth = spanStroke,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+
+            // 3. Event markers (vertical ticks + top pip)
+            if (events.isNotEmpty() && totalDuration > 0f) {
+                val tickTop = h * 0.14f
+                val tickBottom = h * 0.94f
+                val pipRadius = if (isInteracting) 3.2.dp.toPx() else 2.4.dp.toPx()
+                events.forEach { ev ->
+                    val x = timeToX(ev.timeSec)
+                    drawLine(
+                        color = primary.copy(alpha = 0.90f),
+                        start = Offset(x, tickTop),
+                        end = Offset(x, tickBottom),
+                        strokeWidth = 3f
+                    )
+                    drawCircle(
+                        color = primary,
+                        radius = pipRadius,
+                        center = Offset(x, tickTop)
+                    )
+                }
+            }
+
+            // 4. Playhead (current playback/scrub position)
+            if (totalDuration > 0f) {
+                val playheadX = timeToX(scrubberPos)
+                val handleRadius = if (isInteracting) 6.dp.toPx() else 4.5.dp.toPx()
+                val handleCenterY = handleRadius.coerceAtMost(h * 0.5f)
                 drawLine(
-                    color       = primary.copy(alpha = 0.8f),
-                    start       = Offset(x, size.height * 0.15f),
-                    end         = Offset(x, size.height),
-                    strokeWidth = 3f
+                    color = playheadColor,
+                    start = Offset(playheadX, 0f),
+                    end = Offset(playheadX, h),
+                    strokeWidth = 2.5.dp.toPx()
+                )
+                drawCircle(
+                    color = primary,
+                    radius = handleRadius,
+                    center = Offset(playheadX, handleCenterY)
+                )
+                drawCircle(
+                    color = playheadColor,
+                    radius = handleRadius * 0.45f,
+                    center = Offset(playheadX, handleCenterY)
                 )
             }
         }
-        nearestLabel?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = labelColor) }
     }
 }
 
-/**
- * Same tap-only pattern as [EventTimelineStrip] (see that composable's doc
- * comment for why drag/long-press was deliberately never attempted here
- * either) — a visual overview of [OverlayLayer] windows, not an editor.
- * Tapping seeks to the nearest layer's [OverlayLayer.startSec] and shows a
- * one-line label; the JSON script text remains the actual edit mechanism,
- * same as it is for poses.
- *
- * Draws each layer as a SPAN (a thin bar from startSec to endSec) rather
- * than a single tick — unlike a pose event, a layer's whole visible window
- * is usually the thing you're trying to see at a glance (e.g. "does this
- * text burst overlap that shape's window"), not just its start instant.
- */
-@Composable
-private fun OverlayTimelineStrip(
-    layers: List<com.example.data.OverlayLayer>,
-    totalDuration: Float,
-    onSeek: (Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val accent = MaterialTheme.colorScheme.tertiary
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    var nearestLabel by remember { mutableStateOf<String?>(null) }
-
-    Column(modifier) {
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(16.dp)
-                .pointerInput(layers, totalDuration) {
-                    detectTapGestures { offset ->
-                        if (layers.isEmpty() || totalDuration <= 0f) return@detectTapGestures
-                        val tapSec = (offset.x / size.width).coerceIn(0f, 1f) * totalDuration
-                        val nearest = layers.minByOrNull { kotlin.math.abs(it.startSec - tapSec) }
-                        if (nearest != null) {
-                            onSeek(nearest.startSec)
-                            val label = nearest.id.ifBlank { nearest.type }
-                            nearestLabel = "$label  %.1fs\u2013%.1fs".format(nearest.startSec, nearest.endSec)
-                        }
-                    }
-                }
-        ) {
-            if (totalDuration <= 0f) return@Canvas
-            layers.forEach { layer ->
-                val x0 = (layer.startSec / totalDuration).coerceIn(0f, 1f) * size.width
-                val x1 = (layer.endSec / totalDuration).coerceIn(0f, 1f) * size.width
-                drawLine(
-                    color       = accent.copy(alpha = 0.8f),
-                    start       = Offset(x0, size.height * 0.5f),
-                    end         = Offset(kotlin.math.max(x1, x0 + 2f), size.height * 0.5f),
-                    strokeWidth = size.height * 0.7f
-                )
-            }
-        }
-        nearestLabel?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = labelColor) }
-    }
+private fun formatTimelineClock(seconds: Float): String {
+    val safe = seconds.coerceAtLeast(0f)
+    val totalTenths = (safe * 10f).toInt()
+    val mins = totalTenths / 600
+    val secs = (totalTenths % 600) / 10
+    val tenths = totalTenths % 10
+    return "%d:%02d.%d".format(mins, secs, tenths)
 }
 
 /**
@@ -1687,32 +1860,5 @@ private fun formatEtaSeconds(seconds: Float): String {
         h > 0 -> "%dh %02dm".format(h, m)
         m > 0 -> "%dm %02ds".format(m, s)
         else  -> "${s}s"
-    }
-}
-
-@Composable
-private fun AmplitudeWaveform(
-    envelope: List<Float>,
-    scrubberPos: Float,
-    totalDuration: Float,
-    modifier: Modifier = Modifier
-) {
-    val primary = MaterialTheme.colorScheme.primary
-    androidx.compose.foundation.Canvas(modifier = modifier) {
-        if (envelope.isEmpty()) return@Canvas
-        val n    = envelope.size
-        val step = size.width / n
-        envelope.forEachIndexed { i, amp ->
-            val barH = amp * size.height * 0.85f
-            drawRect(
-                color    = primary.copy(alpha = 0.45f),
-                topLeft  = Offset(i * step, size.height - barH),
-                size     = Size(step.coerceAtLeast(1f), barH)
-            )
-        }
-        if (totalDuration > 0f) {
-            val x = (scrubberPos / totalDuration) * size.width
-            drawLine(color = primary, start = Offset(x, 0f), end = Offset(x, size.height), strokeWidth = 2f)
-        }
     }
 }

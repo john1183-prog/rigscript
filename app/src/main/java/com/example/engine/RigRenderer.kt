@@ -546,14 +546,14 @@ class RigRenderer {
 
         var textSize = h * appearance.captionTextSizeFraction
 
-        fun buildLayout(size: Float): StaticLayout {
+        fun buildLayout(size: Float, maxLines: Int = appearance.captionMaxLines): StaticLayout {
             captionTextPaint.textSize = size
             val builder = StaticLayout.Builder
                 .obtain(text, 0, text.length, captionTextPaint, maxWidth)
                 .setAlignment(Layout.Alignment.ALIGN_CENTER)
                 .setLineSpacing(0f, 1.1f)
-            if (appearance.captionMaxLines > 0) {
-                builder.setMaxLines(appearance.captionMaxLines)
+            if (maxLines > 0) {
+                builder.setMaxLines(maxLines)
                 builder.setEllipsize(TextUtils.TruncateAt.END)
                 builder.setEllipsizedWidth(maxWidth)
             }
@@ -567,6 +567,19 @@ class RigRenderer {
             textSize = (textSize * 0.9f).coerceAtLeast(minTextSize)
             layout = buildLayout(textSize)
             if (textSize == minTextSize) break
+        }
+
+        if (layout.height > maxLayoutHeight && layout.lineCount > 1) {
+            val avgLineHeight = (layout.height.toFloat() / layout.lineCount).coerceAtLeast(1f)
+            var fittingLines = (maxLayoutHeight / avgLineHeight).toInt().coerceIn(1, layout.lineCount)
+            if (appearance.captionMaxLines > 0) {
+                fittingLines = minOf(fittingLines, appearance.captionMaxLines)
+            }
+            layout = buildLayout(textSize, fittingLines)
+            while (layout.height > maxLayoutHeight && fittingLines > 1) {
+                fittingLines--
+                layout = buildLayout(textSize, fittingLines)
+            }
         }
 
         val boxLeft = (w - maxWidth) / 2f - padding

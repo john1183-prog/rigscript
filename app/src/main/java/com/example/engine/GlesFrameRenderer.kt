@@ -1144,14 +1144,14 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
         var textSize = canvasH * frame.captionTextSizeFraction
 
-        fun buildLayout(size: Float): StaticLayout {
+        fun buildLayout(size: Float, maxLines: Int = frame.captionMaxLines): StaticLayout {
             captionTextPaint.textSize = size
             val builder = StaticLayout.Builder
                 .obtain(text, 0, text.length, captionTextPaint, maxWidth)
                 .setAlignment(Layout.Alignment.ALIGN_CENTER)
                 .setLineSpacing(0f, 1.1f)
-            if (frame.captionMaxLines > 0) {
-                builder.setMaxLines(frame.captionMaxLines)
+            if (maxLines > 0) {
+                builder.setMaxLines(maxLines)
                 builder.setEllipsize(TextUtils.TruncateAt.END)
                 builder.setEllipsizedWidth(maxWidth)
             }
@@ -1165,6 +1165,19 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             textSize = (textSize * 0.9f).coerceAtLeast(minTextSize)
             layout = buildLayout(textSize)
             if (textSize == minTextSize) break
+        }
+
+        if (layout.height > maxLayoutHeight && layout.lineCount > 1) {
+            val avgLineHeight = (layout.height.toFloat() / layout.lineCount).coerceAtLeast(1f)
+            var fittingLines = (maxLayoutHeight / avgLineHeight).toInt().coerceIn(1, layout.lineCount)
+            if (frame.captionMaxLines > 0) {
+                fittingLines = minOf(fittingLines, frame.captionMaxLines)
+            }
+            layout = buildLayout(textSize, fittingLines)
+            while (layout.height > maxLayoutHeight && fittingLines > 1) {
+                fittingLines--
+                layout = buildLayout(textSize, fittingLines)
+            }
         }
 
         val boxLeft   = (canvasW - maxWidth) / 2f - padding

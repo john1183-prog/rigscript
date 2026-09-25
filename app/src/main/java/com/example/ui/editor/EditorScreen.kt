@@ -493,12 +493,27 @@ fun EditorScreen(
                 containerColor   = MaterialTheme.colorScheme.surface,
                 contentColor     = MaterialTheme.colorScheme.primary
             ) {
-                Tab(selectedTab == 0, { selectedTab = 0 },
-                    text = { Text("Script") }, icon = { Icon(Icons.Default.Code, null, Modifier.size(16.dp)) })
-                Tab(selectedTab == 1, { selectedTab = 1 },
-                    text = { Text("Appearance") }, icon = { Icon(Icons.Default.Palette, null, Modifier.size(16.dp)) })
-                Tab(selectedTab == 2, { selectedTab = 2 },
-                    text = { Text("Export") }, icon = { Icon(Icons.Default.Tune, null, Modifier.size(16.dp)) })
+                val topTabs = listOf(
+                    "Script" to Icons.Default.Code,
+                    "Appearance" to Icons.Default.Palette,
+                    "Export" to Icons.Default.Tune
+                )
+                topTabs.forEachIndexed { index, (label, icon) ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        modifier = Modifier.height(42.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(icon, null, Modifier.size(15.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text(label, fontSize = 13.sp, maxLines = 1)
+                        }
+                    }
+                }
             }
 
             when (selectedTab) {
@@ -576,7 +591,7 @@ private fun AudioBar(
 ) {
     Row(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         OutlinedButton(onClick = onPickAudio, modifier = Modifier.height(36.dp)) {
@@ -591,10 +606,10 @@ private fun AudioBar(
         }
         // Playback (and the pose timeline preview) doesn't require audio — useful
         // for checking script timing before audio is imported.
-        IconButton(onClick = onStop, enabled = !isAnalysing) {
+        IconButton(onClick = onStop, enabled = !isAnalysing, modifier = Modifier.size(width = 44.dp, height = 36.dp)) {
             Icon(Icons.Default.Stop, "Stop")
         }
-        IconButton(onClick = onPlayPause, enabled = !isAnalysing) {
+        IconButton(onClick = onPlayPause, enabled = !isAnalysing, modifier = Modifier.size(width = 44.dp, height = 36.dp)) {
             Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 if (isPlaying) "Pause" else "Play")
         }
@@ -887,18 +902,30 @@ private fun PresetsStrip(
 ) {
     var showSaveDialog by remember { mutableStateOf(false) }
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("Presets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = "Presets",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.width(10.dp))
         Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(onClick = { showSaveDialog = true }, modifier = Modifier.height(32.dp)) {
+            OutlinedButton(
+                onClick = { showSaveDialog = true },
+                modifier = Modifier.height(32.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+            ) {
                 Icon(Icons.Default.Add, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Save current look", fontSize = 12.sp)

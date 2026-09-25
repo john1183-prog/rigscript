@@ -2577,10 +2577,20 @@ zoom in."
     - Projects without explicit caption appearance settings default to the exact existing values, maintaining pixel-identical rendering for non-overflowing captions.
     - The new fields and height clamping logic are wired into both Canvas (`RigRenderer.drawCaption`) and GLES (`GlesFigureFrame` and `GlesFrameRenderer.ensureCaptionTexture`) rendering paths, ensuring full visual parity across 9:16 portrait and 16:9 landscape.
 
-- **Upcoming V2 Overlay-Text Extension (PLANNED — Steps 2-5 NOT IMPLEMENTED):**
+- **V2 Overlay-Text Extension — Step 2: Overlay Text Word-Wrap:**
+  - **Shared `StaticLayout` multiline wrapping (`RigRenderer.buildOverlayTextLayout`)**:
+    - Replaced single-line `Paint.measureText` auto-shrinking for `type == "text"` overlays with automatic word-wrapping via Android `StaticLayout.Builder` within `maxWidth = (canvasW * 0.92f).toInt().coerceAtLeast(1)` (`lineSpacing = (0f, 1.1f)`, `includePad = false`).
+    - Shared between Canvas (`RigRenderer.drawGmsText` + `cachedOverlayTextLayout`) and GLES (`GlesFrameRenderer.ensureOverlayTextTexture`) via `RigRenderer.buildOverlayTextLayout`, using each renderer's own thread-local `TextPaint` (`gmsTextPaint` / `overlayTextPaint` with `textAlign = Paint.Align.LEFT` and `Layout.Alignment` handling `"left"`, `"center"`, and `"right"`).
+  - **Vertical centering & alignment preservation**:
+    - Translates the layout vertically by `layoutTranslateY = -layout.height / 2f` so multiline blocks expand symmetrically upward and downward around the overlay's existing `(x, y)` anchor. For short 1-line text (`includePad = false`), `-layout.height / 2f + getLineBaseline(0)` equals `-(ascent + descent) / 2f`, preserving the exact single-line baseline position.
+    - Translates horizontally by `layoutTranslateX` (`0f` for `"left"`, `-maxWidth / 2f` for `"center"`, `-maxWidth` for `"right"`) so horizontal alignment anchors accurately at local `x = 0` (`layer.x * canvasW`) across both single-line and multiline layouts.
+    - Top-to-bottom `LinearGradient` spans `[0f, layout.height]` in the layout's translated coordinate space identically on Canvas and GLES.
+  - **Single-word / unbreakable-token fallback**:
+    - Sentences with multiple words wrap across lines at full requested `fontSize` (`canvasH * fontSizeFraction`) without shrinking.
+    - Shrinks `textSize` only when an individual whitespace-delimited word/token exceeds `0.92f * canvasW` (or when a single-word token would be split across lines by `StaticLayout`), scaling proportionally and refining with a bounded guard loop down to `minTextSize = (canvasH * 0.01f).coerceAtLeast(1f)`.
+
+- **Upcoming V2 Overlay-Text Extension (PLANNED — Steps 3-5 NOT IMPLEMENTED):**
   Remaining steps planned for subsequent iterations:
-  2. **Multiline overlay text**: `\n` line splitting, multi-line measurement, and
-     bounding box alignment.
   3. **`screenSpace` coordinate mode**: optional overlay flag to anchor layers to
      viewport space rather than camera world space.
   4. **Overlay `anim` keyframes**: sub-timeline keyframing for overlay properties

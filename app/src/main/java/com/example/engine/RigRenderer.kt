@@ -71,8 +71,8 @@ class RigRenderer {
     // Every element gets fully overwritten (.reset() or .set()) before use
     // each call, so reuse across calls is safe with no stale state.
     private val secondaryFigureMatrices = Array(StickFigureRig.BONE_COUNT) { Matrix() }
-    // See cachedShrunkTextSize's doc comment.
-    private val textShrinkCache = HashMap<String, Float>()
+    // See cachedOverlayTextLayout's doc comment.
+    private val overlayTextLayoutCache = HashMap<String, OverlayTextLayoutResult>()
 
     fun draw(
         canvas: Canvas,
@@ -717,29 +717,28 @@ class RigRenderer {
     }
 
     /**
-     * Caches the auto-shrink computation from [drawGmsText]'s own doc
-     * comment — a static text layer's final on-screen size can't change
-     * frame-to-frame (text/fontSize/bold and the canvas's own dimensions
-     * are all fixed for that layer's whole lifetime), so recomputing
-     * [Paint.measureText] every single frame it was on screen was pure
-     * waste. Keyed on every input the computation actually depends on;
-     * bounded to guard against unbounded growth in the unlikely event a
-     * script has an unusually large number of distinct text layers.
+     * Caches the [OverlayTextLayoutResult] computation for [drawGmsText] — a
+     * static text layer's wrapped [StaticLayout], final font size, and local
+     * centering offsets do not change frame-to-frame (text/fontSize/bold/align
+     * and the canvas dimensions are fixed for that layer's lifetime), so
+     * rebuilding [StaticLayout] every single frame would be pure waste. Keyed
+     * on every layout input; bounded to guard against unbounded growth.
      */
-    private fun cachedShrunkTextSize(text: String, fontSizeFraction: Float, bold: Boolean, w: Int, h: Int): Float {
-        val key = "$text|$fontSizeFraction|$bold|$w|$h"
-        textShrinkCache[key]?.let { return it }
-        if (textShrinkCache.size > 200) textShrinkCache.clear()
+    private fun cachedOverlayTextLayout(
+        text: String,
+        fontSizeFraction: Float,
+        bold: Boolean,
+        align: String,
+        w: Int,
+        h: Int
+    ): OverlayTextLayoutResult {
+        val key = "$text|$fontSizeFraction|$bold|$align|$w|$h"
+        overlayTextLayoutCache[key]?.let { return it }
+        if (overlayTextLayoutCache.size > 200) overlayTextLayoutCache.clear()
 
-        var textSize = h * fontSizeFraction
-        gmsTextPaint.textSize = textSize
-        val measuredWidth = gmsTextPaint.measureText(text)
-        val maxWidth = w * 0.92f
-        if (measuredWidth > maxWidth && measuredWidth > 0f) {
-            textSize *= maxWidth / measuredWidth
-        }
-        textShrinkCache[key] = textSize
-        return textSize
+        val result = buildOverlayTextLayout(gmsTextPaint, text, fontSizeFraction, bold, align, w, h)
+        overlayTextLayoutCache[key] = result
+        return result
     }
 
     private fun drawGmsText(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay) {
@@ -747,33 +746,20 @@ class RigRenderer {
         if (text.isNullOrBlank()) return
         val baseColor = layer.color.toInt()
 
+        // Multiline word-wrapping via StaticLayout (V2 Overlay-Text Step 2):
+        // wraps lines within 0.92f * canvasWidth at the requested fontSize,
+        // vertically centering the resulting multiline block around (0,0)
+        // (the layer's translated (x,y) anchor) and aligning lines relative
+        // to x = 0 ("left", "center", "right"). Shrinks fontSize ONLY when a
+        // single unbreakable word/token exceeds 0.92f * canvasWidth.
+        val res = cachedOverlayTextLayout(text, layer.fontSize, layer.bold, layer.align, w, h)
         gmsTextPaint.isFakeBoldText = layer.bold
-        gmsTextPaint.textAlign = when (layer.align) {
-            "left"  -> Paint.Align.LEFT
-            "right" -> Paint.Align.RIGHT
-            else    -> Paint.Align.CENTER
-        }
+        gmsTextPaint.textAlign = Paint.Align.LEFT
+        gmsTextPaint.textSize = res.textSize
 
-        // fontSize is a fraction of canvas HEIGHT (see OverlayLayer's doc
-        // comment — deliberate, so text reads at a consistent relative
-        // size across dual-aspect export's two resolutions). But height
-        // alone doesn't bound WIDTH: the same height-fraction is a much
-        // bigger fraction of a narrow portrait canvas's width than of a
-        // wide landscape one, so a long word sized purely off height can
-        // overflow portrait's edges even though it fits landscape fine —
-        // confirmed on-device for "AMAZING!" specifically. Measure at the
-        // height-driven size first, then shrink proportionally (never
-        // enlarge) if it would exceed a safe margin of the actual canvas
-        // width, so it never overflows on EITHER aspect ratio. Cached —
-        // see cachedShrunkTextSize's doc comment for why recomputing this
-        // every single frame was pure waste for a layer whose text/
-        // fontSize/bold never change over its own lifetime.
-        val textSize = cachedShrunkTextSize(text, layer.fontSize, layer.bold, w, h)
-        gmsTextPaint.textSize = textSize
-
+        val layoutHeight = res.layout.height.toFloat().coerceAtLeast(1f)
         gmsTextPaint.shader = if (layer.gradientColor != null) {
-            val halfH = textSize / 2f
-            LinearGradient(0f, -halfH, 0f, halfH, baseColor, layer.gradientColor.toInt(), Shader.TileMode.CLAMP)
+            LinearGradient(0f, 0f, 0f, layoutHeight, baseColor, layer.gradientColor.toInt(), Shader.TileMode.CLAMP)
         } else null
         gmsTextPaint.color = baseColor
         gmsTextPaint.alpha = combinedAlpha(baseColor, layer.opacity)
@@ -788,12 +774,10 @@ class RigRenderer {
             gmsTextPaint.clearShadowLayer()
         }
 
-        // drawText anchors at the baseline, not the visual vertical center —
-        // offset so (0,0) (the layer's translated anchor point) reads as the
-        // text's visual center, same reasoning as drawCaption's box math.
-        val metrics = gmsTextPaint.fontMetrics
-        val baselineOffset = -(metrics.ascent + metrics.descent) / 2f
-        canvas.drawText(text, 0f, baselineOffset, gmsTextPaint)
+        canvas.save()
+        canvas.translate(res.layoutTranslateX, res.layoutTranslateY)
+        res.layout.draw(canvas)
+        canvas.restore()
     }
 
     /**
@@ -1868,5 +1852,136 @@ class RigRenderer {
         /** Shared by [RigRenderer.combinedAlpha] and the GLES overlay path — see that function's doc comment for why this moved here (Phase 3/4 precedent). */
         fun combinedAlphaChannel(baseColor: Int, opacity: Float): Int =
             (android.graphics.Color.alpha(baseColor) * opacity).toInt().coerceIn(0, 255)
+
+        private val WHITESPACE_REGEX = Regex("\\s+")
+
+        /**
+         * Resolved multiline [StaticLayout] and local-space placement for a
+         * `type == "text"` overlay layer, shared between [RigRenderer.drawGmsText]
+         * (Canvas) and [GlesFrameRenderer.ensureOverlayTextTexture] (GLES).
+         *
+         * - [layoutTranslateX] / [layoutTranslateY]: offset from the overlay's
+         *   local `(0,0)` anchor to [layout]'s top-left `(0,0)` origin so that:
+         *   1. Vertical bounds `[-layout.height / 2, +layout.height / 2]` are
+         *      centered symmetrically around `y = 0` (matching single-line
+         *      `-(ascent + descent) / 2` when `includePad == false`).
+         *   2. Horizontal alignment (`"left"`, `"center"`, `"right"`) anchors
+         *      the left edge, center, or right edge of the layout at `x = 0`.
+         * - [localL], [localT], [localR], [localB]: tight local glyph bounding
+         *   box around `(0,0)` (before glow padding), used by GLES to allocate
+         *   a tightly-sized texture bitmap.
+         */
+        class OverlayTextLayoutResult(
+            val layout: StaticLayout,
+            val textSize: Float,
+            val layoutTranslateX: Float,
+            val layoutTranslateY: Float,
+            val localL: Float,
+            val localT: Float,
+            val localR: Float,
+            val localB: Float
+        )
+
+        /**
+         * Builds a wrapped [StaticLayout] within `0.92f * canvasW` for an
+         * overlay text layer using the caller's thread-local [paint].
+         *
+         * Wraps sentences normally at word boundaries without shrinking.
+         * Shrinks [textSize] ONLY if a single unbreakable word/token exceeds
+         * the maximum allowed width (`0.92f * canvasW`), bounded below by a
+         * safe positive minimum size (`(canvasH * 0.01f).coerceAtLeast(1f)`).
+         */
+        fun buildOverlayTextLayout(
+            paint: TextPaint,
+            text: String,
+            fontSizeFraction: Float,
+            bold: Boolean,
+            align: String,
+            canvasW: Int,
+            canvasH: Int
+        ): OverlayTextLayoutResult {
+            paint.isFakeBoldText = bold
+            // StaticLayout handles alignment internally via Layout.Alignment;
+            // paint.textAlign must be LEFT so StaticLayout.draw does not double-offset.
+            paint.textAlign = Paint.Align.LEFT
+
+            val maxWidthInt = (canvasW * 0.92f).toInt().coerceAtLeast(1)
+            val maxWidthFloat = maxWidthInt.toFloat()
+            val minTextSize = (canvasH * 0.01f).coerceAtLeast(1f)
+            var textSize = (canvasH * fontSizeFraction).coerceAtLeast(minTextSize)
+            paint.textSize = textSize
+
+            val layoutAlign = when (align) {
+                "left"  -> Layout.Alignment.ALIGN_NORMAL
+                "right" -> Layout.Alignment.ALIGN_OPPOSITE
+                else    -> Layout.Alignment.ALIGN_CENTER
+            }
+
+            fun createLayout(size: Float): StaticLayout {
+                paint.textSize = size
+                return StaticLayout.Builder
+                    .obtain(text, 0, text.length, paint, maxWidthInt)
+                    .setAlignment(layoutAlign)
+                    .setLineSpacing(0f, 1.1f)
+                    .setIncludePad(false)
+                    .build()
+            }
+
+            val tokens = text.trim().split(WHITESPACE_REGEX).filter { it.isNotEmpty() }
+            val isSingleToken = tokens.size <= 1 && !text.contains('\n')
+            val widestToken = tokens.maxByOrNull { paint.measureText(it) } ?: text
+            val widestWordWidth = paint.measureText(widestToken)
+
+            if (widestWordWidth > maxWidthFloat && widestWordWidth > 0f) {
+                textSize = (textSize * (maxWidthFloat / widestWordWidth)).coerceAtLeast(minTextSize)
+            }
+
+            var layout = createLayout(textSize)
+            if (widestWordWidth > maxWidthFloat || (isSingleToken && layout.lineCount > 1)) {
+                var guard = 0
+                while (textSize > minTextSize && guard++ < 10) {
+                    val currentTokenW = paint.measureText(widestToken)
+                    if (currentTokenW <= maxWidthFloat && (!isSingleToken || layout.lineCount <= 1)) {
+                        break
+                    }
+                    textSize = (textSize * 0.97f).coerceAtLeast(minTextSize)
+                    layout = createLayout(textSize)
+                }
+            }
+
+            val layoutHeight = layout.height.toFloat().coerceAtLeast(1f)
+            val halfH = layoutHeight / 2f
+            val layoutTranslateX = when (align) {
+                "left"  -> 0f
+                "right" -> -maxWidthFloat
+                else    -> -maxWidthFloat / 2f
+            }
+            val layoutTranslateY = -halfH
+
+            val lineCount = layout.lineCount
+            var minLeft = Float.POSITIVE_INFINITY
+            var maxRight = Float.NEGATIVE_INFINITY
+            for (i in 0 until lineCount) {
+                val l = layout.getLineLeft(i) + layoutTranslateX
+                val r = layout.getLineRight(i) + layoutTranslateX
+                if (l < minLeft) minLeft = l
+                if (r > maxRight) maxRight = r
+            }
+            val localL = if (minLeft.isFinite()) minLeft else 0f
+            val localR = (if (maxRight.isFinite()) maxRight else 1f).coerceAtLeast(localL + 1f)
+            val localT = -halfH
+            val localB = halfH
+
+            return OverlayTextLayoutResult(
+                layout = layout,
+                textSize = textSize,
+                layoutTranslateX = layoutTranslateX,
+                layoutTranslateY = layoutTranslateY,
+                localL = localL,
+                localT = localT,
+                localR = localR,
+                localB = localB
+            )
+        }
     }
 }

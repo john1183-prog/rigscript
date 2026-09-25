@@ -1366,27 +1366,24 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             "${draw.gradientColorArgb}|${draw.glow}|${draw.glowColorArgb}|${draw.glowRadiusFraction}|$canvasW|$canvasH"
         overlayTextTextureCache[key]?.let { return it }
 
+        val res = RigRenderer.buildOverlayTextLayout(
+            paint = overlayTextPaint,
+            text = draw.text,
+            fontSizeFraction = draw.fontSizeFraction,
+            bold = draw.bold,
+            align = draw.align,
+            canvasW = canvasW,
+            canvasH = canvasH
+        )
         overlayTextPaint.isFakeBoldText = draw.bold
-        var textSize = canvasH * draw.fontSizeFraction
-        overlayTextPaint.textSize = textSize
-        val maxTextWidth = canvasW * 0.92f
-        val rawWidth = overlayTextPaint.measureText(draw.text)
-        if (rawWidth > maxTextWidth && rawWidth > 0f) {
-            textSize *= maxTextWidth / rawWidth
-            overlayTextPaint.textSize = textSize
-        }
-        val finalWidth = overlayTextPaint.measureText(draw.text)
+        overlayTextPaint.textAlign = Paint.Align.LEFT
+        overlayTextPaint.textSize = res.textSize
 
+        val layoutHeight = res.layout.height.toFloat().coerceAtLeast(1f)
         overlayTextPaint.shader = draw.gradientColorArgb?.let { grad ->
-            val halfH = textSize / 2f
-            LinearGradient(0f, -halfH, 0f, halfH, draw.colorArgb, grad, Shader.TileMode.CLAMP)
+            LinearGradient(0f, 0f, 0f, layoutHeight, draw.colorArgb, grad, Shader.TileMode.CLAMP)
         }
         overlayTextPaint.color = draw.colorArgb
-        overlayTextPaint.textAlign = when (draw.align) {
-            "left"  -> Paint.Align.LEFT
-            "right" -> Paint.Align.RIGHT
-            else    -> Paint.Align.CENTER
-        }
 
         val glowRadiusPx = (draw.glowRadiusFraction * canvasH).coerceAtLeast(1f)
         if (draw.glow) {
@@ -1395,35 +1392,25 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             overlayTextPaint.clearShadowLayer()
         }
 
-        val metrics = overlayTextPaint.fontMetrics
-        // Same vertical centering as RigRenderer.drawGmsText's baselineOffset.
-        val glyphHalfH = (metrics.descent - metrics.ascent) / 2f
         // Shadow-layer blur can bleed well beyond the glyph's tight bounds —
         // padding the bitmap avoids clipping it at the edge. 3x radius is a
         // deliberately generous margin, not measured against Android's own
         // shadow falloff — worth revisiting if glow looks clipped on-device.
         val pad = if (draw.glow) glowRadiusPx * 3f else 0f
-
-        val (localL, localR) = when (draw.align) {
-            "left"  -> 0f to finalWidth
-            "right" -> -finalWidth to 0f
-            else    -> -finalWidth / 2f to finalWidth / 2f
-        }
-        val localT = -glyphHalfH
-        val localB = glyphHalfH
-        val texL = localL - pad; val texR = localR + pad
-        val texT = localT - pad; val texB = localB + pad
+        val texL = res.localL - pad; val texR = res.localR + pad
+        val texT = res.localT - pad; val texB = res.localB + pad
 
         val texW = (texR - texL).toInt().coerceAtLeast(1)
         val texH = (texB - texT).toInt().coerceAtLeast(1)
         val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
         val bmpCanvas = Canvas(bmp)
-        // Local (0,0) maps to bitmap-space (-texL, baselineY) — baselineY
-        // re-derives RigRenderer.drawGmsText's own baselineOffset
-        // (-(ascent+descent)/2), re-anchored into this bitmap's own origin.
-        val originXInBmp = -texL
-        val baselineY = -texT - (metrics.ascent + metrics.descent) / 2f
-        bmpCanvas.drawText(draw.text, originXInBmp, baselineY, overlayTextPaint)
+        // Local (0,0) maps to bitmap-space (-texL, -texT); translating by
+        // (layoutTranslateX - texL, layoutTranslateY - texT) places the
+        // StaticLayout at the exact same local coordinates as RigRenderer.drawGmsText.
+        bmpCanvas.save()
+        bmpCanvas.translate(res.layoutTranslateX - texL, res.layoutTranslateY - texT)
+        res.layout.draw(bmpCanvas)
+        bmpCanvas.restore()
 
         val texArr = IntArray(1)
         GLES20.glGenTextures(1, texArr, 0)

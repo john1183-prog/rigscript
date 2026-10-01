@@ -148,6 +148,18 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "exitEase": "string",            // Default "ease_in".
   "opacity": number,               // ceiling alpha 0..1 once fully "in". Default 1.
   "inFrontOfFigure": boolean,      // true = draws over the figure (default, original behavior). false = figure draws over THIS layer instead.
+  "screenSpace": boolean,          // true = renders in screen space after camera transform is restored (unaffected by camera zoom/pan/shake). false = world space (default).
+  "anim": [                        // optional sub-timeline keyframes for position, scale, opacity, and rotation over [startSec..endSec]. When present, takes precedence over enter/exit transforms for animated properties.
+    {
+      "t": number,                 // REQUIRED in keyframe. Normalized time 0..1 across [startSec..endSec] (0 = startSec, 1 = endSec).
+      "x": number | null,          // horizontal position fraction (0..1). Null carries forward from previous keyframe (or base x).
+      "y": number | null,          // vertical position fraction (0..1). Null carries forward from previous keyframe (or base y).
+      "scale": number | null,      // scale multiplier. Null carries forward (or base scale).
+      "opacity": number | null,    // alpha 0..1. Null carries forward (or base opacity).
+      "rotationDeg": number | null,// rotation in degrees. Null carries forward (or base rotationDeg).
+      "ease": "string"             // easing curve to next keyframe: linear | ease_in | ease_out | ease_in_out | bounce | elastic_out | spring | back | rigid. Default "linear".
+    }
+  ] | null,
 
   // ── Phase 2 (all optional — omit anything you're not using) ──────────
   "parentBone": "string" | null,   // attach to a stick-figure bone tip (see PARENTBONE VALUES). x/y become an OFFSET from the bone.
@@ -225,6 +237,11 @@ overlayLayers[].enterEase / exitEase: linear | ease_in | ease_out |
   ease_in_out | bounce | elastic_out | spring | back
   ("back" is ONLY valid here, not for a ScriptEvent's "ease" field — it's
   an overshoot-then-settle curve, pairs especially well with "pop".)
+overlayLayers[].anim[].ease: linear | ease_in | ease_out | ease_in_out |
+  bounce | elastic_out | spring | back | rigid
+  ("rigid" snaps instantly with NO interpolation; ease on a keyframe
+  governs the segment beginning at that keyframe and ending at the next
+  keyframe; final keyframe's ease has no following segment)
 overlayLayers[].parentBone: torso | head | upper_arm_r | lower_arm_r |
   upper_arm_l | lower_arm_l | upper_leg_r | lower_leg_r | upper_leg_l |
   lower_leg_l (same ids as a ScriptEvent's implicit bone rig — right/left
@@ -584,6 +601,104 @@ resolves to a y value, but that value becomes part of the OFFSET from
 the parent, not an absolute screen region, which rarely reads as
 intended. Use plain x/y on a parented layer instead of slot.
 
+OVERLAY TEXT WORD-WRAPPING & ALIGNMENT — type="text" overlays
+automatically word-wrap at approximately 0.92 of canvas width. Normal
+multi-word text wraps cleanly across multiple lines rather than globally
+shrinking font size. fontSize remains normalized as a fraction of canvas
+HEIGHT (same convention as single-line text). Single-line overlays retain
+their existing single-line positioning semantics verbatim. Multiline
+text blocks remain vertically centered around their (x, y) anchor
+position (or slot), expanding symmetrically upward and downward so the
+overall block stays anchored where authored. Horizontal alignment
+("left", "center", "right") retains existing x-anchor semantics:
+align="center" anchors x at the center of the block; align="left"
+anchors the left margin at x and text extends rightward; align="right"
+anchors the right margin at x and text extends leftward. If a single
+unbreakable word or token exceeds the maximum 0.92 width, it falls back
+to the existing proportional shrink-to-fit behavior so long words are
+never hard-clipped.
+
+SCREEN-SPACE OVERLAYS (screenSpace) — by default (screenSpace: false),
+all overlay layers render in world space, participating in camera
+zoom, pan, and shake alongside the stick figure. Setting screenSpace: true
+renders the overlay in screen coordinates after the camera transform is
+restored:
+  "screenSpace": true
+When screenSpace is true, the overlay remains firmly anchored to the
+viewport during camera motion — zoom, pan, and shake do not affect it.
+This is designed for persistent titles, lower-thirds, watermark labels,
+and UI-style callouts that must remain readable while the camera zooms
+or tracks the figure. screenSpace does NOT change the basic normalized
+(x, y) coordinate convention (0..1 of viewport width/height still applies),
+and screen-space overlays are NOT automatically collision-aware: keep them
+positioned clear of the caption area (y > 0.7 in 9:16) and central figure
+action.
+
+OVERLAY ANIMATION KEYFRAMES (anim) — an optional sub-timeline keyframe
+array on any overlay layer, allowing properties to animate over time
+within the layer's [startSec..endSec] active window:
+  "anim": [
+    {
+      "t": 0.0,
+      "x": 0.2,
+      "y": 0.5,
+      "ease": "ease_out"
+    },
+    {
+      "t": 1.0,
+      "x": 0.8,
+      "y": 0.5
+    }
+  ]
+Keyframes support the following properties:
+  - t: REQUIRED in each keyframe. Normalized time from 0.0 to 1.0 across
+    the layer's duration (0.0 = startSec, 1.0 = endSec).
+  - x, y: horizontal and vertical position fractions (0..1).
+  - scale: scale multiplier.
+  - opacity: ceiling alpha (0..1).
+  - rotationDeg: rotation in degrees.
+  - ease: segment easing curve governing interpolation from this
+    keyframe to the next keyframe. Defaults to "linear".
+
+Evaluation is completely deterministic from absolute playback time —
+scrubbing or seeking directly to an arbitrary timestamp evaluates the
+exact interpolated state without replaying the animation from the
+beginning.
+
+Missing-property carry-forward rules:
+  - A keyframe does not need to specify every property.
+  - If both surrounding keyframes define a property, it interpolates
+    smoothly across the segment.
+  - If only the earlier keyframe defines a property, that value carries
+    forward unchanged across the segment.
+  - If a property is introduced for the first time at a later keyframe,
+    interpolation begins from the overlay layer's base resting value
+    (base x/y, scale, opacity, rotationDeg).
+  - If a property is never specified in any keyframe, it holds the base
+    OverlayLayer value throughout.
+
+Easing segment semantics:
+  - The ease property on keyframe k_i controls the interpolation curve
+    of the segment between k_i and k_{i+1}.
+  - The final keyframe's ease has no following segment and does not
+    affect subsequent interpolation.
+  - Supported easing names use the exact closed vocabulary:
+    linear | ease_in | ease_out | ease_in_out | bounce | elastic_out |
+    spring | back | rigid
+  - "rigid" snaps immediately to the target value with no interpolation.
+  - Never invent new easing names; unrecognized names fall back to linear.
+
+Precedence over enter/exit transforms:
+  - When anim controls a property (x, y, scale, opacity, rotationDeg),
+    it takes direct precedence over the corresponding enter/exit
+    transform behavior for that property, preventing double-application
+    (for example, keyframe opacity fading will not double-fade with
+    enterStyle "fade").
+  - Any enter/exit behavior not replaced by anim (such as an enter fade
+    when only x/y are keyframed) remains active as authored.
+  - When anim is absent or omitted, existing enter/exit behavior is
+    completely unchanged.
+
 PHYSICS — reach for "projectile" or "bounce" for something that should
 visibly fly/fall/bounce (a tossed object, a dropped item) rather than
 faking motion with enterStyle="slideup"/"slidedown", which are for
@@ -630,6 +745,20 @@ crowding forward instead — pick deliberately based on which the moment
 calls for. Three or four figure layers is usually enough to read as "a
 crowd," not a literal headcount — more than that adds clutter without
 adding clarity, and works against COGNITIVE LOAD above.
+
+CLOSED-VOCABULARY & SCOPE DISCIPLINE — authoring must strictly adhere to
+the documented closed vocabulary and schema:
+  - Never invent pose names (use only the 23 built-in poses).
+  - Never invent sceneShape names (none | mountains | city | trees | clouds | room | beach).
+  - Never invent sceneAtmosphere names (none | rain | snow | fog | stars).
+  - Never invent easing names (linear | ease_in | ease_out | ease_in_out | bounce | elastic_out | spring | back | rigid).
+  - Never invent schema fields or syntax outside the documented JSON specification.
+  - The following capabilities are INTENTIONALLY OUT OF SCOPE — do not attempt to prompt or author them:
+    * Motion-path curves (e.g. bezier trajectories)
+    * Per-character or per-word text animation (karaoke reveals)
+    * Layer blend modes or graphical masks
+    * Continuous particle emitters (particles are burst-only)
+    * Timeline editor UI for sub-timeline keyframes
 
 ═══════════════════════════════════════════════════════════════════════
 CONTENT TYPE GUIDANCE
@@ -721,8 +850,10 @@ NEVER DO THIS
 - Never invent pose/ease/expression/sceneShape/sceneAtmosphere values
   not in the exact lists above.
 - Never invent overlayLayers type/shape/slot/enterStyle/exitStyle/
-  enterEase/exitEase/parentBone/physics/particleShape values not in the
-  exact lists above.
+  enterEase/exitEase/anim ease/parentBone/physics/particleShape values
+  not in the exact lists above.
+- Never invent schema fields (e.g. motion paths, masks, blend modes,
+  per-word styling) outside the documented schema.
 - Never omit startSec or endSec on an overlayLayers entry, and never set
   endSec <= startSec.
 - Never set both parentBone and parentLayer on the same overlayLayers entry.
@@ -750,7 +881,6 @@ NEVER DO THIS
   layers at the same instant — see COGNITIVE LOAD above.
 - Never wrap the output in markdown fences or add explanatory text
   outside the JSON object.
-```
 ```
 
 This tracks what the AI-script-generation prompt needs to communicate
@@ -976,16 +1106,11 @@ matters as much as renderer correctness.
   parentLayer != null) && slot != null` — flagged here as a reasonable
   follow-up, not done as part of this prompt-only audit pass).
 
-### Planned V2 overlay-text extensions (PLANNED — DO NOT PROMPT YET)
-- A 5-step expansion to on-screen text capabilities and caption styling is
-  currently in architectural planning.
-- **CRITICAL SCHEMA DISCIPLINE**: None of these features or fields exist in
-  the current engine or schema. The production prompt must NEVER reference,
-  suggest, or invent these fields until each corresponding implementation step
-  is completed, verified on device, and landed on `main`:
-  1. **Caption clamping & styling (PLANNED — NOT IMPLEMENTED)**:
-     Planned `AppearanceSettings` controls for subtitle box wrapping, sizing,
-     and layout:
+### Implemented V2 overlay-text extensions
+- The 5-step expansion to on-screen text capabilities and caption styling is
+  now fully implemented in the engine and synchronized in the prompt:
+  1. **Caption clamping & styling**:
+     `AppearanceSettings` controls subtitle box wrapping, sizing, and layout:
      - `captionTextSizeFraction`
      - `captionMaxWidthFraction`
      - `captionBottomMarginFraction`
@@ -993,28 +1118,36 @@ matters as much as renderer correctness.
      - `captionBgColor`
      - `captionTextColor`
      - `captionMaxLines`
-  2. **Multiline overlay text with automatic word wrapping (PLANNED — NOT IMPLEMENTED)**:
-     Planned text overlay layout engine supporting automatic word wrapping,
-     not merely `\n` splitting. Planned behavior:
-     - StaticLayout-based automatic word wrapping
-     - bounded maximum width
-     - explicit `\n` preserved
-     - multiline measurement
-     - visual-center anchoring
-  3. **`screenSpace` coordinate mode**: planned boolean flag allowing overlays to
-     anchor directly to viewport coordinates, ignoring camera pan/zoom/shake.
-  4. **Overlay `anim` keyframes**: planned sub-timeline keyframes for interpolating
-     overlay transforms (position, scale, opacity, rotation) over time.
-  5. **Prompt synchronization**: the production prompt (`system_prompt.txt`) will
-     be updated only after steps 1-4 are fully implemented.
+     Constrains caption layouts to the drawable canvas (`boxBottom`), prevents
+     top-of-canvas clipping, and iteratively reduces text size and applies fitting
+     line truncation identically on Canvas and GLES.
+  2. **Multiline overlay text with automatic word wrapping**:
+     Text overlay layout engine supporting automatic word wrapping:
+     - `StaticLayout`-based automatic word wrapping at ~0.92 canvas width
+     - explicit newlines (`\n`) preserved
+     - multiline measurement vertically centered around `(x, y)` anchors
+     - horizontal alignment (`left`, `center`, `right`) anchor semantics preserved
+     - single-word shrink-to-fit fallback for unbreakable tokens
+  3. **`screenSpace` coordinate mode**:
+     Optional boolean flag on `OverlayLayer` (`screenSpace: true`) allowing overlays
+     to render in screen space after camera transform restoration, remaining firmly
+     anchored to the viewport during camera zoom/pan/shake.
+  4. **Overlay `anim` keyframes**:
+     Sub-timeline keyframes (`OverlayAnimKeyframe`) for interpolating overlay
+     transforms (`x`, `y`, `scale`, `opacity`, `rotationDeg`) over time with
+     deterministic evaluation, missing-property carry-forward, segment easing, and
+     precedence over enter/exit transforms.
+  5. **Prompt synchronization**:
+     Production prompt (`system_prompt.txt`) and `PROMPT_CONSIDERATIONS.md`
+     synchronized with byte-identical precision.
 - **Explicit out-of-scope boundaries**:
   - Motion-path curves (e.g. bezier trajectories)
   - Per-character or per-word animation (karaoke reveals)
   - Layer blend-modes or masks
   - Continuous particle emitters (bursts remain single-beat)
   - Timeline editor UI
-- Until these land, maintain the strict closed-vocabulary discipline: never prompt
-  for or generate fields outside the currently supported schema.
+- Maintain the strict closed-vocabulary discipline: never prompt for or generate
+  fields outside the currently supported schema.
 
 ## Workflow notes (not schema — just how to use what already exists)
 

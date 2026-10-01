@@ -2617,17 +2617,19 @@ zoom in."
     - Animation resolves into local properties (`localX`, `localY`, `localScale`, `localRotationDeg`, `opacity`) inside Phase 1 (`OverlayResolver.resolveOne`), feeding into `TimeResolvedOverlay`.
     - Phase 2 `applyParenting` compounds local transforms into `ResolvedOverlay` world/screen coordinates once for Canvas and once for GLES with identical results, preserving `parentBone`, `parentLayer`, and `screenSpace` behaviors without duplicate interpolation logic in either renderer.
 
-- **Upcoming V2 Overlay-Text Extension (PLANNED — Step 5 NOT IMPLEMENTED):**
-  Remaining steps planned for subsequent iterations:
-  5. **Documentation & prompt updates**: synchronizing AI prompts only once engine
-     code is implemented and verified.
-
-  **Explicit out-of-scope follow-ups from this plan**:
-  - Motion-path curves (e.g. bezier trajectories)
-  - Per-character / per-word animation (karaoke text reveals)
-  - Layer blend-modes or masking
-  - Continuous particle emitters (burst-only remains the model)
-  - Timeline editor UI
+- **V2 Overlay-Text Extension — Step 5: Documentation Synchronization & Closed-Vocabulary Discipline:**
+  - **Synchronized documentation surfaces**: Updated `app/src/main/assets/prompt/system_prompt.txt`, `PROMPT_CONSIDERATIONS.md`, and `V2_DECISIONS.md` to document the completed 5-step overlay-text extension.
+  - **Documented multiline text word-wrapping**: Documented automatic word-wrapping at `~0.92` canvas width, vertical centering around `(x, y)` anchors, baseline preservation for single-line text, alignment anchoring (`left`, `center`, `right`), and unbreakable-token shrink-to-fit fallback.
+  - **Documented `screenSpace`**: Documented `screenSpace: Boolean = false` schema field, viewport anchoring bypassing camera zoom/pan/shake, preservation of normalized `(x, y)` coordinate space, and non-collision-aware positioning guidelines.
+  - **Documented `anim` keyframes & easing semantics**: Documented `OverlayAnimKeyframe` schema (`t`, `x`, `y`, `scale`, `opacity`, `rotationDeg`, `ease`), normalized `t` in `[0.0, 1.0]`, deterministic absolute-time scrub evaluation with zero replay, missing-property carry-forward, initial base-value fallback for newly introduced properties, segment easing starting at keyframe $k_i$, and the closed 9-value easing vocabulary (`linear`, `ease_in`, `ease_out`, `ease_in_out`, `bounce`, `elastic_out`, `spring`, `back`, `rigid` with `"rigid"` instant snap).
+  - **Documented enter/exit precedence**: Made explicit that animated properties in `anim` take precedence over enter/exit offsets and multipliers (`offsetX`, `offsetY`, `scaleMul`, `opacityMul`) to prevent double-application, while non-animated enter/exit transforms remain active.
+  - **Closed-vocabulary & intentional out-of-scope discipline**: Formalized strict adherence to documented enums and explicitly reinforced out-of-scope boundaries:
+    - Motion-path curves (e.g. bezier trajectories)
+    - Per-character or per-word animation (karaoke text reveals)
+    - Layer blend-modes or masks
+    - Continuous particle emitters (bursts remain single-beat)
+    - Timeline editor UI
+  - **Byte-identical prompt synchronization**: Verified byte-for-byte identity between `system_prompt.txt` and the production prompt block in `PROMPT_CONSIDERATIONS.md` via byte comparison.
 
 - **Fullscreen Script Editor destination (`ScriptEditorScreen`) & Canvas layout normalization:**
   - **Problem & diagnosis**: In `EditorScreen`, the Script tab's JSON text field previously resided inside the shared `Column` alongside the preview canvas, `AudioBar`, `AmplitudeWaveform`, `EventTimelineStrip`, `OverlayTimelineStrip`, and scrubber `Slider`. None yielded when the software keyboard opened, even with the preview canvas shrunk to a 14% height workaround. The `imePadding` relayout caused an abrupt layout jump and squeezed the text field into an unusable sliver.

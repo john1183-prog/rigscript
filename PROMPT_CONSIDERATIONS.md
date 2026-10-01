@@ -235,8 +235,9 @@ overlayLayers[].enterStyle / exitStyle: fade | pop | zoom | slideup |
   slidedown | none
 overlayLayers[].enterEase / exitEase: linear | ease_in | ease_out |
   ease_in_out | bounce | elastic_out | spring | back
-  ("back" is ONLY valid here, not for a ScriptEvent's "ease" field — it's
-  an overshoot-then-settle curve, pairs especially well with "pop".)
+  ("back" is valid for overlays and overlay anim keyframes, not for a
+  ScriptEvent's "ease" field — it's an overshoot-then-settle curve,
+  pairs especially well with "pop".)
 overlayLayers[].anim[].ease: linear | ease_in | ease_out | ease_in_out |
   bounce | elastic_out | spring | back | rigid
   ("rigid" snaps instantly with NO interpolation; ease on a keyframe
@@ -850,7 +851,7 @@ NEVER DO THIS
 - Never invent pose/ease/expression/sceneShape/sceneAtmosphere values
   not in the exact lists above.
 - Never invent overlayLayers type/shape/slot/enterStyle/exitStyle/
-  enterEase/exitEase/anim ease/parentBone/physics/particleShape values
+  enterEase/exitEase/anim[].ease/parentBone/physics/particleShape values
   not in the exact lists above.
 - Never invent schema fields (e.g. motion paths, masks, blend modes,
   per-word styling) outside the documented schema.
@@ -1135,8 +1136,10 @@ matters as much as renderer correctness.
   4. **Overlay `anim` keyframes**:
      Sub-timeline keyframes (`OverlayAnimKeyframe`) for interpolating overlay
      transforms (`x`, `y`, `scale`, `opacity`, `rotationDeg`) over time with
-     deterministic evaluation, missing-property carry-forward, segment easing, and
-     precedence over enter/exit transforms.
+     deterministic evaluation, missing-property carry-forward, segment easing
+     with the authoritative 9-value closed vocabulary (`linear`, `ease_in`,
+     `ease_out`, `ease_in_out`, `bounce`, `elastic_out`, `spring`, `back`,
+     `rigid`), and precedence over enter/exit transforms.
   5. **Prompt synchronization**:
      Production prompt (`system_prompt.txt`) and `PROMPT_CONSIDERATIONS.md`
      synchronized with byte-identical precision.

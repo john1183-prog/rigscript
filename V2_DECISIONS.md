@@ -2609,7 +2609,7 @@ zoom in."
     - Easing string `ease` on keyframe $k_i$ governs the interpolation segment beginning at $k_i$ and ending at $k_{i+1}$. The final keyframe's `ease` has no subsequent segment and does not affect interpolation.
     - Reuses the project's closed vocabulary via `EasingMath.ease`: `linear`, `ease_in`, `ease_out`, `ease_in_out`, `bounce`, `elastic_out`, `spring`, `back`, and `rigid`.
     - Added `"rigid" -> 1f` to `EasingMath.ease` so `rigid` immediately snaps to the segment's target value at progress $\ge 0$, maintaining unity with `PlaybackEngine`'s rigid event transition convention. Unrecognized easing strings gracefully fall back to linear `t`.
-    - `ScriptValidator.validateOverlayLayers` checks keyframe `ease` values against `VALID_ANIM_EASE`, reporting visible editor warnings for unknown ease names.
+    - `ScriptValidator.validateOverlayLayers` checks keyframe `ease` values against `VALID_OVERLAY_ANIM_EASE`, reporting visible editor warnings for unknown ease names.
   - **Precedence over enter/exit transforms**:
     - When `anim` is present, animated properties explicitly controlled in `anim` (`hasAnimX`, `hasAnimY`, `hasAnimScale`, `hasAnimOpacity`, `hasAnimRotation`) take direct precedence over enter/exit transform offsets/multipliers (`offsetX`, `offsetY`, `scaleMul`, `opacityMul`), completely preventing double-application (e.g. keyframe opacity fading does not double-multiply with `enterStyle = "fade"`).
     - Other enter/exit transforms not controlled by keyframes (e.g. enter fade when only `x`/`y` are animated) and all non-transform layer features (`parentBone`, `parentLayer`, `screenSpace`, glow, text wrapping, etc.) remain fully functional.

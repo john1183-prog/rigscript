@@ -803,6 +803,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             }
         }
 
+        // Screen-space overlays (V2 Step 3 — screenSpace: true) — drawn after
+        // atmosphere, before captions, unaffected by camera zoom/pan/shake.
+        for (overlay in frame.screenOverlays) {
+            drawOverlayItem(overlay, frame.canvasW, frame.canvasH, w, h)
+        }
+
         // Caption — text phase (V2_DECISIONS.md). Screen-space, drawn LAST
         // (after atmosphere), matching RigRenderer.drawCaption's own
         // "after canvas.restore()" placement — burned-in subtitles the

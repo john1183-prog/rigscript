@@ -121,6 +121,9 @@ import kotlinx.serialization.Serializable
  *                  own field of the same name. Independent of [parentBone]/
  *                  [parentLayer] — a layer can be behind the figure and
  *                  still bone-parented to it.
+ * [screenSpace]     Whether this layer renders in screen space (true) after
+ *                  the camera/world transform is restored, or in world space
+ *                  (false, default) transformed by camera zoom/pan/shake.
  *
  * ── Phase 2: physics ─────────────────────────────────────────────────────
  * Closed-form (not frame-by-frame simulated) motion, computed fresh from
@@ -237,6 +240,9 @@ data class OverlayLayer(
     // pre-existing behavior (overlays always drew after/on top of the
     // figure), so an existing script's rendering is unchanged.
     val inFrontOfFigure: Boolean = true,
+    // Step 3 (V2): when true, renders in screen space after camera/world
+    // transform is restored, unaffected by camera zoom/pan/shake. Default false.
+    val screenSpace: Boolean = false,
     // Phase 2 — physics
     val physics: String = "none",
     val physicsVx: Float = 0f,

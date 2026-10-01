@@ -301,10 +301,12 @@ class RigRenderer {
         val resolvedOverlays = if (overlays.isNotEmpty())
             OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
         else emptyList()
+        // Step 3 (V2): screenSpace overlays are deferred to after canvas.restore()
+        val (worldOverlays, screenOverlays) = resolvedOverlays.partition { !it.screenSpace }
         // partition{} predicate is "match goes to first list" — matching
         // !inFrontOfFigure (i.e. behind) first reads more naturally at the
         // call site below than the inverted alternative would.
-        val (behindOverlays, frontOverlays) = resolvedOverlays.partition { !it.inFrontOfFigure }
+        val (behindOverlays, frontOverlays) = worldOverlays.partition { !it.inFrontOfFigure }
 
         for (layer in behindOverlays) {
             if (layer.trailPoints.size >= 2) drawGmsTrail(canvas, canvasW, canvasH, layer)
@@ -391,6 +393,14 @@ class RigRenderer {
         if (sceneAtmosphere != SceneAtmosphere.NONE && sceneAtmosphere != SceneAtmosphere.STARS) {
             drawAtmosphere(canvas, canvasW, canvasH, sceneAtmosphere, currentTimeSec)
         }
+
+        // Screen-space overlays (V2 Step 3 — screenSpace: true) — drawn after
+        // camera/world transform is restored, unaffected by camera zoom/pan/shake.
+        for (layer in screenOverlays) {
+            if (layer.trailPoints.size >= 2) drawGmsTrail(canvas, canvasW, canvasH, layer)
+            drawGmsOverlay(canvas, canvasW, canvasH, layer, appearance)
+        }
+
         if (!captionText.isNullOrBlank()) {
             drawCaption(canvas, canvasW, canvasH, captionText, appearance)
         }

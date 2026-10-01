@@ -2589,10 +2589,13 @@ zoom in."
     - Sentences with multiple words wrap across lines at full requested `fontSize` (`canvasH * fontSizeFraction`) without shrinking.
     - Shrinks `textSize` only when an individual whitespace-delimited word/token exceeds `0.92f * canvasW` (or when a single-word token would be split across lines by `StaticLayout`), scaling proportionally and refining with a bounded guard loop down to `minTextSize = (canvasH * 0.01f).coerceAtLeast(1f)`.
 
-- **Upcoming V2 Overlay-Text Extension (PLANNED — Steps 3-5 NOT IMPLEMENTED):**
+- **V2 Overlay-Text Extension — Step 3: screenSpace Overlay Rendering:**
+  - **New `OverlayLayer.screenSpace` field**: Added `screenSpace: Boolean = false` to `OverlayLayer`, propagated through `TimeResolvedOverlay.screenSpace` and `ResolvedOverlay.screenSpace`. Defaults to `false` for full backward compatibility; existing scripts omit the field and continue to render in world space transformed by camera zoom/pan/shake.
+  - **Canvas implementation (`RigRenderer.draw`)**: Partitioned overlays into world-space (`!it.screenSpace`) and screen-space (`it.screenSpace`). World-space overlays remain inside the camera transform (behind/front of figure as configured). Screen-space overlays are rendered after `canvas.restore()` and atmosphere, before captions. Normal normalized `(x, y)` mapping (`canvas.translate(w * layer.x, h * layer.y)`), `scale`, `rotationDeg`, `opacity`, Step 2 multiline `StaticLayout` wrapping, alignment, and styling remain fully active while camera zoom, pan, and shake are completely bypassed.
+  - **GLES implementation (`GlesFigureFrame` + `GlesFrameRenderer`)**: Added `screenOverlays: List<OverlayDraw> = emptyList()` to `GlesFigureFrame`. `fromFkMatrices` partitions `screenSpace` overlays and builds their draw commands directly in canvas coordinates without applying `transformOverlayDraw(it, camera)`. `GlesFrameRenderer.drawFigureFrame` draws `screenOverlays` after atmosphere commands and before captions, achieving pixel-exact parity with Canvas.
+
+- **Upcoming V2 Overlay-Text Extension (PLANNED — Steps 4-5 NOT IMPLEMENTED):**
   Remaining steps planned for subsequent iterations:
-  3. **`screenSpace` coordinate mode**: optional overlay flag to anchor layers to
-     viewport space rather than camera world space.
   4. **Overlay `anim` keyframes**: sub-timeline keyframing for overlay properties
      (position, scale, opacity, rotation) over time within its active window.
   5. **Documentation & prompt updates**: synchronizing AI prompts only once engine

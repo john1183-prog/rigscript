@@ -111,6 +111,9 @@ data class GlesFigureFrame(
     /** In front of the figure — see [OverlayDraw] doc comment. Drawn after [drawCommands], before [atmosphereCommands]. */
     val frontOverlays: List<OverlayDraw>,
 
+    /** Screen-space overlays (V2 Step 3 — screenSpace: true) — drawn after atmosphere, before captions, unaffected by camera zoom/pan/shake. */
+    val screenOverlays: List<OverlayDraw> = emptyList(),
+
     /** Screen-space, drawn after the figure — see [AtmosphereDrawCommand] doc comment. */
     val atmosphereCommands: List<AtmosphereDrawCommand>,
 
@@ -553,9 +556,11 @@ data class GlesFigureFrame(
             val resolvedOverlays = if (overlays.isNotEmpty())
                 OverlayResolver.applyParenting(overlays, boneAnchors ?: emptyMap())
             else emptyList()
-            val (behindResolved, frontResolved) = resolvedOverlays.partition { !it.inFrontOfFigure }
+            val (worldOverlays, screenOverlaysResolved) = resolvedOverlays.partition { !it.screenSpace }
+            val (behindResolved, frontResolved) = worldOverlays.partition { !it.inFrontOfFigure }
             val behindOverlays = behindResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
             val frontOverlays  = frontResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
+            val screenOverlays = screenOverlaysResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
 
             val bgColor = (overrides.bgColor ?: appearance.exportBgColor).toInt()
             // These two are DELIBERATELY independent — see groundLineYFraction's
@@ -668,6 +673,8 @@ data class GlesFigureFrame(
                 drawCommands            = commands.map { transformDrawCommand(it, camera) },
                 figureAlpha             = (overrides.opacity ?: 1f).coerceIn(0f, 1f),
                 frontOverlays           = frontOverlays.map { transformOverlayDraw(it, camera) },
+                // NOT camera-transformed — screen-space overlays (V2 Step 3)
+                screenOverlays          = screenOverlays,
                 // NOT camera-transformed — screen-space atmosphere, unchanged
                 // from before this phase. See class doc comment.
                 atmosphereCommands      = atmosphereCommands,

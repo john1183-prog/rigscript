@@ -124,6 +124,10 @@ import kotlinx.serialization.Serializable
  * [screenSpace]     Whether this layer renders in screen space (true) after
  *                  the camera/world transform is restored, or in world space
  *                  (false, default) transformed by camera zoom/pan/shake.
+ * [anim]           Optional sub-timeline keyframes ([OverlayAnimKeyframe])
+ *                  interpolating position, scale, opacity, and rotation
+ *                  over [startSec..endSec]. When present, takes precedence
+ *                  over enter/exit transforms for animated properties.
  *
  * ── Phase 2: physics ─────────────────────────────────────────────────────
  * Closed-form (not frame-by-frame simulated) motion, computed fresh from
@@ -201,6 +205,30 @@ import kotlinx.serialization.Serializable
  *                  a supporting figure to lip-sync to, so its mouth is
  *                  always a fixed shape, not animated.
  */
+/**
+ * A single keyframe within an [OverlayLayer.anim] sequence.
+ *
+ * [t]           Normalized timestamp in [0.0, 1.0], where 0.0 is [OverlayLayer.startSec]
+ *               and 1.0 is [OverlayLayer.endSec].
+ * [x]           Horizontal center position as fraction of canvas width. Null to carry forward.
+ * [y]           Vertical center position as fraction of canvas height. Null to carry forward.
+ * [scale]       Scale multiplier. Null to carry forward.
+ * [opacity]     Ceiling alpha in [0.0, 1.0]. Null to carry forward.
+ * [rotationDeg] Rotation angle in degrees. Null to carry forward.
+ * [ease]        Easing curve applied to the segment between this keyframe and the next keyframe.
+ *               Defaults to "linear". One of [com.example.engine.EasingMath]'s closed vocabulary.
+ */
+@Serializable
+data class OverlayAnimKeyframe(
+    val t: Float,
+    val x: Float? = null,
+    val y: Float? = null,
+    val scale: Float? = null,
+    val opacity: Float? = null,
+    val rotationDeg: Float? = null,
+    val ease: String = "linear"
+)
+
 @Serializable
 data class OverlayLayer(
     val id: String = "",
@@ -243,6 +271,9 @@ data class OverlayLayer(
     // Step 3 (V2): when true, renders in screen space after camera/world
     // transform is restored, unaffected by camera zoom/pan/shake. Default false.
     val screenSpace: Boolean = false,
+    // Step 4 (V2): optional sub-timeline keyframes for interpolating position,
+    // scale, opacity, and rotation over [startSec..endSec].
+    val anim: List<OverlayAnimKeyframe>? = null,
     // Phase 2 — physics
     val physics: String = "none",
     val physicsVx: Float = 0f,

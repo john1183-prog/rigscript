@@ -46,6 +46,9 @@ object ScriptValidator {
     private val VALID_OVERLAY_EASE = setOf(
         "linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic_out", "spring", "back"
     )
+    private val VALID_ANIM_EASE = setOf(
+        "linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic_out", "spring", "back", "rigid"
+    )
 
     private val VALID_BACKGROUND_STYLE = setOf("solid", "gradient")
 
@@ -215,6 +218,11 @@ object ScriptValidator {
         unknownValues(layers.map { it.exitEase }, VALID_OVERLAY_EASE)
             .takeIf { it.isNotEmpty() }
             ?.let { warnings += "Unknown overlay exitEase value(s), treated as linear: ${it.joinToString()}" }
+
+        val animEases = layers.mapNotNull { it.anim }.flatten().map { it.ease }
+        unknownValues(animEases, VALID_ANIM_EASE)
+            .takeIf { it.isNotEmpty() }
+            ?.let { warnings += "Unknown overlay keyframe ease value(s), treated as linear: ${it.joinToString()}" }
 
         unknownValues(layers.mapNotNull { it.slot }, VALID_OVERLAY_SLOT)
             .takeIf { it.isNotEmpty() }

@@ -20,6 +20,7 @@ object EasingMath {
         "elastic_out"  -> elasticOut(t)
         "spring"       -> springAnalytical(t)
         "back"         -> backOut(t)
+        "rigid"        -> 1f
         else           -> t
     }
 

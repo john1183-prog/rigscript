@@ -2594,10 +2594,31 @@ zoom in."
   - **Canvas implementation (`RigRenderer.draw`)**: Partitioned overlays into world-space (`!it.screenSpace`) and screen-space (`it.screenSpace`). World-space overlays remain inside the camera transform (behind/front of figure as configured). Screen-space overlays are rendered after `canvas.restore()` and atmosphere, before captions. Normal normalized `(x, y)` mapping (`canvas.translate(w * layer.x, h * layer.y)`), `scale`, `rotationDeg`, `opacity`, Step 2 multiline `StaticLayout` wrapping, alignment, and styling remain fully active while camera zoom, pan, and shake are completely bypassed.
   - **GLES implementation (`GlesFigureFrame` + `GlesFrameRenderer`)**: Added `screenOverlays: List<OverlayDraw> = emptyList()` to `GlesFigureFrame`. `fromFkMatrices` partitions `screenSpace` overlays and builds their draw commands directly in canvas coordinates without applying `transformOverlayDraw(it, camera)`. `GlesFrameRenderer.drawFigureFrame` draws `screenOverlays` after atmosphere commands and before captions, achieving pixel-exact parity with Canvas.
 
-- **Upcoming V2 Overlay-Text Extension (PLANNED — Steps 4-5 NOT IMPLEMENTED):**
+- **V2 Overlay-Text Extension — Step 4: Overlay `anim` Keyframes:**
+  - **Schema & data model (`OverlayAnimKeyframe`)**: Added `@Serializable data class OverlayAnimKeyframe(val t: Float, val x: Float? = null, val y: Float? = null, val scale: Float? = null, val opacity: Float? = null, val rotationDeg: Float? = null, val ease: String = "linear")` and optional `val anim: List<OverlayAnimKeyframe>? = null` to `OverlayLayer`. Defaults to `null` ensuring 100% backward compatibility for existing scripts.
+  - **Normalized `t` & deterministic evaluation**: `t` is normalized in `[0.0, 1.0]`, where `0.0` maps to `layer.startSec` and `1.0` maps to `layer.endSec`. Normalized progress `progress = ((timeSec - layer.startSec) / (layer.endSec - layer.startSec).coerceAtLeast(0.001f)).coerceIn(0f, 1f)` evaluates as a pure, stateless function of absolute playback time `timeSec`. Seeking and scrubbing directly to an arbitrary timestamp evaluates deterministically with zero replay loop. Pathological zero-duration layers are safely guarded against division by zero via `coerceAtLeast(0.001f)`.
+  - **Interpolated properties & missing-property carry-forward**:
+    - Interpolates `x`, `y`, `scale`, `opacity`, and `rotationDeg`.
+    - Keyframes are sorted by `t` (clamped to `[0f, 1f]`). Virtual endpoints at `t = 0f` and `t = 1f` with `ease = "linear"` are prepended/appended if authored keyframes do not span `[0f, 1f]`.
+    - In each segment `[k_i, k_{i+1}]`:
+      - If both surrounding keyframes define a property (explicitly or via prior carry-forward), the property interpolates smoothly from the earlier value to the later keyframe's explicit value via `startVal + (targetVal - startVal) * easedT`.
+      - If only the earlier keyframe defines the property, the earlier value carries forward without change throughout the segment (`targetVal == null -> startVal`).
+      - If a later keyframe introduces a property that was never previously set at or before `k_i`, it starts from the layer's base resting value (`baseX`, `baseY`, `layer.scale`, `layer.opacity`, `layer.rotationDeg`) before interpolating into the target keyframe value.
+      - If a property is never introduced across the entire keyframe sequence, it retains the base `OverlayLayer` value throughout.
+  - **Segment easing semantics & closed vocabulary**:
+    - Easing string `ease` on keyframe $k_i$ governs the interpolation segment beginning at $k_i$ and ending at $k_{i+1}$. The final keyframe's `ease` has no subsequent segment and does not affect interpolation.
+    - Reuses the project's closed vocabulary via `EasingMath.ease`: `linear`, `ease_in`, `ease_out`, `ease_in_out`, `bounce`, `elastic_out`, `spring`, `back`, and `rigid`.
+    - Added `"rigid" -> 1f` to `EasingMath.ease` so `rigid` immediately snaps to the segment's target value at progress $\ge 0$, maintaining unity with `PlaybackEngine`'s rigid event transition convention. Unrecognized easing strings gracefully fall back to linear `t`.
+    - `ScriptValidator.validateOverlayLayers` checks keyframe `ease` values against `VALID_ANIM_EASE`, reporting visible editor warnings for unknown ease names.
+  - **Precedence over enter/exit transforms**:
+    - When `anim` is present, animated properties explicitly controlled in `anim` (`hasAnimX`, `hasAnimY`, `hasAnimScale`, `hasAnimOpacity`, `hasAnimRotation`) take direct precedence over enter/exit transform offsets/multipliers (`offsetX`, `offsetY`, `scaleMul`, `opacityMul`), completely preventing double-application (e.g. keyframe opacity fading does not double-multiply with `enterStyle = "fade"`).
+    - Other enter/exit transforms not controlled by keyframes (e.g. enter fade when only `x`/`y` are animated) and all non-transform layer features (`parentBone`, `parentLayer`, `screenSpace`, glow, text wrapping, etc.) remain fully functional.
+  - **Parenting & Canvas/GLES parity**:
+    - Animation resolves into local properties (`localX`, `localY`, `localScale`, `localRotationDeg`, `opacity`) inside Phase 1 (`OverlayResolver.resolveOne`), feeding into `TimeResolvedOverlay`.
+    - Phase 2 `applyParenting` compounds local transforms into `ResolvedOverlay` world/screen coordinates once for Canvas and once for GLES with identical results, preserving `parentBone`, `parentLayer`, and `screenSpace` behaviors without duplicate interpolation logic in either renderer.
+
+- **Upcoming V2 Overlay-Text Extension (PLANNED — Step 5 NOT IMPLEMENTED):**
   Remaining steps planned for subsequent iterations:
-  4. **Overlay `anim` keyframes**: sub-timeline keyframing for overlay properties
-     (position, scale, opacity, rotation) over time within its active window.
   5. **Documentation & prompt updates**: synchronizing AI prompts only once engine
      code is implemented and verified.
 

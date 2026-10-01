@@ -1,5 +1,6 @@
 package com.example.engine
 
+import com.example.data.OverlayAnimKeyframe
 import com.example.data.OverlayLayer
 
 /**
@@ -190,10 +191,17 @@ object OverlayResolver {
             baseY = layer.slot?.let { SLOT_Y[it] } ?: layer.y
         }
 
-        // Enter/exit position offsets (slideup/slidedown) only make sense
-        // for a resting x/y, not layered on top of real physics motion.
-        val finalX = if (usesPhysics) baseX else baseX + offsetX
-        val finalY = if (usesPhysics) baseY else baseY + offsetY
+        // Sub-timeline animation keyframes (Step 4)
+        val animProgress = (tSinceStart / windowLen).coerceIn(0f, 1f)
+        val animProps = resolveAnimatedProperties(layer, animProgress, baseX, baseY)
+
+        // When explicit anim keyframes control a property, they take precedence over
+        // enter/exit transforms for that property, preventing double-application.
+        val finalX = if (animProps.hasAnimX) animProps.x else if (usesPhysics) baseX else baseX + offsetX
+        val finalY = if (animProps.hasAnimY) animProps.y else if (usesPhysics) baseY else baseY + offsetY
+        val finalScale = if (animProps.hasAnimScale) animProps.scale else layer.scale * scaleMul
+        val finalOpacity = if (animProps.hasAnimOpacity) animProps.opacity.coerceIn(0f, 1f) else (layer.opacity * opacityMul).coerceIn(0f, 1f)
+        val finalRotation = if (animProps.hasAnimRotation) animProps.rotationDeg else layer.rotationDeg
 
         // Figure layers — resolved once per call (cheap: 10 bones), not
         // cached, same "pure function of time, no persisted state" spirit
@@ -207,8 +215,8 @@ object OverlayResolver {
             id = layer.id, type = layer.type, shape = layer.shape,
             parentBone = layer.parentBone, parentLayer = layer.parentLayer,
             localX = finalX, localY = finalY,
-            localRotationDeg = layer.rotationDeg, localScale = layer.scale * scaleMul,
-            opacity = (layer.opacity * opacityMul).coerceIn(0f, 1f),
+            localRotationDeg = finalRotation, localScale = finalScale,
+            opacity = finalOpacity,
             text = layer.text, fontSize = layer.fontSize, bold = layer.bold, align = layer.align,
             color = layer.color, gradientColor = layer.gradientColor,
             width = layer.width, height = layer.height, radius = layer.radius,
@@ -217,6 +225,107 @@ object OverlayResolver {
             figurePoseAngles = poseAngles, figureExpression = expressionIndex,
             inFrontOfFigure = layer.inFrontOfFigure,
             screenSpace = layer.screenSpace
+        )
+    }
+
+    private data class ResolvedAnimProperties(
+        val x: Float,
+        val y: Float,
+        val scale: Float,
+        val opacity: Float,
+        val rotationDeg: Float,
+        val hasAnimX: Boolean,
+        val hasAnimY: Boolean,
+        val hasAnimScale: Boolean,
+        val hasAnimOpacity: Boolean,
+        val hasAnimRotation: Boolean
+    )
+
+    /**
+     * Resolves sub-timeline [OverlayLayer.anim] keyframes at [progress] in [0, 1].
+     * Missing properties carry forward from prior keyframes, or fall back to
+     * base values if never introduced. Keyframe [OverlayAnimKeyframe.ease] governs
+     * the segment between that keyframe and the next keyframe.
+     */
+    private fun resolveAnimatedProperties(
+        layer: OverlayLayer,
+        progress: Float,
+        baseX: Float,
+        baseY: Float
+    ): ResolvedAnimProperties {
+        val anim = layer.anim
+        if (anim.isNullOrEmpty()) {
+            return ResolvedAnimProperties(
+                x = baseX, y = baseY, scale = layer.scale, opacity = layer.opacity, rotationDeg = layer.rotationDeg,
+                hasAnimX = false, hasAnimY = false, hasAnimScale = false, hasAnimOpacity = false, hasAnimRotation = false
+            )
+        }
+
+        val hasAnimX = anim.any { it.x != null }
+        val hasAnimY = anim.any { it.y != null }
+        val hasAnimScale = anim.any { it.scale != null }
+        val hasAnimOpacity = anim.any { it.opacity != null }
+        val hasAnimRotation = anim.any { it.rotationDeg != null }
+
+        val sorted = anim.map { it.copy(t = it.t.coerceIn(0f, 1f)) }.sortedBy { it.t }
+
+        // Build normalized keyframe list ensuring bounds at t = 0f and t = 1f
+        val kfs = ArrayList<OverlayAnimKeyframe>(sorted.size + 2)
+        if (sorted.first().t > 0f) {
+            kfs.add(OverlayAnimKeyframe(t = 0f, ease = "linear"))
+        }
+        kfs.addAll(sorted)
+        if (kfs.last().t < 1f) {
+            kfs.add(OverlayAnimKeyframe(t = 1f, ease = "linear"))
+        }
+
+        val clampedP = progress.coerceIn(0f, 1f)
+
+        // Find active segment [segIdx, segIdx + 1]
+        var segIdx = 0
+        for (i in 0 until kfs.size - 1) {
+            if (clampedP >= kfs[i].t) {
+                segIdx = i
+            }
+        }
+
+        val k0 = kfs[segIdx]
+        val k1 = kfs[segIdx + 1]
+        val dt = k1.t - k0.t
+        val segT = if (dt > 0.00001f) ((clampedP - k0.t) / dt).coerceIn(0f, 1f) else 1f
+        val easedT = EasingMath.ease(k0.ease, segT)
+
+        fun interpolateProp(
+            getter: (OverlayAnimKeyframe) -> Float?,
+            baseVal: Float
+        ): Float {
+            var startVal = baseVal
+            for (i in segIdx downTo 0) {
+                val v = getter(kfs[i])
+                if (v != null) {
+                    startVal = v
+                    break
+                }
+            }
+            val targetVal = getter(k1)
+            return if (targetVal != null) {
+                startVal + (targetVal - startVal) * easedT
+            } else {
+                startVal
+            }
+        }
+
+        return ResolvedAnimProperties(
+            x = interpolateProp({ it.x }, baseX),
+            y = interpolateProp({ it.y }, baseY),
+            scale = interpolateProp({ it.scale }, layer.scale),
+            opacity = interpolateProp({ it.opacity }, layer.opacity),
+            rotationDeg = interpolateProp({ it.rotationDeg }, layer.rotationDeg),
+            hasAnimX = hasAnimX,
+            hasAnimY = hasAnimY,
+            hasAnimScale = hasAnimScale,
+            hasAnimOpacity = hasAnimOpacity,
+            hasAnimRotation = hasAnimRotation
         )
     }
 

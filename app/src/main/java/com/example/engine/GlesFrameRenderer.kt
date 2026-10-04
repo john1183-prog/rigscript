@@ -1190,15 +1190,24 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         val boxRight  = boxLeft + maxWidth + padding * 2f
         val boxTop    = (boxBottom - layout.height - padding * 2f).coerceAtLeast(0f)
 
-        val texW = (boxRight - boxLeft).toInt().coerceAtLeast(1)
-        val texH = (boxBottom - boxTop).toInt().coerceAtLeast(1)
+        // Pixel-snap quad bounds to integer coordinates so the rasterized texture
+        // maps 1:1 to screen pixels without fractional-origin bilinear sampling blur or
+        // aspect stretching from integer truncation.
+        val qLeft   = kotlin.math.round(boxLeft)
+        val qTop    = kotlin.math.round(boxTop)
+        val qRight  = kotlin.math.round(boxRight)
+        val qBottom = kotlin.math.round(boxBottom)
+
+        val texW = (qRight - qLeft).toInt().coerceAtLeast(1)
+        val texH = (qBottom - qTop).toInt().coerceAtLeast(1)
         val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
         val bmpCanvas = Canvas(bmp)
-        // Same backdrop + text as RigRenderer.drawCaption, re-anchored to
-        // this bitmap's own (0,0) — see doc comment above.
-        bmpCanvas.drawRoundRect(0f, 0f, texW.toFloat(), texH.toFloat(), padding, padding, captionBgPaint)
+        // Same backdrop + text as RigRenderer.drawCaption, re-anchored to (qLeft, qTop).
+        // Backdrop coordinates preserve exact subpixel curves relative to the rounded quad:
+        bmpCanvas.drawRoundRect(boxLeft - qLeft, boxTop - qTop, boxRight - qLeft, boxBottom - qTop, padding, padding, captionBgPaint)
         bmpCanvas.save()
-        bmpCanvas.translate(padding, padding)
+        // Text is anchored so on-screen layout position exactly matches RigRenderer.drawCaption ((canvasW - maxWidth) / 2f):
+        bmpCanvas.translate((canvasW - maxWidth) / 2f - qLeft, boxTop + padding - qTop)
         layout.draw(bmpCanvas)
         bmpCanvas.restore()
 
@@ -1216,7 +1225,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
         bmp.recycle()
 
-        val result = CaptionTexture(texId, boxLeft, boxTop, boxRight, boxBottom)
+        val result = CaptionTexture(texId, qLeft, qTop, qRight, qBottom)
         if (captionTextureCache.size >= 200) {
             // Evict oldest by insertion order — same cap discipline as
             // RigRenderer.cachedShrunkTextSize, though a real script's
@@ -1331,7 +1340,17 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         // alpha already baked into tex's rasterized pixels (colorArgb/glowColorArgb
         // carry opacity in their alpha channel — see OverlayTextDraw's doc comment),
         // so 1f here, same as captions.
-        drawTexturedQuad(tex.texId, x0, y0, x1, y1, x2, y2, x3, y3, 1f, w, h)
+        // For unrotated, unscaled text, snap quad origin to integer screen coordinates to preserve
+        // 1:1 texel-to-pixel mapping without bilinear filtering blur. Rotated/scaled quads use exact floats.
+        if (draw.rotationDeg == 0f && draw.scale == 1f) {
+            val rx0 = kotlin.math.round(x0)
+            val ry0 = kotlin.math.round(y0)
+            val rx1 = rx0 + (tex.localR - tex.localL)
+            val ry2 = ry0 + (tex.localB - tex.localT)
+            drawTexturedQuad(tex.texId, rx0, ry0, rx1, ry0, rx1, ry2, rx0, ry2, 1f, w, h)
+        } else {
+            drawTexturedQuad(tex.texId, x0, y0, x1, y1, x2, y2, x3, y3, 1f, w, h)
+        }
     }
 
     /**
@@ -1403,8 +1422,11 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         // deliberately generous margin, not measured against Android's own
         // shadow falloff — worth revisiting if glow looks clipped on-device.
         val pad = if (draw.glow) glowRadiusPx * 3f else 0f
-        val texL = res.localL - pad; val texR = res.localR + pad
-        val texT = res.localT - pad; val texB = res.localB + pad
+        // Pixel-snap local texture bounds so texW/texH match quad dimensions exactly (no stretch).
+        val texL = kotlin.math.floor(res.localL - pad)
+        val texR = kotlin.math.ceil(res.localR + pad)
+        val texT = kotlin.math.floor(res.localT - pad)
+        val texB = kotlin.math.ceil(res.localB + pad)
 
         val texW = (texR - texL).toInt().coerceAtLeast(1)
         val texH = (texB - texT).toInt().coerceAtLeast(1)

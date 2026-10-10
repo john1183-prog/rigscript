@@ -2228,6 +2228,25 @@ approved by the person before implementing:**
   first). NOT verified: compiler or device — landscape especially, since
   it's never been rendered at all this session.
 
+- **2026-10-10 — V2 campaign kickoff: decisions recorded (docs only; no
+  code changed).**
+  A multi-session implementation campaign starts from `eb6b0b3`; the
+  annotated tag `pre-v2-baseline` is the rollback point. The brief is
+  `docs/CAMPAIGN_BRIEF.md`; the living state is `IMPLEMENTATION_LOG.md`.
+  John's decisions of 2026-10-09: (1) GLES becomes the default export
+  renderer only if it works flawlessly — a chat cannot prove that, so it
+  will ship as `AUTO` with an on-device eligibility check (WP1.3/WP1.6);
+  (2) pushing to `main` is allowed (fast-forward only, a tag per phase)
+  and the other remote branches are removed (WP0.1b; outcome in the log);
+  (3) audio-reactive visuals are wanted, as an AI opt-in (WP3.7) — this
+  overrides the rejection of "Amplitude-reactive background motion" in
+  "Explicitly rejected", which is annotated, not deleted; (4) acting
+  intensity defaults to `NORMAL`; (5) clarifying questions during the
+  campaign only when absolutely necessary. Every new feature is
+  classified Craft or Direction (see "AI drives the pipeline" below).
+  Verification: BY-READING only; no code, compiler or device involved.
+  Not device-confirmed.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely
@@ -2238,6 +2257,21 @@ multiplier (below): the AI already handles pacing and framing decisions
 when generating the script, and the renderer's job is to execute that
 faithfully, not to add its own opinions about e.g. "loud parts should
 zoom in."
+
+**Amended 2026-10-09 (V2 campaign, John's decision).** The principle above
+stands and is now applied through a *Craft vs Direction* rule. DIRECTION
+is what happens and when: poses, expressions, gestures, look targets,
+camera, scene, captions, overlays, emotes, transitions, and which layers
+react to audio. Only the AI-authored script may create Direction, and the
+app never generates Direction from audio. CRAFT is how Direction is
+executed: easing, overlap, overshoot, blending, blinks, eye
+micro-movement, mouth smoothing. The engine owns Craft, deterministically,
+behind an intensity switch. Anything that adds visible content the script
+did not ask for is Direction: it becomes an AI opt-in field or ships
+default-off. Audio-reactive visuals are now wanted (see the override note
+under "Amplitude-reactive background motion" in "Explicitly rejected"):
+the AI cannot hear the audio, so only the engine can supply loudness, but
+the AI still decides which layers react and when.
 
 ## On the horizon (not yet started)
 
@@ -2404,6 +2438,13 @@ zoom in."
   the same effect with zero new code, since it's given the narration
   content directly and can write camera/scene changes into the JSON
   wherever it judges a moment deserves emphasis.
+  **OVERRIDDEN 2026-10-09 by John; see WP3.7 of the V2 campaign brief
+  (`docs/CAMPAIGN_BRIEF.md`).** The rejection above was about the app
+  deciding on its own that loud parts should move things. John now wants
+  audio-reactive visuals as Direction the AI opts into per layer
+  (`audioReact`), evaluated deterministically from a stored envelope; the
+  app still never adds reactivity by itself. The original text is kept
+  unchanged for the record. Not yet implemented.
 - **Auto-highlight reel as an app feature** — doesn't need to be one.
   "Highlight reel" decomposes cleanly into the existing model: trim/splice
   the best moments of the source narration into a new (shorter) audio

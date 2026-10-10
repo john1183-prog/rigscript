@@ -7,52 +7,52 @@ Authoritative brief: `docs/CAMPAIGN_BRIEF.md` (Part A rules, Part C work package
 _Handoff Packet. Rewritten after every WP (A9). Treat it as a claim: verify shas, tags and CI against the repo before acting (A6 step 5)._
 
 **1. STATE**
-- Last green commit on `main`: `91c67f6` (WP0.1 bootstrap; VERIFIED-BY-CI run 38028034601). Baseline `eb6b0b3` was green in run 37477158994. The commit carrying this packet is pending CI.
-- Tags pushed: `pre-v2-baseline` (annotated, object `ea9037f` → `eb6b0b3`). Other remote branches: none (`version2` deleted, see LOG).
-- Latest CI run / APK run: bootstrap run 38028034601 (https://github.com/john1183-prog/rigscript/actions/runs/38028034601), APK artifact `app-debug` in that run. Baseline run 37477158994.
-- Unit tests: 0 (no test infrastructure yet).
-- WPs: 0.1 done; 0.1b done; 0.2 in progress (0.2a is pushing the CI report channel, 0.2b tests next); everything else not started.
+- Last green commit on `main`: `593f257` (WP0.2b; VERIFIED-BY-CI run 38051012391: build success, 2 unit tests passed, APK 17.2 MB). Earlier green: `9d92a45` (run 38028154388), `91c67f6` (run 38028034601), baseline `eb6b0b3` (run 37477158994). The commit carrying this packet is docs-only; its own CI result was not known when it was written.
+- Tags: `pre-v2-baseline` (annotated, object `ea9037f` → `eb6b0b3`). Branches: only `main` (`version2` deleted). `v2-p0` is NOT pushed yet (Phase 0 incomplete).
+- Latest verified CI/APK run: https://github.com/john1183-prog/rigscript/actions/runs/38051012391 (artifacts `app-debug`, `unit-test-report`, `build-log`).
+- Unit tests: 2 (`SanityTest`), VERIFIED-BY-CI.
+- WPs: 0.1 done · 0.1b done · 0.2 done · 0.3, 0.4, 0.5 not started · Phases 1–5 not started.
 
 **2. IN-FLIGHT**
-- None uncommitted. WP0.2 is next and is split in two steps (see NEXT STEPS).
+- None. Working tree clean; everything is pushed.
 
 **3. NEXT STEPS**
-1. WP0.2a, CI feedback channel (new, see LOOK OUT FOR 1): add a CI step that publishes a "CI report" check run (Gradle error digest, test counts) readable through `GET /repos/john1183-prog/rigscript/commits/<sha>/check-runs`; script in `.github/scripts/ci_report.py`, workflow `permissions: contents: read, checks: write`. Push with only this change, confirm the check run is readable.
-2. WP0.2b, test infrastructure: JUnit 4.13.2 via `gradle/libs.versions.toml`, `testOptions { unitTests.isReturnDefaultValues = true }` in `app/build.gradle.kts`, `app/src/test/java/com/example/SanityTest.kt`, CI runs `gradle testDebugUnitTest assembleDebug`, upload `app/build/reports/tests` with `if: always()`.
-3. WP0.3 fixtures: read `AnimScript.kt`, `AppJson.kt`, the settings classes and `PROMPT_CONSIDERATIONS.md` per-field sections first; capture legacy JSON before touching any settings class.
+1. WP0.3 fixtures. First read `app/src/main/java/com/example/data/AnimScript.kt`, `AppJson.kt`, `ExportSettings.kt`, `AppearanceSettings.kt`, `BackgroundMusicSettings.kt`, `ProjectDef` (grep for it) and the per-field sections of `PROMPT_CONSIDERATIONS.md` (`grep -n '^## '`). Add 6 scripts under `app/src/test/resources/fixtures/` and the legacy JSON of the four settings classes under `fixtures/legacy_json/`, captured BEFORE any field is added (a throwaway test prints `AppJson.storage.encodeToString(...)` of the defaults; read it from the CI report, extending `.github/scripts/ci_report.py` to include the test stdout if needed). Test: every fixture parses through the real parser.
+2. WP0.4 goldens. Artifacts cannot be downloaded here (LOOK OUT FOR 1). Plan: extend `ci_report.py` to post gzip+base64 chunks (each under 60,000 characters) of `app/build/golden-actual/` as extra check runs, decode them in the sandbox, commit them as `app/src/test/resources/golden/`. Read `V2_DECISIONS.md` `## Key architectural facts` and `## Deferred` first; check whether `PlaybackEngine` can be built on the JVM, else extract a pure core (A8).
+3. WP0.5 triage (verify-first list in the brief), then push the annotated tag `v2-p0` and record the I12 launch-safety review.
 
 **4. DECISIONS**
-- Kickoff decisions recorded in `V2_DECISIONS.md` ("2026-10-10 — V2 campaign kickoff"); the amplitude-reactive rejection is annotated OVERRIDDEN and the "AI drives the pipeline" paragraph is amended (Craft vs Direction).
+- Kickoff decisions are in `V2_DECISIONS.md` ("2026-10-10 — V2 campaign kickoff"), with the OVERRIDDEN annotation and the Craft-vs-Direction amendment.
+- CI feedback channel is the check run "CI report" (WP0.2a). JUnit 4.13.2 through catalog alias `libs.junit`; tests live in `app/src/test/java/com/example/`.
 
 **5. DEVIATIONS**
-- `docs/CAMPAIGN_BRIEF.md` was re-typed from the chat context (the attachment was not on disk) and the real GitHub token on the D1 kickoff line is replaced by `<PASTE TOKEN>` plus a note, because the repo is public. Structure checked: 12 A-sections, 4 B, 6 D, 39 WPs, 78 KB, no token-like string (checked with a regex for the token prefix plus 20+ characters). If a transcription slip is suspected, ask John to attach the original.
-- A7 "Reading CI" (job logs, artifact zips) does not work from the sandbox; WP0.2a adds a replacement channel.
+- `docs/CAMPAIGN_BRIEF.md` was re-typed from the chat (the attachment was not on disk); the real token on its D1 line is replaced by `<PASTE TOKEN>` plus a note because the repo is public. Checked: 12 A-sections, 4 B, 6 D, 39 WPs, 78 KB, no token-like string. If a transcription slip is suspected, ask John to attach the original.
+- A7 "Reading CI" (job logs, artifact zips) does not work from the sandbox and is replaced by the CI report check run.
+- WP0.2 was done as 0.2a (CI report channel and `.github/scripts/ci_report.py`, not in the brief) and 0.2b (JUnit and the test step).
 
 **6. LOOK OUT FOR**
-1. **CI logs and artifacts cannot be downloaded from the sandbox.** `GET /actions/jobs/<id>/logs` answers 302 to `productionresultssa1.blob.core.windows.net`, which does not resolve here. Job/step status, check runs and annotations on `api.github.com` do work. John can allow `*.blob.core.windows.net` (and `pipelines.actions.githubusercontent.com`) in the sandbox network settings. This also affects WP0.4 (downloading the `golden-actual` artifact): plan another transport (check-run text, or release assets via `release-assets.githubusercontent.com`, which is allowed).
-2. **The bash shell does not persist between calls** (new pid, env vars lost). Supply the token inside each command that needs it; push with `git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)" push ...` (no remote URL rewrite needed; nothing is written to disk). This worked for a tag push and a branch delete.
-3. `/mnt/user-data/uploads` was empty: attachments are not mirrored to disk.
-4. Unauthenticated `api.github.com` HEAD returned 403; authenticated calls work.
-5. The repo has no tracked `.gitignore` (GEMINI.md): never `git add -A`; stage explicit paths.
-6. CI today: `.github/workflows/build.yml`, `on: [push]`, actions/checkout@v4, setup-java@v4 (temurin 17), `gradle/actions/setup-gradle@v4` with Gradle 8.9, `gradle assembleDebug`, upload artifact `app-debug`. Catalog: AGP 8.7.2, Kotlin 2.0.21, KSP 2.0.21-1.0.27, Room 2.6.1, serialization 1.7.3. Namespace `com.example`. No test dependencies yet.
-7. `V2_DECISIONS.md` is LF. New "What's implemented" entries go immediately before `## AI drives the pipeline`; style is `- **Title ...**` with 2-space continuation lines.
-8. Before every push run the leak gate and require empty output: `grep -rEl 'github_pat_[A-Za-z0-9_]{20,}' --exclude-dir=.git .` (do not write the bare token prefix in repo text; a plain-prefix grep gives false alarms).
-9. Step 0 reading still pending: `V2_DECISIONS.md` sections `## Deferred, with rationale` and `## Key architectural facts`, `PROMPT_CONSIDERATIONS.md` per-field sections. Read them before engine work (WP0.4 and later).
+1. CI logs and artifacts cannot be downloaded here: `GET /actions/jobs/<id>/logs` answers 302 to `productionresultssa1.blob.core.windows.net`, which does not resolve. Use the CI report check run (item 2). John can allow `*.blob.core.windows.net` in the sandbox network settings if he wants artifact downloads.
+2. Reading CI: poll `GET /repos/john1183-prog/rigscript/actions/runs?head_sha=<sha>` and keep runs with `head_branch == "main"` (tag pushes also start the workflow); then `GET /repos/john1183-prog/rigscript/commits/<sha>/check-runs`, entry `name == "CI report"`: `output.title` is the one-line result, `output.text` has counts, failing tests, compiler errors, "what went wrong" and the Gradle tail. A build takes about 3.5 minutes; polling every 25 s for up to 200 s per bash call worked.
+3. The bash shell does not persist between calls and `/mnt/user-data/uploads` is empty. Put the token inside each command that needs it. Push with `git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)" push origin main` (no remote URL change, nothing on disk). Before every push: `git fetch`, `git merge-base --is-ancestor origin/main HEAD`, and the leak gate `grep -rEl 'github_pat_[A-Za-z0-9_]{20,}' --exclude-dir=.git .` must print nothing (never write the bare token prefix in repo text). Unauthenticated `api.github.com` calls answer 403; always send the token.
+4. `V2_DECISIONS.md` is LF. New "What's implemented" entries go immediately before `## AI drives the pipeline`; style is `- **Title ...**` with 2-space continuation lines. Edit it with a Python script that asserts each anchor is unique and opens files with `newline=''`.
+5. A Python edit script that fails an anchor assertion aborts before writing, while a shell chain without `set -e` carries on. After every commit chain run `git log --oneline -5` to confirm the commits exist (this session one log commit was silently skipped).
+6. The repo has no tracked `.gitignore`: never `git add -A`; stage explicit paths. Stack: AGP 8.7.2, Kotlin 2.0.21, KSP 2.0.21-1.0.27, Room 2.6.1, serialization 1.7.3, namespace `com.example`; CI uses checkout@v4, setup-java@v4 (temurin 17), setup-gradle@v4 (Gradle 8.9); baseline has 15 Kotlin warnings.
+7. Step 0 reading still pending: `V2_DECISIONS.md` `## Deferred, with rationale` and `## Key architectural facts` (line numbers shifted by +41 after my edits; use `grep -n '^## '`), and the `PROMPT_CONSIDERATIONS.md` per-field sections.
 
 **7. VERIFICATION STATUS**
-- Baseline CI green: VERIFIED-BY-CI (run 37477158994). Tag and branch deletion: VERIFIED by `git ls-remote`. Docs edits: VERIFIED-BY-READING. No tests, no device. `TEST_CHECKLIST.md` does not exist yet.
+- VERIFIED-BY-CI: run 38051012391 (build, 2 tests, APK). CI report channel VERIFIED by API reads (runs 38028154388 and 38051012391). Tag and branch deletion VERIFIED by `git ls-remote`. Docs edits VERIFIED-BY-READING. Nothing is device-tested. `TEST_CHECKLIST.md` does not exist yet (first needed with Phase 1).
 
 **8. OPEN QUESTIONS**
 - None.
 
 **9. ENVIRONMENT**
-- git 2.43.0, OpenJDK 21, Python 3.12.3 (numpy, matplotlib, PIL present), ffmpeg and ffprobe present. No gradle, sdkmanager or kotlinc; dl.google.com, repo.maven.apache.org and plugins.gradle.org unreachable, so there is no local compile and CI is the compiler. github.com and authenticated api.github.com reachable. The token is a fine-grained PAT given by John in chat; it can read Actions, push tags and delete branches; permission to push workflow files was untested at the time of writing. Never write it to disk or output.
+- git 2.43.0, OpenJDK 21, Python 3.12.3 (numpy, matplotlib, PIL, yaml present), ffmpeg and ffprobe present. No gradle, sdkmanager or kotlinc; dl.google.com, repo.maven.apache.org and plugins.gradle.org are unreachable, so there is no local compile and CI is the compiler. github.com and authenticated api.github.com work. The token is a fine-grained PAT that John pastes in chat; it can read Actions, push commits and tags, delete branches and update workflow files (all VERIFIED by successful operations). Never write it to disk or print it.
 
 **10. REMINDERS**
-- I1 old scripts render identically; I2 determinism and seek-equals-sequential; I3 logic only in the shared engine, renderers only draw; I5 never describe unmerged fields in the prompt and keep the two prompt copies byte-identical; I11 every new engine layer fail-soft. Re-read A3 and A4 before touching engine code. Every commit ends with the A5 Verification footer; no Co-authored-by.
+- I1 old scripts render identically; I2 determinism and seek-equals-sequential; I3 logic only in the shared engine, renderers only draw; I5 never describe unmerged fields in the prompt and keep the two prompt copies byte-identical; I11 every new engine layer fail-soft. Re-read A3 and A4 before touching engine code. Every commit ends with the A5 Verification footer; no Co-authored-by; commit identity `john1183-prog <john1183-prog@users.noreply.github.com>`.
 
 **11. WHY THE SESSION STOPPED**
-- Not stopped (in progress).
+- Clean boundary: WP0.2 done and CI-green. Re-typing the 78 KB brief into the repo and building the CI-report workaround used a large share of the budget, and WP0.3 needs reading several large schema files, so I did not start it without the 15% handoff reserve.
 
 ## OPEN QUESTIONS
 
@@ -64,7 +64,7 @@ None.
 |---|---|---|---|---|---|
 | 0.1 | Bootstrap and log | A | done | 91c67f6 | success (run 38028034601) |
 | 0.1b | Remove other remote branches | A | done | n/a (remote op) | n/a |
-| 0.2 | Test infrastructure and CI | A | in progress (0.2a CI report; 0.2b tests next) | | |
+| 0.2 | Test infrastructure and CI | A | done (0.2a CI report, 0.2b JUnit + CI tests) | 9d92a45, 593f257 | success (runs 38028154388, 38051012391) |
 | 0.3 | Fixtures | A | not started | | |
 | 0.4 | Legacy protection (goldens) | A | not started | | |
 | 0.5 | Triage and small fixes | A | not started | | |
@@ -88,3 +88,8 @@ None.
 - **WP0.1 CI:** push `eb6b0b3..91c67f6` (commits `dcd2c85`, `3c916ad`, `91c67f6`): run 38028034601 completed success, every step green, APK uploaded. VERIFIED-BY-CI.
 - **Incident (no impact):** a pre-commit scan printed one prefix match before I pushed. It was only my own log sentence naming the token prefix; a regex for real token-shaped strings found none in the worktree or in git history. The sentence is reworded and the gate now blocks pushes on token-shaped strings.
 - **WP0.2a:** the sandbox cannot download job logs (redirect host does not resolve). Added `.github/scripts/ci_report.py` and a workflow that tees Gradle output to `build.log`, publishes a check run named "CI report" (title, counts, compiler errors, failing tests, log tail) and uploads `build-log`. Script dry-run and YAML parse checked locally. Result of the real run: see next entry.
+- **WP0.2a result:** push `91c67f6..9d92a45`: run 38028154388 success. The check run "CI report" (id 114143526652) is readable through `commits/<sha>/check-runs`: title "build SUCCESS | no unit-test results", APK 17.2 MB, 15 Kotlin warnings, Gradle tail. Updating a workflow file with the token worked. VERIFIED-BY-CI.
+- **WP0.2b:** JUnit 4.13.2 added through `gradle/libs.versions.toml` (`libs.junit`), `testOptions { unitTests.isReturnDefaultValues = true }` in `app/build.gradle.kts`, `app/src/test/java/com/example/SanityTest.kt` (2 tests; one proves the Log stub returns defaults), workflow runs `gradle testDebugUnitTest assembleDebug` and uploads `unit-test-report` with `if: always()`.
+- **WP0.2b result:** push `9d92a45..593f257`: run 38051012391 success; CI report title "build SUCCESS | tests 2 run, 0 failed, 0 errors, 0 skipped"; APK 17.2 MB. VERIFIED-BY-CI. WP0.2 accepted.
+- **Incident (no impact):** my first log-update script for WP0.2 aborted on a failed anchor assertion before writing, so the intended log commit was empty and silently skipped; only the two code commits were pushed. Redone in this commit.
+- **Session 1 stop:** clean boundary after WP0.2 (see packet section 11). Phase 0 continues with WP0.3.

@@ -91,6 +91,25 @@ def test_results():
     return len(files), total, failed, errored, skipped, failures
 
 
+def captured_output(limit=40000):
+    """Lines that tests print on purpose, prefixed `CAPTURE|` (WP0.3 legacy JSON, WP0.4 goldens)."""
+    out, size = [], 0
+    for path in sorted(glob.glob("app/build/test-results/**/*.xml", recursive=True)):
+        try:
+            root = ET.parse(path).getroot()
+        except Exception:
+            continue
+        for node in root.iter("system-out"):
+            for line in (node.text or "").split("\n"):
+                if line.startswith("CAPTURE|"):
+                    size += len(line) + 1
+                    if size > limit:
+                        out.append("...[capture truncated at %d characters]" % limit)
+                        return out
+                    out.append(line)
+    return out
+
+
 def apk_info():
     path = "app/build/outputs/apk/debug/app-debug.apk"
     if os.path.exists(path):
@@ -128,6 +147,9 @@ def build_report(log_lines):
             parts += ["", "**%s**" % name, "```", body, "```"]
     if errors:
         parts += ["", "### Compiler errors (first 80)", "```"] + errors[:80] + ["```"]
+    captured = captured_output()
+    if captured:
+        parts += ["", "### Captured test output (%d lines)" % len(captured), "```"] + captured + ["```"]
     if wrong:
         parts += ["", "### Gradle: what went wrong", "```"] + wrong[:60] + ["```"]
     tail = [clean(line) for line in log_lines[-70:]]

@@ -1,0 +1,35 @@
+{
+"version":"1.0",
+"events":[
+  {"timeSec":0.0,"pose":"stand_straight","duration":0.3,"ease":"ease_out","futureEventField":7},
+  {"timeSec":1.0,"pose":"moonwalk","expression":"angry","cameraZoom":1.3,"caption":"event with an unknown pose"},
+  {"timeSec":2.0,"pose":"wave","duration":0.6,"ease":"wobble"},
+  {"timeSec":3.0,"pose":"explain","sceneShape":"castle","sceneAtmosphere":"meteors","backgroundStyle":"plaid"},
+  {"timeSec":4.0,"pose":"wave","figureX":1.2},
+  {"timeSec":5.0,"pose":"think","duration":2.0},
+  {"timeSec":5.5,"pose":"present","duration":2.0},
+  {"timeSec":8.0,"pose":"wave"},
+  {"timeSec":8.0,"pose":"think","soundEffect":"nowhere_to_be_found"},
+  {"timeSec":11.0,"pose":"stand_straight"},
+  {"timeSec":10.5,"pose":"celebrate"}
+],
+"blinkEvents":[3.0,1.0,1.0],
+"overlayLayers":[
+  {"id":"e_type","type":"hologram","startSec":0.0,"endSec":2.0},
+  {"id":"e_shape","type":"shape","shape":"star","startSec":0.0,"endSec":2.0,"x":0.2,"y":0.2,"width":0.1,"height":0.1},
+  {"id":"e_styles","type":"text","text":"styles","startSec":1.0,"endSec":3.0,"x":0.8,"y":0.8,"enterStyle":"spiral","exitStyle":"implode","enterEase":"wobble","exitEase":"wobble2"},
+  {"id":"e_slot","type":"text","text":"slot","startSec":4.0,"endSec":6.0,"slot":"middle","x":0.1,"y":0.9},
+  {"id":"e_kf","type":"shape","shape":"circle","radius":0.03,"startSec":3.0,"endSec":6.0,"x":0.9,"y":0.1,"anim":[{"t":0.0,"x":0.9,"ease":"zigzag"},{"t":2.0,"x":0.1}]},
+  {"id":"e_particles","type":"particles","particleShape":"star","startSec":6.5,"endSec":8.0,"x":0.5,"y":0.5},
+  {"id":"e_physics","type":"shape","shape":"circle","radius":0.02,"physics":"orbit","startSec":7.0,"endSec":9.0,"x":0.4,"y":0.4},
+  {"id":"e_bone","type":"shape","shape":"circle","radius":0.02,"parentBone":"tail","startSec":9.0,"endSec":10.0},
+  {"id":"e_both","type":"shape","shape":"circle","radius":0.02,"parentBone":"head","parentLayer":"e_bone","startSec":9.0,"endSec":10.0},
+  {"id":"e_ghost","type":"shape","shape":"circle","radius":0.02,"parentLayer":"ghost","startSec":10.0,"endSec":11.0,"x":0.6,"y":0.2},
+  {"id":"e_cycle_a","type":"shape","shape":"rect","width":0.05,"height":0.05,"parentLayer":"e_cycle_b","startSec":11.0,"endSec":12.0,"x":0.3,"y":0.3},
+  {"id":"e_cycle_b","type":"shape","shape":"rect","width":0.05,"height":0.05,"parentLayer":"e_cycle_a","startSec":11.0,"endSec":12.0,"x":0.7,"y":0.7},
+  {"id":"e_never","type":"text","text":"never visible","startSec":5.0,"endSec":5.0,"x":0.5,"y":0.95},
+  {"id":"e_fig","type":"figure","pose":"custom_pose","startSec":2.0,"endSec":4.0,"x":0.8,"y":0.6,"scale":0.5,"futureLayerField":"ignored"},
+  {"id":"e_text_null","type":"text","startSec":6.0,"endSec":7.0}
+],
+"futureTopLevel":{"a":1}
+}

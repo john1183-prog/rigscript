@@ -1,0 +1,1 @@
+`gen_fixtures.py` regenerates the legacy script corpus in `app/src/test/resources/fixtures/` deterministically (`python3 tools/fixtures/gen_fixtures.py`); the corpus uses only baseline (eb6b0b3) fields, so add new fixtures for new fields instead of editing these.

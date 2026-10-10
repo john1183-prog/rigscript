@@ -1,0 +1,7 @@
+{
+"version":"1.0",
+"events":[
+  {"timeSec":0.0,"pose":"stand_straight"},
+  {"timeSec":2.0,"pose":"wave"}
+]
+}

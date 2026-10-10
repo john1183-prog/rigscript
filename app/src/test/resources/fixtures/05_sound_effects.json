@@ -1,0 +1,24 @@
+{
+"version":"1.0",
+"events":[
+  {"timeSec":0.0,"pose":"stand_straight","duration":0.5,"soundEffect":"select","soundEffectVolume":1.0},
+  {"timeSec":1.0,"pose":"wave","duration":0.5,"soundEffect":"click","soundEffectVolume":1.0},
+  {"timeSec":2.0,"pose":"think","duration":0.5,"soundEffect":"confirm","soundEffectVolume":0.8},
+  {"timeSec":3.0,"pose":"explain","duration":0.5,"soundEffect":"error","soundEffectVolume":0.4},
+  {"timeSec":4.0,"pose":"present","duration":0.5,"soundEffect":"glitch","soundEffectVolume":1.0},
+  {"timeSec":5.0,"pose":"point_self","duration":0.5,"soundEffect":"drop","soundEffectVolume":0.6},
+  {"timeSec":6.0,"pose":"open_hands","duration":0.5,"soundEffect":"tick","soundEffectVolume":1.0},
+  {"timeSec":7.0,"pose":"shrug","duration":0.5,"soundEffect":"toggle","soundEffectVolume":0.9},
+  {"timeSec":8.0,"pose":"excited","duration":0.5,"soundEffect":"bong","soundEffectVolume":1.0},
+  {"timeSec":9.0,"pose":"confused","duration":0.5,"soundEffect":"custom_boom","soundEffectVolume":0.9},
+  {"timeSec":10.0,"pose":"tired","duration":0.5,"soundEffect":"unknown_sfx_id","soundEffectVolume":1.0},
+  {"timeSec":11.0,"pose":"celebrate","duration":0.5,"soundEffect":"pluck","soundEffectVolume":1.5},
+  {"timeSec":12.0,"pose":"sit","duration":0.5,"soundEffect":"switch","soundEffectVolume":0.0},
+  {"timeSec":13.5,"pose":"jump","soundEffect":"drop"},
+  {"timeSec":13.5,"pose":"celebrate","soundEffect":"open","soundEffectVolume":0.7},
+  {"timeSec":15.0,"pose":"point_up","soundEffect":"question"},
+  {"timeSec":16.5,"pose":"stand_straight","soundEffect":"close","soundEffectVolume":0.5},
+  {"timeSec":18.0,"pose":"stand_straight"}
+],
+"blinkEvents":[2.2,7.9]
+}

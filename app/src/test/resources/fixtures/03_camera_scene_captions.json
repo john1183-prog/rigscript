@@ -1,0 +1,18 @@
+{
+"version":"1.0",
+"events":[
+  {"timeSec":0.0,"pose":"stand_straight","duration":0.4,"ease":"ease_out","sceneShape":"mountains","sceneAtmosphere":"none","skyColor":4287090411,"groundColor":4293457144,"horizonY":0.68,"showGroundLine":true,"groundLineColor":4283417591,"groundLineYFraction":0.8,"cameraZoom":1.0,"caption":"Camera, scene and caption tour","captionDurationSec":2.0},
+  {"timeSec":2.5,"pose":"explain","duration":0.6,"sceneShape":"city","sceneAtmosphere":"rain","skyColor":4279640382,"groundColor":4279186499,"horizonY":0.72,"cameraZoom":1.2,"cameraPanX":-0.06},
+  {"timeSec":5.0,"pose":"present","duration":0.6,"ease":"ease_out","sceneShape":"trees","sceneAtmosphere":"snow","skyColor":4288395220,"groundColor":4292667632,"horizonY":0.7,"cameraZoom":1.0,"cameraPanX":0.0,"cameraPanY":0.04,"cameraShake":0.35,"caption":"A longer caption that has to wrap over several lines so the caption fitting code is exercised on both renderers","captionDurationSec":3.5},
+  {"timeSec":7.5,"pose":"think","duration":0.8,"sceneShape":"clouds","sceneAtmosphere":"fog","backgroundStyle":"gradient","backgroundGradientColor":4280825235,"cameraPanY":0.0,"cameraShake":0.0},
+  {"timeSec":10.0,"pose":"wave","duration":0.6,"ease":"spring","sceneShape":"room","sceneAtmosphere":"stars","skyColor":4294174160,"groundColor":4291405942,"horizonY":0.68,"backgroundStyle":"solid","cameraZoom":1.8,"cameraPanX":0.1,"cameraPanY":-0.05,"caption":"Café — déjà vu (non-ASCII caption)","captionDurationSec":2.0},
+  {"timeSec":12.5,"pose":"celebrate","duration":0.6,"ease":"elastic_out","expression":"happy","sceneShape":"beach","sceneAtmosphere":"none","skyColor":4279904068,"groundColor":4279049002,"horizonY":0.62,"cameraZoom":0.8,"cameraShake":0.4,"bgColor":4282263331,"caption":"Zoomed out and shaking","captionDurationSec":1.5},
+  {"timeSec":15.0,"pose":"stand_straight","duration":0.8,"sceneShape":"none","sceneAtmosphere":"none","showGroundLine":false,"cameraZoom":1.0,"cameraPanX":0.0,"cameraPanY":0.0,"cameraShake":0.0},
+  {"timeSec":17.0,"pose":"point_right","figureX":0.3,"figureY":0.55,"figureScale":0.8,"headScale":1.2,"figureOpacity":0.6},
+  {"timeSec":19.5,"pose":"point_left","figureX":0.7,"figureScale":1.3,"headScale":0.9,"figureOpacity":1.0},
+  {"timeSec":22.0,"pose":"stand_straight","figureX":0.5,"figureY":0.52,"figureScale":1.0,"headScale":1.0},
+  {"timeSec":24.0,"pose":"excited","boneColor":4294930499,"headColor":4294954112,"jointColor":4294967295,"mouthColor":4282263331,"eyeColor":4282263331,"eyebrowColor":4282263331,"bgColor":4279983648,"backgroundStyle":"gradient","backgroundGradientColor":4278209856},
+  {"timeSec":27.0,"pose":"stand_straight","boneColor":4278190335,"headColor":4278190335,"jointColor":4278190335,"mouthColor":4279045396,"eyeColor":4279045396,"eyebrowColor":4279045396,"bgColor":4279900718,"backgroundStyle":"solid","caption":"Line one\nLine two","captionDurationSec":2.0}
+],
+"blinkEvents":[1.2,6.4,11.1,18.3]
+}

@@ -1,0 +1,29 @@
+{
+"version":"1.0",
+"events":[
+  {"timeSec":0.0,"pose":"stand_straight","duration":0.6,"ease":"linear"},
+  {"timeSec":1.5,"pose":"wave","duration":0.6,"ease":"ease_in","expression":"wide"},
+  {"timeSec":3.0,"pose":"think","duration":0.6,"ease":"ease_out","expression":"squint"},
+  {"timeSec":4.5,"pose":"explain","duration":0.6,"ease":"ease_in_out","expression":"worried"},
+  {"timeSec":6.0,"pose":"walk_a","duration":0.6,"ease":"bounce","expression":"angry"},
+  {"timeSec":7.5,"pose":"walk_b","duration":0.6,"ease":"elastic_out","expression":"happy"},
+  {"timeSec":9.0,"pose":"jog_a","duration":0.6,"ease":"spring","springStiffness":280,"springDamping":28,"expression":"normal"},
+  {"timeSec":10.5,"pose":"jog_b","duration":0.6,"ease":"rigid","expression":"wide"},
+  {"timeSec":12.0,"pose":"jump","duration":0.6,"ease":"linear","expression":"squint"},
+  {"timeSec":13.5,"pose":"tired","duration":0.6,"ease":"ease_in","expression":"worried"},
+  {"timeSec":15.0,"pose":"lazy","duration":0.6,"ease":"ease_out","expression":"angry"},
+  {"timeSec":16.5,"pose":"sleepy","duration":0.6,"ease":"ease_in_out","expression":"happy"},
+  {"timeSec":18.0,"pose":"confused","duration":0.6,"ease":"bounce","expression":"normal"},
+  {"timeSec":19.5,"pose":"excited","duration":0.6,"ease":"elastic_out","expression":"wide"},
+  {"timeSec":21.0,"pose":"shrug","duration":0.6,"ease":"spring","springStiffness":120,"springDamping":12,"expression":"squint"},
+  {"timeSec":22.5,"pose":"point_right","duration":0.6,"ease":"rigid","expression":"worried"},
+  {"timeSec":24.0,"pose":"point_left","duration":0.6,"ease":"linear","expression":"angry"},
+  {"timeSec":25.5,"pose":"point_up","duration":0.6,"ease":"ease_in","expression":"happy"},
+  {"timeSec":27.0,"pose":"celebrate","duration":0.6,"ease":"ease_out","expression":"normal"},
+  {"timeSec":28.5,"pose":"sit","duration":0.6,"ease":"ease_in_out","expression":"wide"},
+  {"timeSec":30.0,"pose":"present","duration":0.6,"ease":"bounce","expression":"squint"},
+  {"timeSec":31.5,"pose":"point_self","duration":0.6,"ease":"elastic_out","expression":"worried"},
+  {"timeSec":33.0,"pose":"open_hands","duration":0.6,"ease":"spring","springStiffness":400,"springDamping":40,"expression":"angry"}
+],
+"blinkEvents":[2.0,5.7,9.4,13.1,16.8,20.5,24.2,27.9,31.6]
+}

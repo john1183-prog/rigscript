@@ -55,6 +55,11 @@ android {
     kotlinOptions { jvmTarget = "11" }
 
     buildFeatures { compose = true }
+
+    testOptions {
+        // Pure-JVM unit tests may call android.util.Log and similar: return defaults instead of throwing.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -78,4 +83,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation(libs.junit)
 }

@@ -197,51 +197,75 @@ object VideoExporter {
             } else null
 
         // ── Build one ExportTarget per aspect ratio ───────────────────────────
-        val targets = aspectsToExport.map { aspect ->
-            val (w, h) = settings.dimensions(aspect)
-            val videoFormat = MediaFormat.createVideoFormat(MIME, w, h).apply {
-                setInteger(MediaFormat.KEY_COLOR_FORMAT,
-                    MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
-                setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-                // 1 I-frame/sec was needlessly dense for a final shareable
-                // file with no scrubbing requirement of its own — every
-                // I-frame costs several times what a P-frame does for the
-                // same visual quality. 5s intervals free up bits for the
-                // encoder to spend on actual detail instead, which also
-                // helps the blockiness report above independent of the
-                // bitrate bump.
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
-            }
-            // VBR lets the encoder spend more bits on genuinely complex
-            // frames (a particle burst, a scene change) and fewer on
-            // simple ones, rather than a flat per-frame budget starving
-            // exactly the moments most likely to look blocky at a flat
-            // rate. Checked against actual encoder capabilities rather
-            // than assumed — there's no device in this loop to verify
-            // an unsupported mode fails gracefully rather than throwing.
-            val codecList = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-            val encoderName = codecList.findEncoderForFormat(videoFormat)
-            val supportsVbr = encoderName?.let { name ->
-                runCatching {
-                    codecList.codecInfos.first { it.name == name }
-                        .getCapabilitiesForType(MIME)
-                        .encoderCapabilities
-                        .isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
-                }.getOrDefault(false)
-            } ?: false
-            if (supportsVbr) {
-                videoFormat.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
-            }
-            val encoder = MediaCodec.createEncoderByType(MIME)
-            encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            encoder.start()
+        val builtTargets = ArrayList<ExportTarget>()
+        val targets: List<ExportTarget> = try {
+            aspectsToExport.map { aspect ->
+                val (w, h) = settings.dimensions(aspect)
+                val videoFormat = MediaFormat.createVideoFormat(MIME, w, h).apply {
+                    setInteger(MediaFormat.KEY_COLOR_FORMAT,
+                        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
+                    setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                    // 1 I-frame/sec was needlessly dense for a final shareable
+                    // file with no scrubbing requirement of its own — every
+                    // I-frame costs several times what a P-frame does for the
+                    // same visual quality. 5s intervals free up bits for the
+                    // encoder to spend on actual detail instead, which also
+                    // helps the blockiness report above independent of the
+                    // bitrate bump.
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
+                }
+                // VBR lets the encoder spend more bits on genuinely complex
+                // frames (a particle burst, a scene change) and fewer on
+                // simple ones, rather than a flat per-frame budget starving
+                // exactly the moments most likely to look blocky at a flat
+                // rate. Checked against actual encoder capabilities rather
+                // than assumed — there's no device in this loop to verify
+                // an unsupported mode fails gracefully rather than throwing.
+                val codecList = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+                val encoderName = codecList.findEncoderForFormat(videoFormat)
+                val supportsVbr = encoderName?.let { name ->
+                    runCatching {
+                        codecList.codecInfos.first { it.name == name }
+                            .getCapabilitiesForType(MIME)
+                            .encoderCapabilities
+                            .isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                    }.getOrDefault(false)
+                } ?: false
+                if (supportsVbr) {
+                    videoFormat.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                }
+                val encoder = MediaCodec.createEncoderByType(MIME)
+                var createdOutput: OutputTarget? = null
+                try {
+                    encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    encoder.start()
 
-            val labelSuffix = if (aspectsToExport.size > 1) "_${aspect.replace(":", "x")}" else ""
-            val output = OutputTarget.create(context, project.projectName + labelSuffix)
-            val muxer  = output.openMuxer()
+                    val labelSuffix = if (aspectsToExport.size > 1) "_${aspect.replace(":", "x")}" else ""
+                    val output = OutputTarget.create(context, project.projectName + labelSuffix)
+                    createdOutput = output
+                    val muxer  = output.openMuxer()
 
-            ExportTarget(aspect, w, h, output, encoder, muxer)
+                    ExportTarget(aspect, w, h, output, encoder, muxer).also { builtTargets += it }
+                } catch (e: Throwable) {
+                    // This target failed half-built: release its own encoder and partial output file.
+                    runCatching { encoder.stop() }
+                    runCatching { encoder.release() }
+                    createdOutput?.let { o -> runCatching { o.abort(context) } }
+                    throw e
+                }
+            }
+        } catch (e: Throwable) {
+            // WP0.5: the targets built before the failure (encoder started, output file created) would
+            // otherwise leak, because the `finally` below only covers a build that succeeded.
+            for (t in builtTargets) {
+                t.bitmap.recycle()
+                runCatching { t.encoder.stop() }
+                runCatching { t.encoder.release() }
+                runCatching { t.muxer.release() }
+                runCatching { t.output.abort(context) }
+            }
+            throw e
         }
 
         fun startMuxerIfNeeded(t: ExportTarget) {
@@ -277,8 +301,16 @@ object VideoExporter {
 
         /** Blocking variant used only for the final drain, where we must wait for EOS. */
         fun drainUntilEndOfStream(t: ExportTarget) {
+            var idle = 0
             while (true) {
                 val outIdx = t.encoder.dequeueOutputBuffer(t.bufferInfo, TIMEOUT)
+                // WP0.5 (B3): an encoder that never signals end of stream would otherwise hang the export
+                // for good. 3000 empty polls of 10 ms is 30 seconds without a single output buffer.
+                if (outIdx == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    check(++idle < 3000) { "Encoder did not signal end of stream within 30 seconds" }
+                } else {
+                    idle = 0
+                }
                 when {
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> startMuxerIfNeeded(t)
                     outIdx >= 0 -> {
@@ -307,7 +339,16 @@ object VideoExporter {
                     check(++attempts < 500) { "Encoder stalled: no input buffer became available" }
                 }
             }
-            t.encoder.getInputBuffer(inIdx)!!.let { it.clear(); it.put(data) }
+            val inputBuffer = t.encoder.getInputBuffer(inIdx)!!
+            inputBuffer.clear()
+            // WP0.5: an input buffer smaller than one frame would make put() throw a BufferOverflowException
+            // with no hint of the cause. KEY_MAX_INPUT_SIZE is not set on the encoder format: for encoders it
+            // is only a hint, and its effect cannot be verified without devices.
+            check(data.size <= inputBuffer.remaining()) {
+                "Encoder input buffer too small for one frame: the frame is ${data.size} bytes, " +
+                    "the buffer holds ${inputBuffer.remaining()}"
+            }
+            inputBuffer.put(data)
             t.encoder.queueInputBuffer(inIdx, 0, data.size, presentationTimeUs,
                 if (isEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
         }
@@ -552,7 +593,7 @@ object VideoExporter {
 
             val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, 8_000_000)
+                setInteger(MediaFormat.KEY_BIT_RATE, settings.bitrateMbps * 1_000_000)
                 setInteger(MediaFormat.KEY_FRAME_RATE, fps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
                 // Explicit, not left to the driver default — see

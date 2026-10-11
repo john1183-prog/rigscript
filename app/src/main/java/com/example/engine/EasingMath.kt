@@ -7,7 +7,8 @@ import kotlin.math.*
  * and return a mapped value also in approximately [0, 1].
  *
  * The spring analytical path is used during scrubbing/seeking (no velocity
- * history needed). Real-time playback uses Euler sub-steps in [PlaybackEngine].
+ * history needed). Live playback uses the same evaluation since WP0.5; the Euler sub-steps in
+ * [PlaybackEngine] now only smooth a hot reload while playing.
  */
 object EasingMath {
 

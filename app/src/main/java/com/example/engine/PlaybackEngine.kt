@@ -179,13 +179,20 @@ class PlaybackEngine {
     // knows every timestamp up front and doesn't need a live "just crossed
     // it" signal.
     private var soundEffectCues: List<SoundEffectCue> = emptyList()
-    private var lastCueScanTimeSec: Float = 0f
+    private var lastCueScanTimeSec: Float = -1f
+
+    /**
+     * Where the next cue scan starts for a playhead at [timeSec]. Scans cover (last, now], so a playhead at the
+     * very start must begin below zero or a cue at exactly 0 s would never fire in live playback, although the
+     * export mixes it (WP0.5; found by the WP0.4 cue tests).
+     */
+    private fun cueScanStart(timeSec: Float): Float = if (timeSec <= 0f) -1f else timeSec
     private val pendingSoundEffectTriggers = mutableListOf<SoundEffectCue>()
 
     /** Loads the project's sound-effect trigger cues — call whenever the active script changes. */
     fun loadSoundEffectCues(cues: List<SoundEffectCue>) {
         soundEffectCues = cues
-        lastCueScanTimeSec = currentTimeSec
+        lastCueScanTimeSec = cueScanStart(currentTimeSec)
         pendingSoundEffectTriggers.clear()
     }
 
@@ -359,7 +366,7 @@ class PlaybackEngine {
         reloadChase = false
         resolveBaseAngles(0f, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
-        lastCueScanTimeSec = 0f
+        lastCueScanTimeSec = cueScanStart(0f)
         pendingSoundEffectTriggers.clear()
     }
 
@@ -420,7 +427,7 @@ class PlaybackEngine {
         baseAngles.copyInto(currentAngles)
         // V2 — a seek/scrub should never replay every sound effect between the
         // old and new position; just move the scan pointer, don't fire anything.
-        lastCueScanTimeSec = timeSec
+        lastCueScanTimeSec = cueScanStart(timeSec)
         pendingSoundEffectTriggers.clear()
     }
 
@@ -428,7 +435,7 @@ class PlaybackEngine {
      * Export-only variant of [seekTo] that also applies the amplitude motion
      * layer (idle breathing + talk sway) on top of the scripted pose.
      *
-     * Unlike [tick], the pose is resolved analytically (no spring integration,
+     * Like [tick] (since WP0.5), the pose is resolved analytically (no spring integration,
      * no inter-frame carry-over for the bones). However, [smoothedAmplitude]
      * IS stateful — its low-pass filter accumulates correctly only when frames
      * are called sequentially (0, 1, 2, ...). Never call this out of order.

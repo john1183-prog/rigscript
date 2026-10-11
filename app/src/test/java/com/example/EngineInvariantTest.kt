@@ -115,6 +115,26 @@ class EngineInvariantTest {
     }
 
     @Test
+    fun aCueAtExactlyTimeZeroFiresOnceAtTheStartOfPlayback() {
+        // 05_sound_effects has a cue ("select") at 0.0 s. Before WP0.5 live ticking never fired it.
+        val script = Fixtures.script("05_sound_effects")
+        val kfs = EngineHarness.compile(script)
+        val live = EngineHarness.create(script, TestEnvelopes.silence(20f), noAmplitude, kfs)
+        live.tick(1f / 30f, 0f)
+        val first = live.pollTriggeredSoundEffects()
+        assertEquals("cue ids at the first frame: $first", listOf("select"), first.map { it.clipId })
+        live.tick(1f / 30f, 0f)
+        assertTrue("it must not fire again", live.pollTriggeredSoundEffects().isEmpty())
+        // Restarting from the beginning (reset, or a seek to 0) arms it again; scrubbing elsewhere does not.
+        live.seekTo(0f)
+        live.tick(1f / 30f, 0f)
+        assertEquals(listOf("select"), live.pollTriggeredSoundEffects().map { it.clipId })
+        live.seekTo(5.5f)
+        live.tick(1f / 30f, 0f)
+        assertTrue("a seek past the cue does not fire it", live.pollTriggeredSoundEffects().none { it.clipId == "select" })
+    }
+
+    @Test
     fun soundEffectCuesAreSortedAndFireInOrderAtMostOnceDuringLivePlayback() {
         for (name in Fixtures.SCRIPT_NAMES) {
             val script = Fixtures.script(name)
@@ -134,10 +154,8 @@ class EngineInvariantTest {
                 fired += live.pollTriggeredSoundEffects()
             }
             assertTrue("$name: cues fire in time order", fired.zipWithNext().all { (a, b) -> b.timeSec >= a.timeSec })
-            // A cue at exactly t = 0 is not asserted either way: live ticking scans (lastScan, now], so it
-            // never fires there (baseline behaviour, logged for WP0.5).
-            val expected = cues.filter { it.timeSec > 0f && it.timeSec <= live.currentTimeSec }
-            assertEquals("$name: every cue after t = 0 fires exactly once", expected.size, fired.count { it.timeSec > 0f })
+            val expected = cues.filter { it.timeSec <= live.currentTimeSec }
+            assertEquals("$name: every cue fires exactly once", expected.size, fired.size)
         }
     }
 }

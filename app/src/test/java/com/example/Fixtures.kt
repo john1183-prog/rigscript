@@ -22,11 +22,13 @@ object Fixtures {
         "07_edge_cases"
     )
 
-    fun text(resourcePath: String): String {
-        val stream = Fixtures::class.java.getResourceAsStream("/$resourcePath")
-            ?: error("Missing test resource: $resourcePath")
-        return stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-    }
+    /** The resource as UTF-8 text, or null when it does not exist (a golden that was never committed). */
+    fun textOrNull(resourcePath: String): String? =
+        Fixtures::class.java.getResourceAsStream("/$resourcePath")
+            ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+
+    fun text(resourcePath: String): String =
+        textOrNull(resourcePath) ?: error("Missing test resource: $resourcePath")
 
     fun scriptText(name: String): String = text("fixtures/$name.json")
 

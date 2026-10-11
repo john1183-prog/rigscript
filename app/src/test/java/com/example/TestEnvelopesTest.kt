@@ -43,6 +43,23 @@ class TestEnvelopesTest {
     }
 
     @Test
+    fun sampleValuesArePinnedBecauseTheGoldensDependOnThem() {
+        // The golden snapshots are computed with these envelopes. If a formula changes, every golden
+        // changes with it: change these numbers and regenerate the goldens deliberately, in one commit.
+        val speech = TestEnvelopes.speechLike(10f)
+        assertEquals(0.3841f, speech[3], 1e-4f)
+        assertEquals(0.6931f, speech[31], 1e-4f)
+        assertEquals(0f, speech[60], 0f)
+        assertEquals(0.15f, speech[100], 1e-4f)
+        val noise = TestEnvelopes.noisy(10f)
+        assertEquals(0.3822f, noise[0], 1e-4f)
+        assertEquals(0.1137f, noise[1], 1e-4f)
+        assertEquals(0.2780f, noise[2], 1e-4f)
+        assertEquals(0.0240f, noise[50], 1e-4f)
+        assertEquals(0.0689f, noise[299], 1e-4f)
+    }
+
+    @Test
     fun noisyVariesAndNeverFallsSilent() {
         val env = TestEnvelopes.noisy(10f)
         val mean = env.average()

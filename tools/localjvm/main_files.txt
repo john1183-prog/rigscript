@@ -1,0 +1,15 @@
+data/AnimScript.kt
+data/OverlayLayer.kt
+data/AmplitudeSettings.kt
+data/BoneDef.kt
+data/PoseDef.kt
+data/BuiltInSoundEffect.kt
+engine/PlaybackEngine.kt
+engine/TimelineCompiler.kt
+engine/OverlayResolver.kt
+engine/EasingMath.kt
+engine/StickFigureRig.kt
+engine/Expression.kt
+engine/ScriptValidator.kt
+engine/FigureOverrides.kt
+engine/Scene.kt

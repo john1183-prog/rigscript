@@ -1,0 +1,601 @@
+golden 1 fixture=06_long_dense
+input events=254 layers=131 blinks=162 total=597.0000
+warnings 29
+warn Overlay layer 'shp_000' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_001' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_003' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_004' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_005' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_006' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_008' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_009' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_010' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_011' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_013' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_014' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_016' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_018' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_019' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_020' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_023' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_025' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_026' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_028' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_029' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_030' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_031' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_033' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_034' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_036' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_038' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer 'shp_039' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layers 'shp_023' and 'prt_008' overlap in both time and position — they may visually collide on screen.
+keyframes 254
+kf 0 t=0.0000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=0 pose=stand_straight>sleepy zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=50.0000 maxd=58.0000
+kf 1 t=2.6000 d=0.8000 ease=bounce spring=280.0000/28.0000 expr=4 pose=sleepy>stand_straight zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=58.0000
+kf 2 t=5.2000 d=1.0000 ease=linear spring=280.0000/28.0000 expr=4 pose=stand_straight>tired zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=48.0000
+kf 3 t=8.2000 d=0.3000 ease=elastic_out spring=280.0000/28.0000 expr=4 pose=tired>jog_a zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=82.0000 maxd=55.0000
+kf 4 t=10.8000 d=0.3000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=jog_a>excited zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=88.0000 maxd=172.0000
+kf 5 t=13.8000 d=1.0000 ease=rigid spring=280.0000/28.0000 expr=3 pose=excited>excited zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=88.0000 maxd=0.0000
+kf 6 t=16.0000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=3 pose=excited>point_self zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-68.0000 maxd=112.0000
+kf 7 t=19.4000 d=0.8000 ease=ease_in spring=280.0000/28.0000 expr=3 pose=point_self>celebrate zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=132.0000
+kf 8 t=21.2000 d=0.8000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=celebrate>celebrate zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=0.0000
+kf 9 t=23.0000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=4 pose=celebrate>walk_a zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=91.0000 maxd=170.0000
+kf 10 t=24.8000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=4 pose=walk_a>shrug zoom=1.0000>1.2720 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=85.0000 maxd=90.0000
+kf 11 t=27.4000 d=1.0000 ease=linear spring=280.0000/28.0000 expr=2 pose=shrug>jog_a zoom=1.2720>1.2720 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=82.0000 maxd=112.0000
+kf 12 t=30.8000 d=0.8000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=jog_a>point_up zoom=1.2720>1.2720 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-73.0000 maxd=208.0000
+kf 13 t=32.0000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=point_up>think zoom=1.2720>1.2720 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-102.0000 maxd=95.0000
+kf 14 t=34.6000 d=0.3000 ease=spring spring=280.0000/16.0000 expr=2 pose=think>sit zoom=1.2720>1.2720 pan=0.0000,0.0000>0.0000,0.0000 shake=0.1750 scene=none/none sum=98.0000 maxd=100.0000
+kf 15 t=38.0000 d=1.0000 ease=rigid spring=280.0000/28.0000 expr=2 pose=sit>sit zoom=1.2720>1.3770 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=98.0000 maxd=0.0000
+kf 16 t=41.4000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=3 pose=sit>sleepy zoom=1.3770>0.9770 pan=0.0000,0.0000>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=50.0000 maxd=92.0000
+kf 17 t=44.8000 d=1.0000 ease=ease_in_out spring=280.0000/28.0000 expr=3 pose=sleepy>explain zoom=0.9770>0.9770 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=85.0000 maxd=130.0000
+kf 18 t=47.4000 d=1.0000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=explain>present zoom=0.9770>0.9770 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=87.0000 maxd=25.0000
+kf 19 t=49.2000 d=1.0000 ease=linear spring=280.0000/28.0000 expr=5 pose=present>sleepy zoom=0.9770>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=50.0000 maxd=155.0000
+kf 20 t=50.4000 d=0.4000 ease=rigid spring=280.0000/28.0000 expr=3 pose=sleepy>jog_a zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=82.0000 maxd=58.0000
+kf 21 t=53.0000 d=0.8000 ease=rigid spring=280.0000/28.0000 expr=3 pose=jog_a>shrug zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=85.0000 maxd=112.0000
+kf 22 t=55.6000 d=1.0000 ease=ease_out spring=280.0000/28.0000 expr=3 pose=shrug>open_hands zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=98.0000 maxd=13.0000
+kf 23 t=57.4000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=3 pose=open_hands>shrug zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=85.0000 maxd=13.0000
+kf 24 t=60.0000 d=0.3000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=shrug>walk_b zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=91.0000 maxd=78.0000
+kf 25 t=62.2000 d=0.6000 ease=linear spring=280.0000/28.0000 expr=5 pose=walk_b>walk_b zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=91.0000 maxd=0.0000
+kf 26 t=64.0000 d=0.4000 ease=ease_in spring=280.0000/28.0000 expr=5 pose=walk_b>explain zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=85.0000 maxd=37.0000
+kf 27 t=66.2000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=0 pose=explain>present zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=87.0000 maxd=25.0000
+kf 28 t=69.2000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=3 pose=present>stand_straight zoom=1.1650>1.1650 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=90.0000 maxd=100.0000
+kf 29 t=71.0000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=0 pose=stand_straight>sit zoom=1.1650>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=98.0000 maxd=92.0000
+kf 30 t=74.0000 d=0.5000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=sit>confused zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=-86.0000 maxd=92.0000
+kf 31 t=77.0000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=0 pose=confused>jog_b zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=82.0000 maxd=78.0000
+kf 32 t=79.6000 d=0.8000 ease=linear spring=280.0000/28.0000 expr=0 pose=jog_b>present zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=87.0000 maxd=55.0000
+kf 33 t=80.8000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=present>present zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.1370 scene=none/none sum=87.0000 maxd=0.0000
+kf 34 t=83.4000 d=0.5000 ease=ease_in spring=280.0000/28.0000 expr=2 pose=present>sleepy zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=50.0000 maxd=155.0000
+kf 35 t=85.2000 d=0.5000 ease=bounce spring=280.0000/28.0000 expr=0 pose=sleepy>confused zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=none/none sum=-86.0000 maxd=133.0000
+kf 36 t=86.4000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=2 pose=confused>sleepy zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=50.0000 maxd=133.0000
+kf 37 t=88.2000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=4 pose=sleepy>point_self zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=-68.0000 maxd=160.0000
+kf 38 t=89.4000 d=0.5000 ease=bounce spring=280.0000/28.0000 expr=1 pose=point_self>excited zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=88.0000 maxd=112.0000
+kf 39 t=92.4000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=1 pose=excited>celebrate zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=87.0000 maxd=20.0000
+kf 40 t=94.2000 d=1.0000 ease=ease_in_out spring=280.0000/28.0000 expr=1 pose=celebrate>open_hands zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=98.0000 maxd=90.0000
+kf 41 t=96.0000 d=1.0000 ease=bounce spring=280.0000/28.0000 expr=1 pose=open_hands>open_hands zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=98.0000 maxd=0.0000
+kf 42 t=97.8000 d=1.0000 ease=ease_in spring=280.0000/28.0000 expr=1 pose=open_hands>point_left zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=189.0000 maxd=70.0000
+kf 43 t=100.0000 d=0.3000 ease=bounce spring=280.0000/28.0000 expr=1 pose=point_left>jog_b zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=82.0000 maxd=60.0000
+kf 44 t=103.0000 d=0.6000 ease=spring spring=280.0000/28.0000 expr=4 pose=jog_b>point_self zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=-68.0000 maxd=78.0000
+kf 45 t=104.8000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=4 pose=point_self>think zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=-102.0000 maxd=25.0000
+kf 46 t=107.4000 d=1.0000 ease=linear spring=280.0000/28.0000 expr=5 pose=think>point_right zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=-9.0000 maxd=95.0000
+kf 47 t=109.6000 d=0.4000 ease=rigid spring=280.0000/28.0000 expr=1 pose=point_right>present zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=87.0000 maxd=100.0000
+kf 48 t=110.8000 d=1.0000 ease=spring spring=280.0000/10.0000 expr=2 pose=present>celebrate zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=87.0000 maxd=32.0000
+kf 49 t=113.4000 d=0.3000 ease=bounce spring=280.0000/28.0000 expr=2 pose=celebrate>walk_a zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=91.0000 maxd=170.0000
+kf 50 t=116.4000 d=0.8000 ease=linear spring=280.0000/28.0000 expr=2 pose=walk_a>jump zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=87.0000 maxd=168.0000
+kf 51 t=119.8000 d=1.0000 ease=linear spring=280.0000/28.0000 expr=1 pose=jump>lazy zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=113.0000 maxd=158.0000
+kf 52 t=123.2000 d=0.3000 ease=bounce spring=280.0000/28.0000 expr=3 pose=lazy>walk_a zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=91.0000 maxd=33.0000
+kf 53 t=124.4000 d=0.8000 ease=rigid spring=280.0000/28.0000 expr=3 pose=walk_a>open_hands zoom=1.2700>1.2700 pan=-0.0050,-0.0420>-0.0050,-0.0420 shake=0.0000 scene=clouds/rain sum=98.0000 maxd=80.0000
+kf 54 t=127.8000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=2 pose=open_hands>walk_b zoom=1.2700>1.0660 pan=-0.0050,-0.0420>-0.0850,0.0300 shake=0.0000 scene=clouds/rain sum=91.0000 maxd=70.0000
+kf 55 t=131.2000 d=0.8000 ease=linear spring=280.0000/28.0000 expr=2 pose=walk_b>jump zoom=1.0660>1.0660 pan=-0.0850,0.0300>-0.0850,0.0300 shake=0.0000 scene=beach/snow sum=87.0000 maxd=92.0000
+kf 56 t=132.4000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=3 pose=jump>excited zoom=1.0660>1.0660 pan=-0.0850,0.0300>-0.0850,0.0300 shake=0.0000 scene=beach/snow sum=88.0000 maxd=68.0000
+kf 57 t=134.6000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=1 pose=excited>open_hands zoom=1.0660>0.9260 pan=-0.0850,0.0300>0.0930,0.0110 shake=0.0000 scene=beach/snow sum=98.0000 maxd=70.0000
+kf 58 t=138.0000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=1 pose=open_hands>point_self zoom=0.9260>0.9260 pan=0.0930,0.0110>0.0930,0.0110 shake=0.0000 scene=beach/snow sum=-68.0000 maxd=70.0000
+kf 59 t=140.2000 d=0.3000 ease=ease_in_out spring=280.0000/28.0000 expr=1 pose=point_self>open_hands zoom=0.9260>0.9260 pan=0.0930,0.0110>0.0930,0.0110 shake=0.0000 scene=beach/snow sum=98.0000 maxd=70.0000
+kf 60 t=142.0000 d=1.0000 ease=ease_out spring=280.0000/28.0000 expr=1 pose=open_hands>walk_b zoom=0.9260>0.9260 pan=0.0930,0.0110>0.0930,0.0110 shake=0.0000 scene=beach/snow sum=91.0000 maxd=70.0000
+kf 61 t=143.8000 d=0.8000 ease=linear spring=280.0000/28.0000 expr=4 pose=walk_b>point_left zoom=0.9260>0.9260 pan=0.0930,0.0110>0.0930,0.0110 shake=0.0000 scene=beach/snow sum=189.0000 maxd=40.0000
+kf 62 t=146.4000 d=0.8000 ease=elastic_out spring=280.0000/28.0000 expr=5 pose=point_left>present zoom=0.9260>0.9630 pan=0.0930,0.0110>-0.0390,-0.0080 shake=0.0000 scene=beach/snow sum=87.0000 maxd=100.0000
+kf 63 t=149.4000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=5 pose=present>celebrate zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.3640 scene=beach/snow sum=87.0000 maxd=32.0000
+kf 64 t=151.6000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=0 pose=celebrate>walk_b zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=beach/snow sum=91.0000 maxd=94.0000
+kf 65 t=152.8000 d=0.3000 ease=bounce spring=280.0000/28.0000 expr=0 pose=walk_b>point_up zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=beach/snow sum=-73.0000 maxd=110.0000
+kf 66 t=155.0000 d=0.4000 ease=bounce spring=280.0000/28.0000 expr=0 pose=point_up>lazy zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=113.0000 maxd=176.0000
+kf 67 t=158.0000 d=0.8000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=lazy>jog_a zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.1540 scene=city/snow sum=82.0000 maxd=55.0000
+kf 68 t=159.2000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=0 pose=jog_a>point_up zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=-73.0000 maxd=208.0000
+kf 69 t=162.2000 d=0.6000 ease=linear spring=280.0000/28.0000 expr=0 pose=point_up>lazy zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=113.0000 maxd=176.0000
+kf 70 t=163.4000 d=0.3000 ease=bounce spring=280.0000/28.0000 expr=0 pose=lazy>point_up zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=-73.0000 maxd=176.0000
+kf 71 t=164.6000 d=1.0000 ease=bounce spring=280.0000/28.0000 expr=0 pose=point_up>confused zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=-86.0000 maxd=70.0000
+kf 72 t=166.8000 d=0.3000 ease=ease_in spring=280.0000/28.0000 expr=5 pose=confused>shrug zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=85.0000 maxd=78.0000
+kf 73 t=169.8000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=5 pose=shrug>confused zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=-86.0000 maxd=78.0000
+kf 74 t=172.8000 d=0.4000 ease=bounce spring=280.0000/28.0000 expr=5 pose=confused>jog_b zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=82.0000 maxd=78.0000
+kf 75 t=175.0000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=jog_b>explain zoom=0.9630>0.9630 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=85.0000 maxd=55.0000
+kf 76 t=176.2000 d=1.0000 ease=ease_in_out spring=280.0000/28.0000 expr=3 pose=explain>explain zoom=0.9630>1.0670 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=85.0000 maxd=0.0000
+kf 77 t=178.0000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=3 pose=explain>stand_straight zoom=1.0670>1.0670 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=90.0000 maxd=75.0000
+kf 78 t=180.2000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=3 pose=stand_straight>jog_b zoom=1.0670>1.0670 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=82.0000 maxd=60.0000
+kf 79 t=182.8000 d=1.0000 ease=spring spring=400.0000/16.0000 expr=3 pose=jog_b>excited zoom=1.0670>1.0670 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=88.0000 maxd=67.0000
+kf 80 t=184.6000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=3 pose=excited>stand_straight zoom=1.0670>1.0670 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=90.0000 maxd=112.0000
+kf 81 t=186.8000 d=0.3000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=stand_straight>jump zoom=1.0670>1.0670 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=87.0000 maxd=130.0000
+kf 82 t=189.8000 d=0.5000 ease=rigid spring=280.0000/28.0000 expr=3 pose=jump>confused zoom=1.0670>1.0670 pan=-0.0390,-0.0080>-0.0390,-0.0080 shake=0.0000 scene=city/snow sum=-86.0000 maxd=148.0000
+kf 83 t=191.6000 d=1.0000 ease=spring spring=280.0000/28.0000 expr=1 pose=confused>tired zoom=1.0670>1.2510 pan=-0.0390,-0.0080>0.0670,-0.0080 shake=0.0000 scene=city/snow sum=87.0000 maxd=126.0000
+kf 84 t=193.4000 d=1.0000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=tired>walk_b zoom=1.2510>1.2510 pan=0.0670,-0.0080>0.0670,-0.0080 shake=0.0000 scene=city/snow sum=91.0000 maxd=86.0000
+kf 85 t=195.2000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=3 pose=walk_b>open_hands zoom=1.2510>1.2510 pan=0.0670,-0.0080>0.0670,-0.0080 shake=0.0000 scene=city/snow sum=98.0000 maxd=70.0000
+kf 86 t=198.6000 d=0.3000 ease=rigid spring=280.0000/28.0000 expr=3 pose=open_hands>point_self zoom=1.2510>0.9490 pan=0.0670,-0.0080>0.0350,0.0150 shake=0.0000 scene=city/snow sum=-68.0000 maxd=70.0000
+kf 87 t=201.6000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=3 pose=point_self>tired zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=87.0000 maxd=150.0000
+kf 88 t=202.8000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=4 pose=tired>present zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=87.0000 maxd=148.0000
+kf 89 t=204.0000 d=0.5000 ease=bounce spring=280.0000/28.0000 expr=4 pose=present>point_right zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=-9.0000 maxd=100.0000
+kf 90 t=207.4000 d=1.0000 ease=ease_in spring=280.0000/28.0000 expr=4 pose=point_right>jog_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=82.0000 maxd=138.0000
+kf 91 t=208.6000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=4 pose=jog_a>present zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=87.0000 maxd=160.0000
+kf 92 t=210.4000 d=1.0000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=present>point_self zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=-68.0000 maxd=100.0000
+kf 93 t=213.8000 d=0.3000 ease=rigid spring=280.0000/28.0000 expr=4 pose=point_self>stand_straight zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=90.0000 maxd=108.0000
+kf 94 t=216.4000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=0 pose=stand_straight>shrug zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=85.0000 maxd=78.0000
+kf 95 t=219.4000 d=0.8000 ease=rigid spring=280.0000/28.0000 expr=1 pose=shrug>wave zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=-60.0000 maxd=78.0000
+kf 96 t=222.0000 d=0.8000 ease=ease_in spring=280.0000/28.0000 expr=1 pose=wave>explain zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=85.0000 maxd=75.0000
+kf 97 t=224.6000 d=0.3000 ease=elastic_out spring=280.0000/28.0000 expr=1 pose=explain>walk_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=city/snow sum=91.0000 maxd=113.0000
+kf 98 t=227.6000 d=0.5000 ease=elastic_out spring=280.0000/28.0000 expr=1 pose=walk_a>wave zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=-60.0000 maxd=168.0000
+kf 99 t=230.2000 d=1.0000 ease=bounce spring=280.0000/28.0000 expr=0 pose=wave>point_self zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=-68.0000 maxd=88.0000
+kf 100 t=232.0000 d=1.0000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=point_self>jog_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=82.0000 maxd=138.0000
+kf 101 t=234.6000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=jog_a>point_up zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=-73.0000 maxd=208.0000
+kf 102 t=237.2000 d=0.3000 ease=elastic_out spring=280.0000/28.0000 expr=4 pose=point_up>excited zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=88.0000 maxd=112.0000
+kf 103 t=240.2000 d=0.3000 ease=spring spring=200.0000/28.0000 expr=4 pose=excited>lazy zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.3380 scene=mountains/snow sum=113.0000 maxd=140.0000
+kf 104 t=241.4000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=4 pose=lazy>excited zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=88.0000 maxd=140.0000
+kf 105 t=244.4000 d=0.8000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=excited>wave zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=-60.0000 maxd=112.0000
+kf 106 t=245.6000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=wave>present zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=100.0000
+kf 107 t=248.6000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=3 pose=present>present zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=0.0000
+kf 108 t=250.8000 d=0.6000 ease=spring spring=280.0000/28.0000 expr=2 pose=present>point_left zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=189.0000 maxd=100.0000
+kf 109 t=253.4000 d=0.8000 ease=ease_in_out spring=280.0000/28.0000 expr=2 pose=point_left>walk_b zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=91.0000 maxd=40.0000
+kf 110 t=256.4000 d=0.4000 ease=spring spring=200.0000/40.0000 expr=2 pose=walk_b>walk_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=91.0000 maxd=76.0000
+kf 111 t=258.6000 d=0.3000 ease=ease_in spring=280.0000/28.0000 expr=2 pose=walk_a>sit zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=98.0000 maxd=114.0000
+kf 112 t=260.8000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=3 pose=sit>sleepy zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=50.0000 maxd=92.0000
+kf 113 t=262.0000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=3 pose=sleepy>wave zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=-60.0000 maxd=185.0000
+kf 114 t=265.0000 d=0.8000 ease=ease_in_out spring=280.0000/28.0000 expr=3 pose=wave>tired zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=178.0000
+kf 115 t=268.0000 d=0.8000 ease=rigid spring=280.0000/28.0000 expr=3 pose=tired>stand_straight zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=90.0000 maxd=48.0000
+kf 116 t=271.0000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=3 pose=stand_straight>present zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=100.0000
+kf 117 t=272.8000 d=1.0000 ease=bounce spring=280.0000/28.0000 expr=0 pose=present>jog_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=82.0000 maxd=160.0000
+kf 118 t=275.0000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=2 pose=jog_a>excited zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=88.0000 maxd=172.0000
+kf 119 t=277.2000 d=0.6000 ease=spring spring=200.0000/28.0000 expr=2 pose=excited>jog_b zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=82.0000 maxd=67.0000
+kf 120 t=279.4000 d=0.5000 ease=bounce spring=280.0000/28.0000 expr=0 pose=jog_b>walk_b zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=91.0000 maxd=33.0000
+kf 121 t=280.6000 d=1.0000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=walk_b>walk_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=91.0000 maxd=76.0000
+kf 122 t=284.0000 d=0.3000 ease=rigid spring=280.0000/28.0000 expr=1 pose=walk_a>point_self zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=-68.0000 maxd=108.0000
+kf 123 t=286.6000 d=0.8000 ease=bounce spring=280.0000/28.0000 expr=0 pose=point_self>point_up zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=-73.0000 maxd=103.0000
+kf 124 t=290.0000 d=0.8000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=point_up>walk_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=91.0000 maxd=186.0000
+kf 125 t=292.2000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=5 pose=walk_a>shrug zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=85.0000 maxd=90.0000
+kf 126 t=294.4000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=2 pose=shrug>open_hands zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=98.0000 maxd=13.0000
+kf 127 t=297.8000 d=0.4000 ease=spring spring=280.0000/28.0000 expr=0 pose=open_hands>point_self zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=-68.0000 maxd=70.0000
+kf 128 t=300.0000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=0 pose=point_self>excited zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=88.0000 maxd=112.0000
+kf 129 t=302.2000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=4 pose=excited>point_self zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=-68.0000 maxd=112.0000
+kf 130 t=305.6000 d=1.0000 ease=linear spring=280.0000/28.0000 expr=3 pose=point_self>walk_a zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=91.0000 maxd=108.0000
+kf 131 t=308.6000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=2 pose=walk_a>sit zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=98.0000 maxd=114.0000
+kf 132 t=311.6000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=2 pose=sit>celebrate zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=87.0000 maxd=132.0000
+kf 133 t=313.4000 d=1.0000 ease=bounce spring=280.0000/28.0000 expr=2 pose=celebrate>point_self zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=-68.0000 maxd=132.0000
+kf 134 t=314.6000 d=0.3000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=point_self>present zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=87.0000 maxd=100.0000
+kf 135 t=317.2000 d=0.8000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=present>confused zoom=0.9490>0.9490 pan=0.0350,0.0150>0.0350,0.0150 shake=0.0000 scene=trees/none sum=-86.0000 maxd=118.0000
+kf 136 t=319.0000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=0 pose=confused>confused zoom=0.9490>0.9010 pan=0.0350,0.0150>-0.0180,0.0200 shake=0.0000 scene=trees/none sum=-86.0000 maxd=0.0000
+kf 137 t=321.6000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=0 pose=confused>confused zoom=0.9010>0.9010 pan=-0.0180,0.0200>-0.0180,0.0200 shake=0.0000 scene=trees/none sum=-86.0000 maxd=0.0000
+kf 138 t=323.4000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=3 pose=confused>excited zoom=0.9010>0.9010 pan=-0.0180,0.0200>-0.0180,0.0200 shake=0.0000 scene=trees/none sum=88.0000 maxd=130.0000
+kf 139 t=326.0000 d=0.8000 ease=linear spring=280.0000/28.0000 expr=0 pose=excited>walk_b zoom=0.9010>0.9060 pan=-0.0180,0.0200>-0.0180,0.0200 shake=0.0000 scene=trees/none sum=91.0000 maxd=74.0000
+kf 140 t=329.0000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=walk_b>shrug zoom=0.9060>1.0780 pan=-0.0180,0.0200>-0.0750,-0.0070 shake=0.0000 scene=trees/none sum=85.0000 maxd=78.0000
+kf 141 t=332.0000 d=0.5000 ease=rigid spring=280.0000/28.0000 expr=0 pose=shrug>walk_a zoom=1.0780>1.2210 pan=-0.0750,-0.0070>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=91.0000 maxd=90.0000
+kf 142 t=334.2000 d=0.5000 ease=ease_in spring=280.0000/28.0000 expr=2 pose=walk_a>celebrate zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=87.0000 maxd=170.0000
+kf 143 t=337.6000 d=0.8000 ease=spring spring=400.0000/28.0000 expr=2 pose=celebrate>stand_straight zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=90.0000 maxd=132.0000
+kf 144 t=338.8000 d=0.4000 ease=bounce spring=280.0000/28.0000 expr=2 pose=stand_straight>sit zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=98.0000 maxd=92.0000
+kf 145 t=342.2000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=4 pose=sit>open_hands zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=98.0000 maxd=92.0000
+kf 146 t=345.2000 d=1.0000 ease=bounce spring=280.0000/28.0000 expr=4 pose=open_hands>point_left zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=189.0000 maxd=70.0000
+kf 147 t=348.6000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=2 pose=point_left>explain zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=85.0000 maxd=75.0000
+kf 148 t=350.4000 d=0.8000 ease=ease_in spring=280.0000/28.0000 expr=2 pose=explain>celebrate zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=87.0000 maxd=57.0000
+kf 149 t=353.0000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=2 pose=celebrate>sit zoom=1.2210>1.2210 pan=0.0270,-0.0560>0.0270,-0.0560 shake=0.0000 scene=trees/none sum=98.0000 maxd=132.0000
+kf 150 t=354.2000 d=0.6000 ease=spring spring=280.0000/28.0000 expr=3 pose=sit>open_hands zoom=1.2210>0.9290 pan=0.0270,-0.0560>-0.0850,0.0090 shake=0.0000 scene=trees/none sum=98.0000 maxd=92.0000
+kf 151 t=355.4000 d=0.5000 ease=rigid spring=280.0000/28.0000 expr=5 pose=open_hands>confused zoom=0.9290>0.9290 pan=-0.0850,0.0090>-0.0850,0.0090 shake=0.0000 scene=trees/none sum=-86.0000 maxd=70.0000
+kf 152 t=356.6000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=5 pose=confused>confused zoom=0.9290>0.9770 pan=-0.0850,0.0090>-0.0220,0.0110 shake=0.0000 scene=trees/none sum=-86.0000 maxd=0.0000
+kf 153 t=359.2000 d=0.5000 ease=rigid spring=280.0000/28.0000 expr=5 pose=confused>point_self zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=trees/none sum=-68.0000 maxd=50.0000
+kf 154 t=362.2000 d=0.5000 ease=elastic_out spring=280.0000/28.0000 expr=5 pose=point_self>shrug zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=trees/none sum=85.0000 maxd=78.0000
+kf 155 t=365.6000 d=0.3000 ease=spring spring=120.0000/16.0000 expr=0 pose=shrug>tired zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=trees/none sum=87.0000 maxd=120.0000
+kf 156 t=366.8000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=tired>explain zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=trees/none sum=85.0000 maxd=123.0000
+kf 157 t=369.4000 d=1.0000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=explain>point_self zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=trees/none sum=-68.0000 maxd=78.0000
+kf 158 t=371.2000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=point_self>jog_a zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=82.0000 maxd=138.0000
+kf 159 t=374.6000 d=1.0000 ease=rigid spring=280.0000/28.0000 expr=0 pose=jog_a>point_right zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=-9.0000 maxd=138.0000
+kf 160 t=376.4000 d=1.0000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=point_right>present zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.1840 scene=mountains/snow sum=87.0000 maxd=100.0000
+kf 161 t=378.2000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=3 pose=present>point_right zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=-9.0000 maxd=100.0000
+kf 162 t=380.8000 d=0.3000 ease=bounce spring=280.0000/28.0000 expr=2 pose=point_right>point_left zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=189.0000 maxd=78.0000
+kf 163 t=382.0000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=2 pose=point_left>explain zoom=0.9770>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=85.0000 maxd=75.0000
+kf 164 t=385.4000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=5 pose=explain>walk_a zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=91.0000 maxd=113.0000
+kf 165 t=387.6000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=5 pose=walk_a>jog_a zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=82.0000 maxd=33.0000
+kf 166 t=388.8000 d=0.4000 ease=ease_in spring=280.0000/28.0000 expr=5 pose=jog_a>jump zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=190.0000
+kf 167 t=391.0000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=3 pose=jump>explain zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=85.0000 maxd=68.0000
+kf 168 t=392.2000 d=0.8000 ease=linear spring=280.0000/28.0000 expr=2 pose=explain>open_hands zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=98.0000 maxd=40.0000
+kf 169 t=395.2000 d=0.4000 ease=rigid spring=280.0000/28.0000 expr=4 pose=open_hands>tired zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=112.0000
+kf 170 t=398.6000 d=1.0000 ease=elastic_out spring=280.0000/28.0000 expr=2 pose=tired>tired zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=0.0000
+kf 171 t=400.8000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=1 pose=tired>tired zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=0.0000
+kf 172 t=402.0000 d=1.0000 ease=spring spring=280.0000/40.0000 expr=1 pose=tired>jump zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=178.0000
+kf 173 t=403.8000 d=0.5000 ease=rigid spring=280.0000/28.0000 expr=3 pose=jump>think zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=-102.0000 maxd=130.0000
+kf 174 t=405.6000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=3 pose=think>tired zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=142.0000
+kf 175 t=407.8000 d=0.8000 ease=bounce spring=280.0000/28.0000 expr=3 pose=tired>walk_a zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=91.0000 maxd=42.0000
+kf 176 t=410.8000 d=0.5000 ease=spring spring=120.0000/16.0000 expr=2 pose=walk_a>celebrate zoom=1.1470>1.1470 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=170.0000
+kf 177 t=413.4000 d=0.8000 ease=elastic_out spring=280.0000/28.0000 expr=2 pose=celebrate>walk_a zoom=1.1470>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=91.0000 maxd=170.0000
+kf 178 t=415.6000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=3 pose=walk_a>lazy zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=113.0000 maxd=33.0000
+kf 179 t=416.8000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=3 pose=lazy>excited zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=88.0000 maxd=140.0000
+kf 180 t=419.0000 d=1.0000 ease=ease_in spring=280.0000/28.0000 expr=3 pose=excited>present zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.3920 scene=mountains/snow sum=87.0000 maxd=20.0000
+kf 181 t=422.0000 d=0.5000 ease=ease_in spring=280.0000/28.0000 expr=0 pose=present>jog_b zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=82.0000 maxd=55.0000
+kf 182 t=425.4000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=1 pose=jog_b>confused zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=-86.0000 maxd=78.0000
+kf 183 t=427.6000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=1 pose=confused>wave zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=-60.0000 maxd=52.0000
+kf 184 t=429.8000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=1 pose=wave>think zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=-102.0000 maxd=80.0000
+kf 185 t=433.2000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=0 pose=think>excited zoom=0.9770>0.9770 pan=-0.0220,0.0110>-0.0220,0.0110 shake=0.0000 scene=mountains/snow sum=88.0000 maxd=112.0000
+kf 186 t=436.2000 d=0.3000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=excited>point_up zoom=0.9770>1.3140 pan=-0.0220,0.0110>-0.0760,-0.0030 shake=0.0000 scene=mountains/snow sum=-73.0000 maxd=112.0000
+kf 187 t=438.4000 d=1.0000 ease=ease_in spring=280.0000/28.0000 expr=2 pose=point_up>open_hands zoom=1.3140>1.3140 pan=-0.0760,-0.0030>-0.0760,-0.0030 shake=0.0000 scene=mountains/snow sum=98.0000 maxd=106.0000
+kf 188 t=440.6000 d=0.5000 ease=elastic_out spring=280.0000/28.0000 expr=2 pose=open_hands>point_left zoom=1.3140>1.1530 pan=-0.0760,-0.0030>-0.0730,0.0550 shake=0.0000 scene=mountains/snow sum=189.0000 maxd=70.0000
+kf 189 t=442.4000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=2 pose=point_left>walk_a zoom=1.1530>1.1530 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=mountains/snow sum=91.0000 maxd=116.0000
+kf 190 t=445.8000 d=0.6000 ease=spring spring=280.0000/28.0000 expr=2 pose=walk_a>think zoom=1.1530>1.1530 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=mountains/snow sum=-102.0000 maxd=118.0000
+kf 191 t=447.0000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=5 pose=think>present zoom=1.1530>1.0180 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=mountains/snow sum=87.0000 maxd=100.0000
+kf 192 t=449.2000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=present>open_hands zoom=1.0180>1.0180 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=mountains/snow sum=98.0000 maxd=58.0000
+kf 193 t=451.4000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=2 pose=open_hands>open_hands zoom=1.0180>1.0180 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=mountains/snow sum=98.0000 maxd=0.0000
+kf 194 t=453.6000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=2 pose=open_hands>sleepy zoom=1.0180>1.0180 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.3830 scene=mountains/snow sum=50.0000 maxd=122.0000
+kf 195 t=455.8000 d=0.8000 ease=rigid spring=280.0000/28.0000 expr=3 pose=sleepy>point_right zoom=1.0180>1.0180 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=mountains/snow sum=-9.0000 maxd=133.0000
+kf 196 t=458.4000 d=0.5000 ease=bounce spring=280.0000/28.0000 expr=3 pose=point_right>sit zoom=1.0180>1.0180 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=beach/snow sum=98.0000 maxd=92.0000
+kf 197 t=461.8000 d=0.4000 ease=bounce spring=280.0000/28.0000 expr=5 pose=sit>think zoom=1.0180>1.0180 pan=-0.0730,0.0550>-0.0730,0.0550 shake=0.0000 scene=beach/snow sum=-102.0000 maxd=100.0000
+kf 198 t=465.2000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=5 pose=think>point_right zoom=1.0180>1.1710 pan=-0.0730,0.0550>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-9.0000 maxd=95.0000
+kf 199 t=467.0000 d=0.4000 ease=bounce spring=280.0000/28.0000 expr=5 pose=point_right>jog_a zoom=1.1710>1.1710 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=82.0000 maxd=138.0000
+kf 200 t=470.0000 d=0.8000 ease=spring spring=280.0000/28.0000 expr=5 pose=jog_a>think zoom=1.1710>1.2770 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-102.0000 maxd=140.0000
+kf 201 t=471.2000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=5 pose=think>celebrate zoom=1.2770>1.2770 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=87.0000 maxd=132.0000
+kf 202 t=473.8000 d=0.8000 ease=linear spring=280.0000/28.0000 expr=5 pose=celebrate>stand_straight zoom=1.2770>1.2770 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=90.0000 maxd=132.0000
+kf 203 t=476.4000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=5 pose=stand_straight>point_self zoom=1.2770>1.2770 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-68.0000 maxd=108.0000
+kf 204 t=478.2000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=5 pose=point_self>point_up zoom=1.2770>1.2770 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-73.0000 maxd=103.0000
+kf 205 t=479.4000 d=0.4000 ease=spring spring=280.0000/10.0000 expr=5 pose=point_up>point_self zoom=1.2770>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-68.0000 maxd=103.0000
+kf 206 t=481.6000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=5 pose=point_self>sleepy zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=50.0000 maxd=160.0000
+kf 207 t=484.2000 d=1.0000 ease=bounce spring=280.0000/28.0000 expr=5 pose=sleepy>point_up zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-73.0000 maxd=203.0000
+kf 208 t=487.6000 d=0.4000 ease=spring spring=280.0000/16.0000 expr=5 pose=point_up>lazy zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=113.0000 maxd=176.0000
+kf 209 t=490.6000 d=0.8000 ease=elastic_out spring=280.0000/28.0000 expr=5 pose=lazy>shrug zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=85.0000 maxd=80.0000
+kf 210 t=493.2000 d=0.5000 ease=spring spring=120.0000/16.0000 expr=5 pose=shrug>point_right zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-9.0000 maxd=78.0000
+kf 211 t=495.0000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=5 pose=point_right>think zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-102.0000 maxd=95.0000
+kf 212 t=496.2000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=2 pose=think>shrug zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=85.0000 maxd=78.0000
+kf 213 t=497.4000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=3 pose=shrug>point_up zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=-73.0000 maxd=96.0000
+kf 214 t=499.6000 d=0.8000 ease=spring spring=280.0000/28.0000 expr=3 pose=point_up>jog_b zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=82.0000 maxd=88.0000
+kf 215 t=501.4000 d=0.5000 ease=spring spring=120.0000/10.0000 expr=3 pose=jog_b>tired zoom=1.0100>1.0100 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=87.0000 maxd=108.0000
+kf 216 t=503.2000 d=0.3000 ease=ease_in_out spring=280.0000/28.0000 expr=3 pose=tired>point_left zoom=1.0100>1.0900 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=189.0000 maxd=126.0000
+kf 217 t=506.6000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=1 pose=point_left>excited zoom=1.0900>1.0900 pan=0.0720,-0.0040>0.0720,-0.0040 shake=0.0000 scene=beach/snow sum=88.0000 maxd=112.0000
+kf 218 t=508.4000 d=0.5000 ease=rigid spring=280.0000/28.0000 expr=1 pose=excited>think zoom=1.0900>1.0330 pan=0.0720,-0.0040>-0.0860,0.0350 shake=0.0000 scene=beach/snow sum=-102.0000 maxd=112.0000
+kf 219 t=509.6000 d=0.8000 ease=rigid spring=280.0000/28.0000 expr=0 pose=think>excited zoom=1.0330>1.0330 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=beach/snow sum=88.0000 maxd=112.0000
+kf 220 t=513.0000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=excited>think zoom=1.0330>1.0330 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=-102.0000 maxd=112.0000
+kf 221 t=516.4000 d=0.4000 ease=ease_in spring=280.0000/28.0000 expr=0 pose=think>stand_straight zoom=1.0330>1.0330 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=90.0000 maxd=100.0000
+kf 222 t=519.8000 d=1.0000 ease=rigid spring=280.0000/28.0000 expr=1 pose=stand_straight>point_right zoom=1.0330>1.0330 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=-9.0000 maxd=78.0000
+kf 223 t=521.6000 d=0.3000 ease=linear spring=280.0000/28.0000 expr=1 pose=point_right>confused zoom=1.0330>1.0330 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=-86.0000 maxd=53.0000
+kf 224 t=524.2000 d=0.3000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=confused>point_self zoom=1.0330>1.0330 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=-68.0000 maxd=50.0000
+kf 225 t=527.2000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=0 pose=point_self>point_up zoom=1.0330>0.9000 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=-73.0000 maxd=103.0000
+kf 226 t=528.4000 d=0.5000 ease=bounce spring=280.0000/28.0000 expr=0 pose=point_up>open_hands zoom=0.9000>0.9000 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=98.0000 maxd=106.0000
+kf 227 t=531.8000 d=0.5000 ease=ease_in spring=280.0000/28.0000 expr=0 pose=open_hands>point_up zoom=0.9000>0.9000 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=-73.0000 maxd=106.0000
+kf 228 t=533.6000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=point_up>present zoom=0.9000>0.9000 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=87.0000 maxd=100.0000
+kf 229 t=535.8000 d=1.0000 ease=ease_in spring=280.0000/28.0000 expr=0 pose=present>point_up zoom=0.9000>0.9000 pan=-0.0860,0.0350>-0.0860,0.0350 shake=0.0000 scene=city/rain sum=-73.0000 maxd=100.0000
+kf 230 t=537.0000 d=0.8000 ease=spring spring=280.0000/28.0000 expr=0 pose=point_up>jog_b zoom=0.9000>0.9050 pan=-0.0860,0.0350>0.0180,0.0200 shake=0.0000 scene=city/rain sum=82.0000 maxd=88.0000
+kf 231 t=538.2000 d=0.3000 ease=bounce spring=280.0000/28.0000 expr=0 pose=jog_b>point_up zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-73.0000 maxd=88.0000
+kf 232 t=541.6000 d=1.0000 ease=linear spring=280.0000/28.0000 expr=0 pose=point_up>celebrate zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=87.0000 maxd=132.0000
+kf 233 t=543.4000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=3 pose=celebrate>lazy zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=113.0000 maxd=160.0000
+kf 234 t=544.6000 d=0.3000 ease=spring spring=280.0000/28.0000 expr=2 pose=lazy>lazy zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=113.0000 maxd=0.0000
+kf 235 t=548.0000 d=1.0000 ease=ease_out spring=280.0000/28.0000 expr=4 pose=lazy>confused zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-86.0000 maxd=106.0000
+kf 236 t=551.0000 d=0.4000 ease=linear spring=280.0000/28.0000 expr=4 pose=confused>point_right zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-9.0000 maxd=53.0000
+kf 237 t=553.6000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=3 pose=point_right>sit zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=98.0000 maxd=92.0000
+kf 238 t=557.0000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=0 pose=sit>tired zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=87.0000 maxd=92.0000
+kf 239 t=560.0000 d=0.3000 ease=rigid spring=280.0000/28.0000 expr=1 pose=tired>shrug zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=85.0000 maxd=120.0000
+kf 240 t=562.2000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=shrug>point_up zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-73.0000 maxd=96.0000
+kf 241 t=565.6000 d=0.4000 ease=rigid spring=280.0000/28.0000 expr=3 pose=point_up>point_left zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=189.0000 maxd=148.0000
+kf 242 t=567.8000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=point_left>point_up zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-73.0000 maxd=148.0000
+kf 243 t=570.0000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=2 pose=point_up>confused zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-86.0000 maxd=70.0000
+kf 244 t=573.4000 d=0.8000 ease=elastic_out spring=280.0000/28.0000 expr=2 pose=confused>shrug zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=85.0000 maxd=78.0000
+kf 245 t=575.2000 d=0.4000 ease=bounce spring=280.0000/28.0000 expr=3 pose=shrug>point_right zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-9.0000 maxd=78.0000
+kf 246 t=578.2000 d=0.5000 ease=ease_out spring=280.0000/28.0000 expr=3 pose=point_right>sleepy zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=50.0000 maxd=133.0000
+kf 247 t=581.6000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=0 pose=sleepy>walk_b zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.1470 scene=city/rain sum=91.0000 maxd=93.0000
+kf 248 t=583.4000 d=0.4000 ease=elastic_out spring=280.0000/28.0000 expr=2 pose=walk_b>lazy zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=113.0000 maxd=66.0000
+kf 249 t=586.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=2 pose=lazy>point_right zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=-9.0000 maxd=106.0000
+kf 250 t=589.0000 d=1.0000 ease=ease_out spring=280.0000/28.0000 expr=2 pose=point_right>lazy zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=city/rain sum=113.0000 maxd=106.0000
+kf 251 t=590.2000 d=0.5000 ease=linear spring=280.0000/28.0000 expr=0 pose=lazy>shrug zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=beach/snow sum=85.0000 maxd=80.0000
+kf 252 t=592.8000 d=0.4000 ease=rigid spring=280.0000/28.0000 expr=0 pose=shrug>celebrate zoom=0.9050>0.9050 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=beach/snow sum=87.0000 maxd=80.0000
+kf 253 t=595.4000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=celebrate>think zoom=0.9050>0.9310 pan=0.0180,0.0200>0.0180,0.0200 shake=0.0000 scene=beach/snow sum=-102.0000 maxd=132.0000
+captions 42
+cap 34.6000 37.6000 And this is the surprising part.
+cap 83.4000 85.4000 Now the other side.
+cap 85.2000 87.2000 Here is the catch.
+cap 88.2000 90.2000 That changes everything.
+cap 94.2000 96.7000 Now the other side.
+cap 103.0000 106.0000 Watch what happens next.
+cap 149.4000 151.9000 That changes everything.
+cap 163.4000 164.9000 And this is the surprising part.
+cap 166.8000 169.3000 Let us look closer.
+cap 180.2000 182.2000 Numbers do not lie.
+cap 208.6000 211.6000 Now the other side.
+cap 224.6000 226.1000 Here is the first thing to know.
+cap 230.2000 233.2000 Let us look closer.
+cap 244.4000 246.9000 Let us look closer.
+cap 248.6000 250.1000 Let us look closer.
+cap 250.8000 252.8000 And this is the surprising part.
+cap 262.0000 264.5000 Remember this one.
+cap 265.0000 268.0000 Three quick points.
+cap 268.0000 271.0000 Remember this one.
+cap 280.6000 282.1000 Remember this one.
+cap 323.4000 324.9000 Three quick points.
+cap 326.0000 329.0000 Here is the catch.
+cap 337.6000 340.1000 That is the whole idea.
+cap 350.4000 353.4000 Numbers do not lie.
+cap 366.8000 368.3000 Now the other side.
+cap 376.4000 379.4000 Remember this one.
+cap 378.2000 379.7000 And this is the surprising part.
+cap 395.2000 398.2000 Let us look closer.
+cap 402.0000 403.5000 That changes everything.
+cap 419.0000 421.5000 So what do we do?
+cap 447.0000 450.0000 And this is the surprising part.
+cap 453.6000 456.6000 Here is the first thing to know.
+cap 467.0000 469.0000 Here is the catch.
+cap 471.2000 474.2000 So what do we do?
+cap 481.6000 484.6000 And this is the surprising part.
+cap 501.4000 502.9000 Three quick points.
+cap 503.2000 506.2000 Let us look closer.
+cap 509.6000 512.1000 Now the other side.
+cap 528.4000 530.9000 Remember this one.
+cap 551.0000 553.5000 That is the whole idea.
+cap 586.0000 587.5000 Here is the catch.
+cap 592.8000 595.3000 Three quick points.
+sfx 18
+fx 2.6000 drop 0.8000
+fx 74.0000 select 0.5000
+fx 80.8000 pluck 0.5000
+fx 94.2000 toggle 0.8000
+fx 109.6000 close 0.5000
+fx 113.4000 close 0.8000
+fx 175.0000 glitch 0.8000
+fx 184.6000 close 1.0000
+fx 213.8000 drop 0.8000
+fx 277.2000 glitch 0.5000
+fx 321.6000 tick 0.8000
+fx 369.4000 pluck 0.5000
+fx 371.2000 question 0.5000
+fx 442.4000 drop 0.8000
+fx 476.4000 switch 1.0000
+fx 497.4000 switch 0.5000
+fx 521.6000 drop 0.5000
+fx 573.4000 select 0.8000
+checkpoints 27
+cp t=0.0000
+ang -90.0000 0.0000 160.0000 10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1170
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=0.2000
+ang -71.6438 -58.4660 215.0505 62.0000 -215.0505 -62.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1616
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=0.8000
+ang -72.2855 -59.8501 213.9252 62.0000 -213.9252 -62.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.6451
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=85.2860
+ang -83.0358 -32.5394 80.5731 -48.7908 -177.2632 -9.6262 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.4595
+cam zoom=1.2700 panx=-0.0050 pany=-0.0420 shake=0.0000
+fig x=0.4710 y=- scale=1.1880 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption Now the other side.
+ov n=1 sumx=0.5000 sumy=0.7800
+o txt_008 text/rect pb=- pl=- x=0.5000 y=0.7800 rot=0.0000 sc=1.0000 op=1.0000 col=ff69f0ae grad=- w=- h=- r=- fs=0.0900 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=AFTER
+cp t=97.8000
+ang -83.3849 2.4638 118.0476 -60.0000 -118.0476 60.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=1 eye=1.0000 hip=0.0000 amp=0.1569
+cam zoom=1.2700 panx=-0.0050 pany=-0.0420 shake=0.0000
+fig x=0.4710 y=- scale=1.1880 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=clouds atmos=rain sky=ff16213e ground=ff0f3443 horizon=0.6620
+caption -
+ov n=1 sumx=0.4940 sumy=0.3710
+o shp_006 shape/circle pb=- pl=- x=0.4940 y=0.3710 rot=0.0000 sc=1.0000 op=1.0000 col=ff80d8ff grad=- w=- h=- r=0.0400 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=98.3000
+ang -81.2131 7.6065 160.0000 10.0000 -82.0000 -5.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=1 eye=1.0000 hip=0.0000 amp=0.0000
+cam zoom=1.2700 panx=-0.0050 pany=-0.0420 shake=0.0000
+fig x=0.4710 y=- scale=1.1880 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=clouds atmos=rain sky=ff16213e ground=ff0f3443 horizon=0.6620
+caption -
+ov n=1 sumx=0.4940 sumy=0.3710
+o shp_006 shape/circle pb=- pl=- x=0.4940 y=0.3710 rot=0.0000 sc=1.0000 op=1.0000 col=ff80d8ff grad=- w=- h=- r=0.0400 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=99.2000
+ang -83.0990 8.8809 160.1787 10.0000 -82.1787 -5.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=1 eye=0.3333 hip=0.0000 amp=0.1740
+cam zoom=1.2700 panx=-0.0050 pany=-0.0420 shake=0.0000
+fig x=0.4710 y=- scale=1.1880 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=clouds atmos=rain sky=ff16213e ground=ff0f3443 horizon=0.6620
+caption -
+ov n=1 sumx=0.4940 sumy=0.3710
+o shp_006 shape/circle pb=- pl=- x=0.4940 y=0.3710 rot=0.0000 sc=1.0000 op=1.0000 col=ff80d8ff grad=- w=- h=- r=0.0400 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=170.5710
+ang -82.4113 -32.0906 81.0025 -48.0000 -177.0025 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5909
+cam zoom=0.9630 panx=-0.0390 pany=-0.0080 shake=0.0000
+fig x=0.4710 y=- scale=1.1880 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=city atmos=snow sky=ff16213e ground=ffe8f4f8 horizon=0.7330
+caption -
+ov n=1 sumx=0.5640 sumy=0.3830
+o shp_011 shape/circle pb=- pl=- x=0.5640 y=0.3830 rot=0.0000 sc=1.0000 op=0.0006 col=ffff7043 grad=- w=- h=- r=0.0220 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=193.4000
+ang -53.4404 -35.3463 208.9735 52.0000 -208.9735 -52.0000 72.0000 5.0000 108.0000 -5.0000
+st mouth=2 expr=3 eye=1.0000 hip=0.0000 amp=0.6817
+cam zoom=1.2510 panx=0.0670 pany=-0.0080 shake=0.0000
+fig x=0.5970 y=- scale=1.0530 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=city atmos=snow sky=ff16213e ground=ffe8f4f8 horizon=0.7330
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=193.9000
+ang -84.7379 0.0437 122.8797 10.0000 -122.8797 -10.0000 112.0000 17.0000 72.0000 -27.0000
+st mouth=2 expr=3 eye=1.0000 hip=0.0000 amp=0.5254
+cam zoom=1.2510 panx=0.0670 pany=-0.0080 shake=0.0000
+fig x=0.5970 y=- scale=1.0530 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=city atmos=snow sky=ff16213e ground=ffe8f4f8 horizon=0.7330
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=194.8000
+ang -83.2001 -1.6602 122.9493 10.0000 -122.9493 -10.0000 112.0000 17.0000 72.0000 -27.0000
+st mouth=2 expr=3 eye=1.0000 hip=0.0000 amp=0.5791
+cam zoom=1.2510 panx=0.0670 pany=-0.0080 shake=0.0000
+fig x=0.5970 y=- scale=1.0530 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=city atmos=snow sky=ff16213e ground=ffe8f4f8 horizon=0.7330
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=255.8570
+ang -82.7305 0.7073 121.6779 10.0000 -121.6779 -10.0000 112.0000 17.0000 72.0000 -27.0000
+st mouth=1 expr=2 eye=1.0000 hip=0.0000 amp=0.2589
+cam zoom=0.9490 panx=0.0350 pany=0.0150 shake=0.0000
+fig x=0.5370 y=- scale=0.9050 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=mountains atmos=snow sky=ff87ceeb ground=ffe8f4f8 horizon=0.6620
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=294.4000
+ang -85.5776 -10.8221 108.2289 -68.0000 -108.2289 68.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=2 eye=1.0000 hip=0.0000 amp=0.2747
+cam zoom=0.9490 panx=0.0350 pany=0.0150 shake=0.0000
+fig x=0.5370 y=- scale=0.9050 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=trees atmos=none sky=ff87ceeb ground=ffc9a876 horizon=0.7110
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=294.7000
+ang -83.8938 2.4469 118.0000 -60.0000 -118.0000 60.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=2 eye=1.0000 hip=0.0000 amp=0.0424
+cam zoom=0.9490 panx=0.0350 pany=0.0150 shake=0.0000
+fig x=0.5370 y=- scale=0.9050 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=trees atmos=none sky=ff87ceeb ground=ffc9a876 horizon=0.7110
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=295.4000
+ang -83.6185 2.8962 117.8336 -60.0000 -117.8336 60.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=2 eye=1.0000 hip=0.0000 amp=0.1829
+cam zoom=0.9490 panx=0.0350 pany=0.0150 shake=0.0000
+fig x=0.5370 y=- scale=0.9050 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=trees atmos=none sky=ff87ceeb ground=ffc9a876 horizon=0.7110
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=341.1430
+ang -80.8757 -0.2001 159.9330 10.0000 -159.9330 -10.0000 8.0000 97.0000 172.0000 -97.0000
+st mouth=1 expr=2 eye=1.0000 hip=0.0000 amp=0.1569
+cam zoom=1.2210 panx=0.0270 pany=-0.0560 shake=0.0000
+fig x=0.5370 y=- scale=0.9050 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=trees atmos=none sky=ff87ceeb ground=ffc9a876 horizon=0.7110
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=392.2000
+ang -95.5749 -2.0692 85.4130 -20.0000 -85.4130 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=2 eye=1.0000 hip=0.0000 amp=0.7485
+cam zoom=1.1470 panx=-0.0220 pany=0.0110 shake=0.0000
+fig x=0.5690 y=- scale=0.9920 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=mountains atmos=snow sky=ff1a2744 ground=ff0d1b2a horizon=0.7410
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=392.6000
+ang -84.5882 2.3880 118.1151 -60.0000 -118.1151 60.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=2 eye=1.0000 hip=0.0000 amp=0.1512
+cam zoom=1.1470 panx=-0.0220 pany=0.0110 shake=0.0000
+fig x=0.5690 y=- scale=0.9920 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=mountains atmos=snow sky=ff1a2744 ground=ff0d1b2a horizon=0.7410
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=393.4000
+ang -86.3017 3.6508 118.0000 -60.0000 -118.0000 60.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=2 eye=1.0000 hip=0.0000 amp=0.0000
+cam zoom=1.1470 panx=-0.0220 pany=0.0110 shake=0.0000
+fig x=0.5690 y=- scale=0.9920 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=mountains atmos=snow sky=ff1a2744 ground=ff0d1b2a horizon=0.7410
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=426.4290
+ang -78.7525 -32.8068 82.0313 -48.0000 -178.0313 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=1 eye=1.0000 hip=0.0000 amp=0.1521
+cam zoom=0.9770 panx=-0.0220 pany=0.0110 shake=0.0000
+fig x=0.5690 y=- scale=0.9920 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=mountains atmos=snow sky=ff1a2744 ground=ff0d1b2a horizon=0.7410
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=493.2000
+ang -85.0066 -8.8546 107.3837 -68.0000 -107.3837 68.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=5 eye=1.0000 hip=0.0000 amp=0.4040
+cam zoom=1.0100 panx=0.0720 pany=-0.0040 shake=0.0000
+fig x=0.5690 y=- scale=0.9920 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=beach atmos=snow sky=ff9bb7d4 ground=ff0d1b2a horizon=0.7030
+caption -
+ov n=1 sumx=0.8000 sumy=0.6200
+o fig_009 figure/rect pb=- pl=- x=0.8000 y=0.6200 rot=0.0000 sc=0.6000 op=1.0000 col=ff80d8ff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=1 front=true ss=false txt=-
+cp t=493.4500
+ang -99.6530 -7.5377 82.7752 4.9931 -160.7679 -9.9927 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.4676
+cam zoom=1.0100 panx=0.0720 pany=-0.0040 shake=0.0000
+fig x=0.5690 y=- scale=0.9920 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=beach atmos=snow sky=ff9bb7d4 ground=ff0d1b2a horizon=0.7030
+caption -
+ov n=1 sumx=0.8000 sumy=0.6200
+o fig_009 figure/rect pb=- pl=- x=0.8000 y=0.6200 rot=0.0000 sc=0.6000 op=1.0000 col=ff80d8ff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=1 front=true ss=false txt=-
+cp t=494.1000
+ang -98.5560 -7.7220 82.0000 5.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=5 eye=1.0000 hip=0.0000 amp=0.0001
+cam zoom=1.0100 panx=0.0720 pany=-0.0040 shake=0.0000
+fig x=0.5690 y=- scale=0.9920 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=beach atmos=snow sky=ff9bb7d4 ground=ff0d1b2a horizon=0.7030
+caption -
+ov n=1 sumx=0.8000 sumy=0.6200
+o fig_009 figure/rect pb=- pl=- x=0.8000 y=0.6200 rot=0.0000 sc=0.6000 op=1.0000 col=ff80d8ff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=1 front=true ss=false txt=-
+cp t=511.7140
+ang -101.3164 6.0919 48.6896 -15.0000 -48.6896 15.0000 68.0000 5.0000 112.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.5196
+cam zoom=1.0330 panx=-0.0860 pany=0.0350 shake=0.0000
+fig x=0.5900 y=- scale=0.9950 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=beach atmos=snow sky=ff9bb7d4 ground=ff0d1b2a horizon=0.7030
+caption Now the other side.
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=595.4000
+ang -96.6872 4.8481 27.8569 -15.0000 -27.8569 15.0000 72.0000 5.0000 108.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1684
+cam zoom=0.9050 panx=0.0180 pany=0.0200 shake=0.0000
+fig x=0.5900 y=- scale=0.9950 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=beach atmos=snow sky=fff3e5d0 ground=ffc9a876 horizon=0.6860
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=595.7000
+ang -82.2434 -20.2232 80.1266 -90.0000 -160.1266 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1510
+cam zoom=0.9310 panx=0.0180 pany=0.0200 shake=0.0000
+fig x=0.5900 y=- scale=0.9950 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=beach atmos=snow sky=fff3e5d0 ground=ffc9a876 horizon=0.6860
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=596.4000
+ang -83.7399 -19.5412 79.9153 -90.0000 -159.9153 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1521
+cam zoom=0.9310 panx=0.0180 pany=0.0200 shake=0.0000
+fig x=0.5900 y=- scale=0.9950 head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=beach atmos=snow sky=fff3e5d0 ground=ffc9a876 horizon=0.6860
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000

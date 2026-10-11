@@ -1,0 +1,273 @@
+golden 1 fixture=02_poses_expressions
+input events=23 layers=0 blinks=9 total=34.6000
+warnings 0
+keyframes 23
+kf 0 t=0.0000 d=0.6000 ease=linear spring=280.0000/28.0000 expr=0 pose=stand_straight>stand_straight zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=0.0000
+kf 1 t=1.5000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=1 pose=stand_straight>wave zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-60.0000 maxd=130.0000
+kf 2 t=3.0000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=2 pose=wave>think zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-102.0000 maxd=80.0000
+kf 3 t=4.5000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=3 pose=think>explain zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=85.0000 maxd=75.0000
+kf 4 t=6.0000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=4 pose=explain>walk_a zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=91.0000 maxd=113.0000
+kf 5 t=7.5000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=5 pose=walk_a>walk_b zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=91.0000 maxd=76.0000
+kf 6 t=9.0000 d=0.6000 ease=spring spring=280.0000/28.0000 expr=0 pose=walk_b>jog_a zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=82.0000 maxd=98.0000
+kf 7 t=10.5000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=1 pose=jog_a>jog_b zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=82.0000 maxd=120.0000
+kf 8 t=12.0000 d=0.6000 ease=linear spring=280.0000/28.0000 expr=2 pose=jog_b>jump zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=87.0000
+kf 9 t=13.5000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=3 pose=jump>tired zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=178.0000
+kf 10 t=15.0000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=4 pose=tired>lazy zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=113.0000 maxd=43.0000
+kf 11 t=16.5000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=lazy>sleepy zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=50.0000 maxd=52.0000
+kf 12 t=18.0000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=0 pose=sleepy>confused zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-86.0000 maxd=133.0000
+kf 13 t=19.5000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=1 pose=confused>excited zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=88.0000 maxd=130.0000
+kf 14 t=21.0000 d=0.6000 ease=spring spring=120.0000/12.0000 expr=2 pose=excited>shrug zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=85.0000 maxd=60.0000
+kf 15 t=22.5000 d=0.6000 ease=rigid spring=280.0000/28.0000 expr=3 pose=shrug>point_right zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-9.0000 maxd=78.0000
+kf 16 t=24.0000 d=0.6000 ease=linear spring=280.0000/28.0000 expr=4 pose=point_right>point_left zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=189.0000 maxd=78.0000
+kf 17 t=25.5000 d=0.6000 ease=ease_in spring=280.0000/28.0000 expr=5 pose=point_left>point_up zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-73.0000 maxd=148.0000
+kf 18 t=27.0000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=point_up>celebrate zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=132.0000
+kf 19 t=28.5000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=1 pose=celebrate>sit zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=98.0000 maxd=132.0000
+kf 20 t=30.0000 d=0.6000 ease=bounce spring=280.0000/28.0000 expr=2 pose=sit>present zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=100.0000
+kf 21 t=31.5000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=3 pose=present>point_self zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-68.0000 maxd=100.0000
+kf 22 t=33.0000 d=0.6000 ease=spring spring=400.0000/40.0000 expr=4 pose=point_self>open_hands zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=98.0000 maxd=70.0000
+captions 0
+sfx 0
+checkpoints 27
+cp t=0.0000
+ang -90.0000 0.0000 160.0000 10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1170
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=0.3000
+ang -86.3814 1.5034 158.7839 10.0000 -158.7839 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.7625
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=1.0000
+ang -88.8674 -0.5663 161.2066 10.0000 -161.2066 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.6833
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=4.5000
+ang -82.6356 -19.6822 80.0000 -90.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=3 eye=1.0000 hip=0.0000 amp=0.0000
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=4.8000
+ang -97.6205 -0.3142 84.1239 -20.0000 -84.1238 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=3 eye=1.0000 hip=0.0000 amp=0.5406
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=4.9430
+ang -95.9783 0.9820 85.1139 -20.0000 -85.1139 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=3 eye=1.0000 hip=0.0000 amp=0.1622
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=5.5000
+ang -97.2168 -0.7891 85.4472 -20.0000 -85.4472 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=3 eye=1.0000 hip=0.0000 amp=0.3962
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=9.8860
+ang -75.5204 -0.0811 220.6477 40.0000 -220.6477 -40.0000 30.0000 -50.0000 155.0000 23.0000
+st mouth=1 expr=0 eye=0.0824 hip=0.0000 amp=0.4041
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=10.5000
+ang -75.6662 1.7306 99.5528 -20.0000 -99.5528 20.0000 135.0000 33.0000 50.0000 -60.0000
+st mouth=2 expr=1 eye=1.0000 hip=0.0000 amp=0.3962
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=10.8000
+ang -79.0359 -0.4749 101.0748 -20.0000 -101.0748 20.0000 135.0000 33.0000 50.0000 -60.0000
+st mouth=2 expr=1 eye=1.0000 hip=0.0000 amp=0.6451
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=11.5000
+ang -79.1350 -2.4573 99.0514 -20.0000 -99.0514 20.0000 135.0000 33.0000 50.0000 -60.0000
+st mouth=2 expr=1 eye=1.0000 hip=0.0000 amp=0.7508
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=14.8290
+ang -56.1743 -40.3846 208.7476 52.0000 -208.7476 -52.0000 72.0000 5.0000 108.0000 -5.0000
+st mouth=2 expr=3 eye=1.0000 hip=0.0000 amp=0.5790
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=16.5000
+ang -69.3828 -13.3086 188.0000 10.0000 -165.0000 -10.0000 66.0000 5.0000 106.0000 -5.0000
+st mouth=0 expr=5 eye=1.0000 hip=0.0000 amp=0.0001
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=16.8000
+ang -72.9584 -57.5208 215.0000 62.0000 -215.0000 -62.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=5 eye=1.0000 hip=0.0000 amp=0.0000
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=17.5000
+ang -71.9046 -59.1212 215.2530 62.0000 -215.2530 -62.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=5 eye=1.0000 hip=0.0000 amp=0.2589
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=19.7710
+ang -100.7658 8.2747 48.0181 -15.0000 -48.0181 15.0000 68.0000 5.0000 112.0000 -5.0000
+st mouth=1 expr=1 eye=1.0000 hip=0.0000 amp=0.1747
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=21.0000
+ang -98.8674 7.4337 49.2066 -15.0000 -49.2066 15.0000 68.0000 5.0000 112.0000 -5.0000
+st mouth=2 expr=2 eye=1.0000 hip=0.0000 amp=0.6833
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=21.3000
+ang -84.5851 -10.2245 108.0973 -68.0859 -108.0973 68.0859 80.0195 5.0000 99.9805 -5.0000
+st mouth=0 expr=2 eye=1.0000 hip=0.0000 amp=0.0000
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=22.0000
+ang -86.3315 -9.3343 108.0000 -68.0000 -108.0000 68.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=2 eye=1.0000 hip=0.0000 amp=0.5308
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=24.7140
+ang -82.7457 8.8365 159.9015 10.0000 -81.9015 -5.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1594
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=27.0000
+ang -94.5674 -5.2163 11.0984 5.0000 -159.0984 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.5308
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=27.3000
+ang -98.8769 4.9552 28.0904 -15.0000 -28.0903 15.0000 72.0000 5.0000 108.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1795
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=28.0000
+ang -99.3315 5.6657 28.0000 -15.0000 -28.0000 15.0000 72.0000 5.0000 108.0000 -5.0000
+st mouth=1 expr=0 eye=0.9270 hip=0.0000 amp=0.1928
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=29.6570
+ang -80.6842 -0.2294 159.4758 10.0000 -159.4758 -10.0000 8.0000 97.0000 172.0000 -97.0000
+st mouth=1 expr=1 eye=1.0000 hip=0.0000 amp=0.3446
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=33.0000
+ang -85.4326 0.2163 105.2253 -98.0000 -160.2253 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1926
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=33.3000
+ang -86.1579 3.5790 118.0000 -60.0000 -118.0000 60.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=4 eye=1.0000 hip=0.0000 amp=0.0001
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=34.0000
+ang -85.8229 3.4115 118.0000 -60.0000 -118.0000 60.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1539
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000

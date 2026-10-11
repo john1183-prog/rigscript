@@ -1,0 +1,267 @@
+golden 1 fixture=03_camera_scene_captions
+input events=12 layers=0 blinks=4 total=28.5000
+warnings 0
+keyframes 12
+kf 0 t=0.0000 d=0.4000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=stand_straight>stand_straight zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=mountains/none sum=90.0000 maxd=0.0000
+kf 1 t=2.5000 d=0.6000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=stand_straight>explain zoom=1.0000>1.2000 pan=0.0000,0.0000>-0.0600,0.0000 shake=0.0000 scene=city/rain sum=85.0000 maxd=75.0000
+kf 2 t=5.0000 d=0.6000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=explain>present zoom=1.2000>1.0000 pan=-0.0600,0.0000>0.0000,0.0400 shake=0.3500 scene=trees/snow sum=87.0000 maxd=25.0000
+kf 3 t=7.5000 d=0.8000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=present>think zoom=1.0000>1.0000 pan=0.0000,0.0400>0.0000,0.0000 shake=0.0000 scene=clouds/fog sum=-102.0000 maxd=100.0000
+kf 4 t=10.0000 d=0.6000 ease=spring spring=280.0000/28.0000 expr=0 pose=think>wave zoom=1.0000>1.8000 pan=0.0000,0.0000>0.1000,-0.0500 shake=0.0000 scene=room/stars sum=-60.0000 maxd=80.0000
+kf 5 t=12.5000 d=0.6000 ease=elastic_out spring=280.0000/28.0000 expr=5 pose=wave>celebrate zoom=1.8000>0.8000 pan=0.1000,-0.0500>0.1000,-0.0500 shake=0.4000 scene=beach/none sum=87.0000 maxd=132.0000
+kf 6 t=15.0000 d=0.8000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=celebrate>stand_straight zoom=0.8000>1.0000 pan=0.1000,-0.0500>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=132.0000
+kf 7 t=17.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=stand_straight>point_right zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-9.0000 maxd=78.0000
+kf 8 t=19.5000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=point_right>point_left zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=189.0000 maxd=78.0000
+kf 9 t=22.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=point_left>stand_straight zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=78.0000
+kf 10 t=24.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=stand_straight>excited zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=88.0000 maxd=112.0000
+kf 11 t=27.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=5 pose=excited>stand_straight zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=112.0000
+captions 5
+cap 0.0000 2.0000 Camera, scene and caption tour
+cap 5.0000 8.5000 A longer caption that has to wrap over several lines so the caption fitting code~
+cap 10.0000 12.0000 Café — déjà vu (non-ASCII caption)
+cap 12.5000 14.0000 Zoomed out and shaking
+cap 27.0000 29.0000 Line one\nLine two
+sfx 0
+checkpoints 27
+cp t=0.0000
+ang -90.0000 0.0000 160.0000 10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1170
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=mountains atmos=none sky=ff87ceeb ground=ffe8f4f8 horizon=0.6800
+caption Camera, scene and caption tour
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=0.2000
+ang -89.6438 -0.4660 160.0505 10.0000 -160.0505 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1616
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=mountains atmos=none sky=ff87ceeb ground=ffe8f4f8 horizon=0.6800
+caption Camera, scene and caption tour
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=0.8000
+ang -90.2855 -1.8501 158.9252 10.0000 -158.9252 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.6451
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=mountains atmos=none sky=ff87ceeb ground=ffe8f4f8 horizon=0.6800
+caption Camera, scene and caption tour
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=2.5000
+ang -90.0971 1.1199 159.7475 10.0000 -159.7475 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.2586
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=city atmos=rain sky=ff87ceeb ground=ffe8f4f8 horizon=0.6800
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=2.8000
+ang -95.3989 -0.0687 85.1446 -20.0000 -85.1446 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1560
+cam zoom=1.2000 panx=-0.0600 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=city atmos=rain sky=ff16213e ground=ff0f3443 horizon=0.7200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=3.5000
+ang -94.0440 -0.9901 84.8793 -20.0000 -84.8793 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1654
+cam zoom=1.2000 panx=-0.0600 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=city atmos=rain sky=ff16213e ground=ff0f3443 horizon=0.7200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=4.0710
+ang -93.2179 0.4834 85.4265 -20.0000 -85.4265 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.3328
+cam zoom=1.2000 panx=-0.0600 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=city atmos=rain sky=ff16213e ground=ff0f3443 horizon=0.7200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=7.5000
+ang -99.8845 4.8688 59.7470 -35.0000 -59.7470 35.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.2589
+cam zoom=1.0000 panx=0.0000 pany=0.0400 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=ff283593 style=gradient line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=clouds atmos=fog sky=ff9bb7d4 ground=ffdce8f0 horizon=0.7000
+caption A longer caption that has to wrap over several lines so the caption fitting code~
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=7.9000
+ang -84.2512 -19.9033 78.9039 -90.0000 -158.9039 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.6349
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=ff283593 style=gradient line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=clouds atmos=fog sky=ff9bb7d4 ground=ffdce8f0 horizon=0.7000
+caption A longer caption that has to wrap over several lines so the caption fitting code~
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=8.1430
+ang -85.0894 -20.8038 80.8984 -90.0000 -160.8983 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.5790
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=ff283593 style=gradient line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=clouds atmos=fog sky=ff9bb7d4 ground=ffdce8f0 horizon=0.7000
+caption A longer caption that has to wrap over several lines so the caption fitting code~
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=8.7000
+ang -80.7352 -19.5833 79.8038 -90.0000 -159.8038 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.2961
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=ff283593 style=gradient line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=clouds atmos=fog sky=ff9bb7d4 ground=ffdce8f0 horizon=0.7000
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=12.2140
+ang -89.3872 -1.2305 30.1551 -10.0000 -160.1551 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.7485
+cam zoom=1.8000 panx=0.1000 pany=-0.0500 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=ff283593 style=solid line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=room atmos=stars sky=fff3e5d0 ground=ffc9a876 horizon=0.6800
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=12.5000
+ang -88.1155 0.1312 30.2530 -10.0000 -160.2530 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=5 eye=1.0000 hip=0.0000 amp=0.2589
+cam zoom=1.8000 panx=0.1000 pany=-0.0500 shake=0.4000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=beach atmos=none sky=fff3e5d0 ground=ffc9a876 horizon=0.6800
+caption Zoomed out and shaking
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=12.8000
+ang -98.0506 4.7540 27.8537 -15.0000 -27.8536 15.0000 72.0000 5.0000 108.0000 -5.0000
+st mouth=1 expr=5 eye=1.0000 hip=0.0000 amp=0.1569
+cam zoom=0.8000 panx=0.1000 pany=-0.0500 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=beach atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption Zoomed out and shaking
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=13.5000
+ang -99.8096 5.3926 28.1207 -15.0000 -28.1207 15.0000 72.0000 5.0000 108.0000 -5.0000
+st mouth=1 expr=5 eye=1.0000 hip=0.0000 amp=0.1654
+cam zoom=0.8000 panx=0.1000 pany=-0.0500 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=true liney=0.8000 mouth=- eye=- brow=-
+scene shape=beach atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption Zoomed out and shaking
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=16.2860
+ang -88.1856 2.8682 158.9857 10.0000 -158.9857 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.7266
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=17.0000
+ang -90.4326 0.2163 160.8716 10.0000 -160.8716 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5158
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.3000 y=0.5500 scale=0.8000 head=1.2000 op=0.6000
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=17.2500
+ang -99.4796 -9.4279 81.0559 5.0000 -159.0559 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5909
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.3000 y=0.5500 scale=0.8000 head=1.2000 op=0.6000
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=17.9000
+ang -97.4636 -9.2970 83.0962 5.0000 -161.0962 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.6349
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.3000 y=0.5500 scale=0.8000 head=1.2000 op=0.6000
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=20.3570
+ang -82.4085 6.5265 159.1484 10.0000 -81.1484 -5.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5308
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.7000 y=0.5500 scale=1.3000 head=0.9000 op=1.0000
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=22.0000
+ang -83.3315 8.6657 160.0000 10.0000 -82.0000 -5.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5308
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.7000 y=0.5500 scale=1.3000 head=0.9000 op=1.0000
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=22.2500
+ang -89.5549 1.9451 160.3910 10.0000 -160.3911 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5909
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.5000 y=0.5200 scale=1.0000 head=1.0000 op=1.0000
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=22.9000
+ang -89.0109 0.5343 159.8264 10.0000 -159.8264 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.6349
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.5000 y=0.5200 scale=1.0000 head=1.0000 op=1.0000
+col bone=- head=- joint=- bg=ff3e2723 grad=ff283593 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=- eye=- brow=-
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=24.4290
+ang -100.8848 7.9013 47.9076 -15.0000 -47.9076 15.0000 68.0000 5.0000 112.0000 -5.0000
+st mouth=1 expr=5 eye=1.0000 hip=0.0000 amp=0.2932
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.5000 y=0.5200 scale=1.0000 head=1.0000 op=1.0000
+col bone=ffff7043 head=ffffcc80 joint=ffffffff bg=ff1b5e20 grad=ff004d40 style=gradient line=ff4fc3f7 showline=false liney=0.8000 mouth=ff3e2723 eye=ff3e2723 brow=ff3e2723
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption -
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=27.0000
+ang -99.5674 7.7837 47.0984 -15.0000 -47.0984 15.0000 68.0000 5.0000 112.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5308
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.5000 y=0.5200 scale=1.0000 head=1.0000 op=1.0000
+col bone=ffff7043 head=ffffcc80 joint=ffffffff bg=ff1b5e20 grad=ff004d40 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=ff3e2723 eye=ff3e2723 brow=ff3e2723
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption Line one\nLine two
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=27.2500
+ang -92.1332 -1.1011 160.9441 10.0000 -160.9441 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.5909
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.5000 y=0.5200 scale=1.0000 head=1.0000 op=1.0000
+col bone=ff0000ff head=ff0000ff joint=ff0000ff bg=ff1a1a2e grad=ff004d40 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=ff0d0d14 eye=ff0d0d14 brow=ff0d0d14
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption Line one\nLine two
+ov n=0 sumx=0.0000 sumy=0.0000
+cp t=27.9000
+ang -92.2511 0.0967 158.9038 10.0000 -158.9038 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=5 eye=1.0000 hip=0.0000 amp=0.6349
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=0.5000 y=0.5200 scale=1.0000 head=1.0000 op=1.0000
+col bone=ff0000ff head=ff0000ff joint=ff0000ff bg=ff1a1a2e grad=ff004d40 style=solid line=ff4fc3f7 showline=false liney=0.8000 mouth=ff0d0d14 eye=ff0d0d14 brow=ff0d0d14
+scene shape=none atmos=none sky=ff1a2744 ground=ff0d1b2a horizon=0.6200
+caption Line one\nLine two
+ov n=0 sumx=0.0000 sumy=0.0000

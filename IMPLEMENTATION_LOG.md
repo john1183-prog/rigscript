@@ -7,30 +7,32 @@ Authoritative brief: `docs/CAMPAIGN_BRIEF.md` (Part A rules, Part C work package
 _Handoff Packet. Rewritten after every WP (A9). Treat it as a claim: verify shas, tags and CI against the repo before acting (A6 step 5)._
 
 **1. STATE**
-- Last green commit on `main`: `32b42ce` (WP0.3; VERIFIED-BY-CI run 38070446289: build success, 25 unit tests passed, APK 17.2 MB, 15 Kotlin warnings as at baseline). Earlier green: `3b74f13` (WP0.3a, run 38057935110), `617dbdf` (run 38051291580), `593f257` (run 38051012391), `9d92a45` (run 38028154388), `91c67f6` (run 38028034601), baseline `eb6b0b3` (run 37477158994). The commit carrying this packet is docs-only; its own CI result was not known when it was written.
-- Tags: `pre-v2-baseline` (annotated, object `ea9037f` → `eb6b0b3`). Branches: only `main`. `v2-p0` is NOT pushed yet (WP0.4 and WP0.5 remain).
-- Latest verified CI/APK run: https://github.com/john1183-prog/rigscript/actions/runs/38070446289 (artifacts `app-debug`, `unit-test-report`, `build-log`).
-- Unit tests: 25 (`SanityTest` 2, `TestEnvelopesTest` 6, `FixtureParseTest` 9, `LegacyJsonTest` 8), VERIFIED-BY-CI.
-- WPs: 0.1 done · 0.1b done · 0.2 done · 0.3 done · 0.4, 0.5 not started · Phases 1–5 not started.
+- Last green commit on `main`: `4072847` (WP0.4; VERIFIED-BY-CI run 38121349244: build success, 42 unit tests passed, APK 17.2 MB, 15 Kotlin warnings as at baseline). Earlier green: `8076a8b` (run 38070747323), `32b42ce` (WP0.3, run 38070446289), `3b74f13` (run 38057935110), `617dbdf` (run 38051291580), `593f257` (run 38051012391), `9d92a45` (run 38028154388), `91c67f6` (run 38028034601), baseline `eb6b0b3` (run 37477158994). The commit carrying this packet is docs-only; its own CI result was not known when it was written.
+- Tags: `pre-v2-baseline` (annotated, object `ea9037f` → `eb6b0b3`). Branches: only `main`. `v2-p0` is NOT pushed yet (WP0.5 remains).
+- Latest verified CI/APK run: https://github.com/john1183-prog/rigscript/actions/runs/38121349244 (artifacts `app-debug`, `unit-test-report`, `build-log`, `golden-actual`).
+- Unit tests: 42 (`SanityTest` 2, `TestEnvelopesTest` 7, `FixtureParseTest` 9, `LegacyJsonTest` 8, `GoldenCompareTest` 8, `EngineInvariantTest` 7, `GoldenTest` 1), VERIFIED-BY-CI.
+- WPs: 0.1 done · 0.1b done · 0.2 done · 0.3 done · 0.4 done · 0.5 not started · Phases 1–5 not started.
 
 **2. IN-FLIGHT**
 - None. Working tree clean; everything is pushed.
 
 **3. NEXT STEPS**
-1. WP0.4 goldens. First read `V2_DECISIONS.md` `## Key architectural facts` and `## Deferred, with rationale` (`grep -n '^## '`), then `PlaybackEngine.kt` (~40 KB), `TimelineCompiler.kt` and `OverlayResolver.kt` (whole functions; `grep -n 'import android'` first). Decide whether `PlaybackEngine` can be built on the JVM (`isReturnDefaultValues = true` only stubs static `android.*` calls; `Paint`, `Canvas` and `Matrix` objects are not usable): if not, extract the minimal pure core (A8) and log it. Dump helper: for each of the 7 fixtures, with `TestEnvelopes.speechLike(...)` as the envelope (silence and noisy for property tests), write snapshots rounded to 1e-4 to `app/build/golden-actual/`. Transport to the sandbox: tests print `CAPTURE|<name>|<gzip+base64 chunk>` lines; `ci_report.py` shows CAPTURE lines up to 40,000 characters in total (raise `captured_output(limit=...)`; the check-run text limit is 65,535 and the report caps at 60,000, so post extra check runs per chunk for more); decode in the sandbox and commit under `app/src/test/resources/golden/`. Compare step with tolerance 1e-3 that passes with a warning when a golden is missing; a comparator unit test that perturbs a copy; property tests (determinism, seek equals sequential within 1e-4, monotone cue order, no NaN or infinity).
-2. WP0.5 triage (verify-first list in the brief), then push the annotated tag `v2-p0` and record the I12 launch-safety review.
+1. WP0.5 triage (verify-first list: `grep -n 'WP0.5' docs/CAMPAIGN_BRIEF.md`; re-read B1 to B3). Spring parity is testable locally now (`tools/localjvm/run.sh`): the live path (`PlaybackEngine.tick`) should evaluate transitions like the export path (analytic, `resolveBaseAngles(t, useAnalyticalSpring = true)`, no Euler integration); then extend `EngineInvariantTest.livePlaybackMatchesSeekOnceTheEngineHasSettled` from settled frames to all frames, for `spring`, `elastic_out` and `bounce` at several stiffness/damping values and with `easeAllWithSpring` true and false. The goldens use the export path and must stay unchanged (justify any change in `V2_DECISIONS.md`). Read the comment of `AmplitudeSettings.easeAllWithSpring` first (it says the spring is layered on top of the ease; the export path replaces the ease). Then the Android-side items (VideoExporter `queueFrame` guard, ExportTarget leak, `GlesFigureFrame` TEMPORARY mouth diagnostic, validator wording for `rigid`, B3 items, landscape zoom clamp, demo ground line): read first, fix only if small and safe (they compile only in CI), otherwise map to a later WP; record every outcome in the log. Also decide about the cue at exactly 0 s (finding in the WP0.4 entry).
+2. Push the annotated tag `v2-p0` and record the I12 launch-safety review.
 3. Phase 1 starts with WP1.1 (`engine/ExportAudio.kt`) only after `v2-p0`.
 
 **4. DECISIONS**
 - Kickoff decisions are in `V2_DECISIONS.md` ("2026-10-10 — V2 campaign kickoff"), with the OVERRIDDEN annotation and the Craft-vs-Direction amendment.
 - CI feedback channel is the check run "CI report" (WP0.2a). Tests can publish data through `CAPTURE|name|payload` stdout lines (WP0.3a). JUnit 4.13.2 through catalog alias `libs.junit`; tests in `app/src/test/java/com/example/`, resources in `app/src/test/resources/`.
 - WP0.3: the fixture corpus is generated (`tools/fixtures/gen_fixtures.py`), baseline fields only, never edited for V2 fields (add new fixtures); a seventh fixture covers edge cases. Entry: `V2_DECISIONS.md` "2026-10-10 — WP0.3".
+- WP0.4: goldens (`app/src/test/resources/golden/`, tolerance 1e-3) protect the export path of the shared engine; regenerate only for intended changes and justify them in `V2_DECISIONS.md`. `tools/localjvm` compiles and runs the pure engine tests without Gradle. Entry: `V2_DECISIONS.md` "2026-10-11 — WP0.4".
 
 **5. DEVIATIONS**
 - `docs/CAMPAIGN_BRIEF.md` was re-typed from the chat (the attachment was not on disk); the real token on its D1 line is replaced by `<PASTE TOKEN>` plus a note because the repo is public. Checked: 12 A-sections, 4 B, 6 D, 39 WPs, 78 KB, no token-like string. Read in full again this session; no contradiction found. If a transcription slip is suspected, ask John to attach the original.
 - A7 "Reading CI" (job logs, artifact zips) does not work from the sandbox and is replaced by the CI report check run.
 - WP0.2 was done as 0.2a (CI report channel and `.github/scripts/ci_report.py`, not in the brief) and 0.2b (JUnit and the test step).
 - WP0.3 was done as 0.3a (throwaway capture test and the `CAPTURE|` channel in `ci_report.py`, commit `3b74f13`) and 0.3b (fixtures and tests, `32b42ce`); seven fixtures instead of the brief's six (the extra one is `07_edge_cases`).
+- WP0.4: the goldens were generated locally with `tools/localjvm` and committed, instead of downloading the CI artifact (artifacts cannot be downloaded here); CI then confirmed the compare on Gradle. The `CAPTURE|golden:` fallback prints new text when a golden is missing or differs.
 
 **6. LOOK OUT FOR**
 1. CI logs and artifacts cannot be downloaded here: `GET /actions/jobs/<id>/logs` answers 302 to `productionresultssa1.blob.core.windows.net`, which does not resolve. Use the CI report check run (item 2). John can allow `*.blob.core.windows.net` in the sandbox network settings if he wants artifact downloads.
@@ -44,22 +46,25 @@ _Handoff Packet. Rewritten after every WP (A9). Treat it as a claim: verify shas
 9. Test stdout reaches the sandbox only through `CAPTURE|` lines (see NEXT STEPS 1); other output printed by tests is not in the report.
 10. `ProjectDef.id` and `lastModifiedMs` default to a random UUID and the clock: always set both in fixtures and tests. Colors in JSON are decimal Longs (for example `4278190335`), never hex strings.
 11. Validator facts (VERIFIED-BY-READING, `ScriptValidator.kt`): an event with an unknown pose is skipped entirely; an unknown ease is treated as linear; it warns when two events are within 0.01 s of each other; the overlay overlap check is O(n²) over layers; no check throws (no `!!`). `FixtureParseTest.edgeFixtureTriggersEveryValidatorRule` lists the wording: when WP3.5 changes it, update the test, do not weaken it.
-12. JVM-safe and exercised by tests already: `AppJson`, the data classes, `StickFigureRig`, `Expression`, `ScriptValidator`, `BuiltInSoundEffects`. Not yet tried on the JVM: `PlaybackEngine`, `TimelineCompiler`, `OverlayResolver`.
+12. JVM-safe and exercised by tests: `AppJson`, the data classes, `StickFigureRig`, `Expression`, `ScriptValidator`, `BuiltInSoundEffects`, `PlaybackEngine`, `TimelineCompiler`, `OverlayResolver`, `EasingMath`. Not on the JVM: renderers (`RigRenderer`, `Gles*`), `VideoExporter`, `AmplitudeAnalyzer` (only its `MouthShape` constants are used), Room, Compose.
+13. Local compile and run: `tools/localjvm/run.sh [TestClass ...]` (first run fetches kotlinc 2.0.21, 86 MB, from GitHub releases through `setup.sh`; about a minute afterwards). It stubs `@Serializable`, `android.util.Log`, `MouthShape`, JUnit and decodes fixtures with a reflective reader, so `LegacyJsonTest` and anything needing kotlinx.serialization still run only in CI. New pure sources go into `tools/localjvm/main_files.txt`, new test files into `test_files.txt`. Output of the golden test: `/tmp/localjvm-out/run/build/golden-actual/`.
+14. Regenerating goldens after an intended engine change: run `tools/localjvm/run.sh`, copy `/tmp/localjvm-out/run/build/golden-actual/*.txt` to `app/src/test/resources/golden/`, justify the change in `V2_DECISIONS.md`, push, and let CI confirm. On CI, a differing golden also prints `CAPTURE|golden:<name>:<i>/<n>|<chunk>` lines (gzip + base64) in the CI report.
+15. Baseline findings from WP0.4 (details in its `V2_DECISIONS.md` entry): live and export paths differ during transitions; `easeAllWithSpring` (default true) makes the export evaluate every non-rigid ease as `springAnalytical`; a cue at exactly 0 s never fires in live ticking.
 
 **7. VERIFICATION STATUS**
-- VERIFIED-BY-CI: run 38070446289 (build, 25 tests, APK) and run 38057935110 (legacy JSON capture). The legacy JSON is exactly what the baseline classes serialized (read back from the CI report check run). The fixture generator's schema-key check and the envelope thresholds were also run locally in Python (not a Kotlin check). Docs edits VERIFIED-BY-READING. Nothing is device-tested. `TEST_CHECKLIST.md` does not exist yet (first needed with Phase 1).
+- VERIFIED-BY-CI: run 38121349244 (build, 42 tests including the golden compare, APK, `golden-actual` artifact) and run 38057935110 (legacy JSON capture). The goldens were produced by a local run of the same sources (kotlinc 2.0.21 on JDK 21) and matched on Gradle (Temurin 17, kotlinx.serialization parser). Docs edits VERIFIED-BY-READING. Nothing is device-tested. `TEST_CHECKLIST.md` does not exist yet (first needed with Phase 1).
 
 **8. OPEN QUESTIONS**
 - None.
 
 **9. ENVIRONMENT**
-- git 2.43.0, OpenJDK 21.0.10, Python 3.12 (numpy, matplotlib, PIL, yaml present), ffmpeg and ffprobe present (re-detected this session). No gradle, sdkmanager or kotlinc; dl.google.com, repo.maven.apache.org and plugins.gradle.org are unreachable, so there is no local compile and CI is the compiler. github.com and authenticated api.github.com work. The token is a fine-grained PAT that John pastes in chat; it can read Actions, push commits and tags, delete branches and update workflow files (all VERIFIED by successful operations). Never write it to disk or print it.
+- git 2.43.0, OpenJDK 21.0.10, Python 3.12 (numpy, matplotlib, PIL, yaml present), ffmpeg and ffprobe present (re-detected this session). No gradle or sdkmanager. A standalone kotlinc 2.0.21 can be fetched from GitHub releases (`tools/localjvm/setup.sh`), so pure code compiles and its tests run locally; Android code, kotlinx.serialization-dependent tests and the APK need CI. dl.google.com, repo.maven.apache.org and plugins.gradle.org are unreachable. github.com and authenticated api.github.com work. The token is a fine-grained PAT that John pastes in chat; it can read Actions, push commits and tags, delete branches and update workflow files (all VERIFIED by successful operations). Never write it to disk or print it.
 
 **10. REMINDERS**
 - I1 old scripts render identically; I2 determinism and seek-equals-sequential; I3 logic only in the shared engine, renderers only draw; I5 never describe unmerged fields in the prompt and keep the two prompt copies byte-identical; I11 every new engine layer fail-soft. Re-read A3 and A4 before touching engine code. Every commit ends with the A5 Verification footer; no Co-authored-by; commit identity `john1183-prog <john1183-prog@users.noreply.github.com>`.
 
 **11. WHY THE SESSION STOPPED**
-- Clean boundary: WP0.3 done and CI-green. By the A9 proxies (many large tool outputs: the 78 KB brief, the schema files, two CI waits) about 60% of the budget is used, and WP0.4 first needs the engine sources read (`PlaybackEngine` ~40 KB, `TimelineCompiler`, `OverlayResolver`) and possibly a pure core extracted, which would not leave the 15% handoff reserve.
+- Clean boundary: WP0.4 done and CI-green (this packet was written at that point; if work on WP0.5 was pushed afterwards, the log below says so).
 
 ## OPEN QUESTIONS
 
@@ -73,7 +78,7 @@ None.
 | 0.1b | Remove other remote branches | A | done | n/a (remote op) | n/a |
 | 0.2 | Test infrastructure and CI | A | done (0.2a CI report, 0.2b JUnit + CI tests) | 9d92a45, 593f257 | success (runs 38028154388, 38051012391) |
 | 0.3 | Fixtures | A | done (0.3a legacy JSON capture, 0.3b fixtures and tests) | 3b74f13, 32b42ce | success (runs 38057935110, 38070446289) |
-| 0.4 | Legacy protection (goldens) | A | not started | | |
+| 0.4 | Legacy protection (goldens) | A | done (0.4a machinery, 0.4b goldens, tools/localjvm) | 640c9f3, 55ea8f2, 4072847 | success (run 38121349244) |
 | 0.5 | Triage and small fixes | A | not started | | |
 | 1.1–1.7 | Export audio and GLES, parity, diagnostics | A | not started | | |
 | 2.1–2.7 | Acting layer | A | not started | | |
@@ -107,3 +112,10 @@ None.
 - **WP0.3a:** `LegacyJsonCaptureTest` (throwaway) printed `CAPTURE|name|json` for the four baseline classes; `ci_report.py` gained `captured_output()` (CAPTURE lines from the JUnit XML system-out, 40,000-character cap) and a "Captured test output" section; dry-run locally with a fake XML. Push `617dbdf..3b74f13`: run 38057935110 success (tests 3 run). The JSON was read from the check run through the API and written byte-exact to `fixtures/legacy_json/` (appearance 916 characters and 36 keys, export 132 and 7, music 70 and 4, project 6,028 and 15). VERIFIED-BY-CI.
 - **WP0.3b:** seven fixtures and their generator, `Fixtures`/`TestEnvelopes` helpers, three test classes; throwaway test removed. Push `3b74f13..32b42ce`: run 38070446289 success on the first attempt; CI report "tests 25 run, 0 failed, 0 errors, 0 skipped", APK 17.2 MB, 15 Kotlin warnings (unchanged). VERIFIED-BY-CI. WP0.3 accepted ("fixtures load through the real parser in a test").
 - **Session 2 stop:** clean boundary after WP0.3 (see packet section 11). Phase 0 continues with WP0.4.
+
+### 2026-10-11 — Session 2, continued
+
+- **WP0.4 design check:** `PlaybackEngine`, `TimelineCompiler`, `OverlayResolver` import no Android types (`grep '^import'`), so no core extraction. `TimelineCompiler` calls `android.util.Log.w` for unknown poses; `isReturnDefaultValues = true` was already set (WP0.2b).
+- **Local compile discovered:** the Kotlin 2.0.21 compiler distribution (86 MB) downloads from GitHub releases (`github.com` and `release-assets.githubusercontent.com` are allowed). With stubs it compiles the pure sources and runs the tests locally: first run 31 of 31 passed, then 32 with the pinned-envelope test. Committed as `tools/localjvm` (`55ea8f2`).
+- **WP0.4a** (`640c9f3`): `EngineHarness`, `GoldenSnapshot`, `GoldenCompare`, `GoldenTest`, `GoldenCompareTest`, `EngineInvariantTest`, `Fixtures.textOrNull`, pinned envelope values, and the `golden-actual` artifact step in `build.yml`. **WP0.4b** (`4072847`): seven goldens (5.2 KB to 71.8 KB), generated locally from the unchanged baseline engine and reviewed (keyframes, 28 warnings in 07, overlay expansion at 04's busiest checkpoint: 45 overlays). Mutation check: shake decay 0.3 to 0.5 in a scratch copy failed `GoldenTest` with exact lines. Pushed `8076a8b..4072847`: run 38121349244 success, "tests 42 run, 0 failed, 0 errors, 0 skipped", APK 17.2 MB, 15 Kotlin warnings, artifact `golden-actual` (23 KB) present. VERIFIED-BY-CI. WP0.4 accepted (goldens committed, compare green on CI, comparator proven by `GoldenCompareTest`).
+- **Findings for WP0.5** (details in `V2_DECISIONS.md` "2026-10-11 — WP0.4"): live path and export path evaluate transitions differently (spring parity); a cue at exactly 0 s never fires in live ticking.

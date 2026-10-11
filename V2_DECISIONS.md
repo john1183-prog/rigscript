@@ -2282,6 +2282,54 @@ approved by the person before implementing:**
   25 tests passed; capture run 38057935110 on `3b74f13`). Not
   device-confirmed.
 
+- **2026-10-11 — WP0.4: golden snapshots of the shared engine and engine
+  property tests (test infrastructure only; no app code changed).**
+  `PlaybackEngine`, `TimelineCompiler`, `OverlayResolver`, `EasingMath` and
+  `StickFigureRig` have no Android dependency, so they run on the JVM
+  unchanged; no pure core had to be extracted. `EngineHarness` wires them like
+  `VideoExporter` and drives them with `seekToWithAmplitude`.
+  `GoldenSnapshot` writes, per fixture: validator warnings; a summary of the
+  baked keyframes; caption and sound-effect cues; and 11 to 27 checkpoints
+  (start, mid-transition and settled times of up to seven keyframes, plus six
+  evenly spaced times) with joint angles, mouth, expression, eye openness,
+  camera, figure overrides, scene, caption and the resolved overlays, rounded
+  to 1e-4, using the synthetic speech envelope. Amplitude smoothing makes
+  `seekToWithAmplitude` stateful, so every checkpoint replays 15 frames first,
+  as an export would. The goldens are `app/src/test/resources/golden/` (7
+  files, 200 KB), generated from the unchanged baseline engine and reviewed.
+  `GoldenTest` always writes `app/build/golden-actual/` (CI uploads it as
+  artifact `golden-actual`), compares at tolerance 1e-3 (decimal numbers
+  numerically, everything else exactly), passes with a warning when a golden
+  is missing, and prints the new text as `CAPTURE|golden:...` lines when a
+  golden is missing or differs. For an intended change: regenerate, justify it
+  here, never loosen the tolerance. A mutation check (the shake decay constant
+  changed in a scratch copy) made the goldens fail as intended.
+  Property tests (`EngineInvariantTest`): deterministic snapshots; no NaN or
+  infinity on every frame of every fixture; seek independent of earlier seeks;
+  cues and captions sorted and every cue fires once, in order; live playback
+  equals seek within 1e-4 once an event has settled.
+  Baseline findings, recorded and not fixed here: (1) during a transition the
+  live path (`tick`: the named ease plus Euler spring smoothing, stiffness 320
+  and damping 32, event spring parameters ignored) and the export path
+  (`seekToWithAmplitude`: with the default `easeAllWithSpring = true` every
+  non-rigid ease is replaced by `springAnalytical`, although the setting's own
+  comment says the spring is layered on top of the ease) differ: B1's spring
+  parity, owned by WP0.5; (2) a sound-effect cue at exactly `timeSec` 0 never
+  fires in live ticking (`cue.timeSec > lastCueScanTimeSec`).
+  Not covered: renderer output (Canvas and GLES pixels), `applyParenting`
+  (needs bone anchors from the renderers' FK), custom project poses, real
+  mouth shapes (zero-crossing based), idle fidget (default off), non-default
+  `AmplitudeSettings`, audio mixing and MediaCodec.
+  Also added `tools/localjvm`: a standalone Kotlin 2.0.21 compiler fetched
+  from GitHub releases compiles the pure `engine/` and `data/` sources and the
+  JVM tests with stubs for `@Serializable`, `android.util.Log`, `MouthShape`
+  and JUnit, and runs them in about a minute. This replaces "CI is the only
+  compiler" for pure code; Android-dependent code still compiles only in CI.
+  Classification (A4): test infrastructure; neither Craft nor Direction.
+  Verification: VERIFIED-BY-CI (run 38121349244 on `4072847`: build success,
+  42 tests passed, goldens compared on Gradle with the real parser; locally 32
+  tests via `tools/localjvm`). Not device-confirmed.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

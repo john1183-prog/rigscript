@@ -40,11 +40,12 @@ object ScriptValidator {
     private val VALID_OVERLAY_STYLE = setOf("fade", "pop", "zoom", "slideup", "slidedown", "none")
     private val VALID_OVERLAY_SLOT  = setOf("upper", "center", "lower")
     // Ease values valid for enterEase/exitEase — same set VALID_EASE covers
-    // minus "rigid" (rigid is pose-transition-specific and meaningless for
-    // an opacity/scale fade) plus "back" (added specifically for overlay
-    // pop/zoom styles, not used anywhere in ScriptEvent).
+    // plus "back" (added specifically for overlay pop/zoom styles, not used
+    // anywhere in ScriptEvent). "rigid" is accepted: EasingMath.ease("rigid", t)
+    // is 1, so an enter or exit with it snaps to the final state with no easing
+    // (R10: it used to be reported as unknown and "treated as linear").
     private val VALID_OVERLAY_EASE = setOf(
-        "linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic_out", "spring", "back"
+        "linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic_out", "spring", "back", "rigid"
     )
     private val VALID_ANIM_EASE = setOf(
         "linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic_out", "spring", "back", "rigid"

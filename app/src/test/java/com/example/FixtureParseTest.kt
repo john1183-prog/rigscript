@@ -1,7 +1,11 @@
 package com.example
 
+import com.example.data.AnimScript
 import com.example.data.BuiltInSoundEffects
+import com.example.data.OverlayLayer
+import com.example.data.ScriptEvent
 import com.example.engine.Expression
+import com.example.engine.OverlayResolver
 import com.example.engine.ScriptValidator
 import com.example.engine.StickFigureRig
 import org.junit.Assert.assertEquals
@@ -169,6 +173,26 @@ class FixtureParseTest {
             val bad = warnings(name).filter { w -> defectMarkers.any { w.contains(it) } }
             assertTrue("$name has defect warnings: $bad", bad.isEmpty())
         }
+    }
+
+    @Test
+    fun rigidIsAcceptedAsAnOverlayEaseBecauseItSnaps() {
+        // R10: EasingMath.ease("rigid", t) is 1, so a rigid enter or exit snaps; the validator used to call it
+        // unknown and "treated as linear".
+        val layer = OverlayLayer(
+            id = "r", type = "text", text = "x", startSec = 1f, endSec = 3f,
+            enterStyle = "fade", enterEase = "rigid", enterDuration = 0.5f,
+            exitStyle = "fade", exitEase = "rigid", exitDuration = 0.5f
+        )
+        val script = AnimScript(
+            events = listOf(ScriptEvent(timeSec = 0f, pose = "stand_straight")),
+            overlayLayers = listOf(layer)
+        )
+        val warnings = ScriptValidator.validate(script, libraryIds)
+        assertTrue(warnings.toString(), warnings.none { it.contains("enterEase") || it.contains("exitEase") })
+        // A linear fade would be at 0.1 here; a snap is fully visible at once.
+        assertEquals(1f, OverlayResolver.resolveTimeBased(listOf(layer), 1.05f).single().opacity, 1e-6f)
+        assertEquals(1f, OverlayResolver.resolveTimeBased(listOf(layer), 2.95f).single().opacity, 1e-6f)
     }
 
     @Test

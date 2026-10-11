@@ -4,7 +4,9 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
 import kotlin.math.sqrt
@@ -60,14 +62,16 @@ object AmplitudeAnalyzer {
 
     suspend fun analyze(audioFilePath: String): AmplitudeAnalysisResult =
         withContext(Dispatchers.Default) {
-            runCatching { analyzeInternal(audioFilePath, AMPLITUDE_ANALYSIS_FPS) }
+            runCatching { analyzeInternal(audioFilePath, AMPLITUDE_ANALYSIS_FPS) { isActive } }
                 .getOrElse { e ->
+                    // WP0.5 (B3): cancellation must reach the caller, not turn into an empty result.
+                    if (e is CancellationException) throw e
                     Log.e(TAG, "Amplitude analysis failed", e)
                     AmplitudeAnalysisResult(FloatArray(0), IntArray(0), 0f)
                 }
         }
 
-    private fun analyzeInternal(path: String, fps: Int): AmplitudeAnalysisResult {
+    private fun analyzeInternal(path: String, fps: Int, stillActive: () -> Boolean): AmplitudeAnalysisResult {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         try {
@@ -107,10 +111,17 @@ object AmplitudeAnalyzer {
             var inputDone  = false
             var outputDone = false
 
+            var idleSpins = 0
             while (!outputDone) {
+                // WP0.5 (B3): stop when the caller cancels, and give up on a decoder that never delivers
+                // end of stream (about 30 to 60 seconds without any input or output progress).
+                if (!stillActive()) throw CancellationException("Amplitude analysis cancelled")
+                check(idleSpins < 3000) { "Audio decoder stalled: no progress for about 30 seconds" }
+                var progressed = false
                 if (!inputDone) {
                     val inIdx = codec.dequeueInputBuffer(TIMEOUT_US)
                     if (inIdx >= 0) {
+                        progressed = true
                         val buf  = codec.getInputBuffer(inIdx)!!
                         val size = extractor.readSampleData(buf, 0)
                         if (size < 0) {
@@ -124,6 +135,8 @@ object AmplitudeAnalyzer {
                 }
 
                 val outIdx = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                if (outIdx != MediaCodec.INFO_TRY_AGAIN_LATER) progressed = true
+                idleSpins = if (progressed) 0 else idleSpins + 1
                 when {
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> { /* no-op */ }
                     outIdx >= 0 -> {

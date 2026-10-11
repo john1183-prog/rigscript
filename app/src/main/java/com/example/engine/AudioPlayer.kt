@@ -29,6 +29,17 @@ class AudioPlayer private constructor() {
         private set
 
     @Volatile private var isReady: Boolean = false
+
+    /**
+     * WP0.5 (B3): load() prepares on a background thread, so a late prepare could assign a MediaPlayer after
+     * release() or a newer load() had already run, and nothing would ever release it. Every load() and release()
+     * moves [loadGeneration]; a prepare that finishes under an older generation releases its own player instead.
+     */
+    private val playerLock = Any()
+    @Volatile private var loadGeneration: Int = 0
+
+    /** Kept here (not only on the player) so a listener set before prepare completes is not lost. */
+    private var completionListener: (() -> Unit)? = null
     // Real bug this fixes: previously, play() called before prepare()
     // finished was a SILENT no-op with no retry — the UI would flip to
     // "playing" state regardless, since nothing here told it otherwise, and
@@ -62,22 +73,40 @@ class AudioPlayer private constructor() {
         // no lifecycle owner of its own to scope a coroutine to. This is a known
         // tradeoff, not an oversight — see the V2 handoff doc for the cleaner
         // alternative (inject a CoroutineScope tied to AudioPlayer's own lifecycle).
+        val generation = synchronized(playerLock) { loadGeneration }
         GlobalScope.launch(Dispatchers.IO) {
+            val prepared = runCatching { MediaPlayer() }.getOrNull() ?: return@launch
             runCatching {
-                player = MediaPlayer().apply {
-                    setDataSource(filePath)
-                    prepare()   // blocking — must not run on Main
-                    isReady = true
+                prepared.setDataSource(filePath)
+                prepared.prepare()   // blocking — must not run on Main
+                val accepted = synchronized(playerLock) {
+                    if (generation != loadGeneration) {
+                        false
+                    } else {
+                        player = prepared
+                        completionListener?.let { cb -> prepared.setOnCompletionListener { cb() } }
+                        isReady = true
+                        true
+                    }
+                }
+                if (!accepted) {
+                    // A newer load() or a release() happened while this one was preparing.
+                    runCatching { prepared.release() }
+                    return@runCatching
                 }
                 if (pendingPlay) {
                     pendingPlay = false
                     runCatching { player?.start() }
                 }
-            }.onFailure { Log.e(TAG, "Failed to load audio: $filePath", it) }
+            }.onFailure {
+                runCatching { prepared.release() }
+                Log.e(TAG, "Failed to load audio: $filePath", it)
+            }
         }
     }
 
     fun release() {
+        synchronized(playerLock) { loadGeneration++ }
         runCatching { player?.release() }
         player = null
         currentAmplitude  = 0f
@@ -103,7 +132,10 @@ class AudioPlayer private constructor() {
     }
 
     fun setOnCompletionListener(cb: () -> Unit) {
-        player?.setOnCompletionListener { cb() }
+        synchronized(playerLock) {
+            completionListener = cb
+            player?.setOnCompletionListener { cb() }
+        }
     }
 
     // ── Amplitude ─────────────────────────────────────────────────────────────

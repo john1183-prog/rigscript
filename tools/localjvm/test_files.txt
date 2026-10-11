@@ -7,3 +7,5 @@ GoldenSnapshot.kt
 GoldenTest.kt
 GoldenCompareTest.kt
 EngineInvariantTest.kt
+EngineAsserts.kt
+SpringParityTest.kt

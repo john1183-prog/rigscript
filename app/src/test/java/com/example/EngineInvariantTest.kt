@@ -1,14 +1,10 @@
 package com.example
 
 import com.example.data.AmplitudeSettings
-import com.example.engine.BakedKeyframe
 import com.example.engine.PlaybackEngine
 import com.example.engine.SoundEffectCue
 import com.example.engine.TimelineCompiler
-import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.max
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -16,10 +12,8 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * WP0.4 property tests over the fixture corpus, run against the baseline engine (invariant I2 and friends).
- * They assert only what already holds at the baseline. Known gap, owned by WP0.5: during a transition the live
- * path (`tick`) and the export path (`seekToWithAmplitude`) evaluate eases differently (spring parity, B1), so
- * live-versus-seek equality is asserted only once an event has settled.
+ * WP0.4 property tests over the fixture corpus (invariant I2 and friends): deterministic snapshots, no NaN or
+ * infinity, seek independent of earlier seeks, cue order. Live-versus-seek parity is in [SpringParityTest].
  */
 class EngineInvariantTest {
 
@@ -49,41 +43,6 @@ class EngineInvariantTest {
             require(o.trailPointsLocal.all { finite(it.first) && finite(it.second) }) { "$label: overlay '${o.id}' trail" }
             require((o.figurePoseAngles ?: emptyList()).all { finite(it) }) { "$label: overlay '${o.id}' pose angles" }
         }
-    }
-
-    private fun assertSameState(label: String, a: PlaybackEngine, b: PlaybackEngine) {
-        assertArrayEquals("$label: angles", a.currentAngles, b.currentAngles, 1e-6f)
-        assertEquals("$label: expression", a.currentExpression, b.currentExpression)
-        assertEquals(
-            "$label: camera",
-            listOf(a.currentCameraZoom, a.currentCameraPanX, a.currentCameraPanY, a.currentShakeIntensity),
-            listOf(b.currentCameraZoom, b.currentCameraPanX, b.currentCameraPanY, b.currentShakeIntensity)
-        )
-        assertEquals("$label: figure", a.currentFigureOverrides, b.currentFigureOverrides)
-        assertEquals(
-            "$label: scene",
-            listOf(a.currentSkyColor, a.currentGroundColor, a.currentHorizonY, a.currentSceneShape, a.currentSceneAtmosphere),
-            listOf(b.currentSkyColor, b.currentGroundColor, b.currentHorizonY, b.currentSceneShape, b.currentSceneAtmosphere)
-        )
-        assertEquals("$label: caption", a.currentCaption, b.currentCaption)
-        assertEquals("$label: overlays", a.currentOverlays, b.currentOverlays)
-        assertEquals("$label: eyes", a.currentEyeOpenness, b.currentEyeOpenness, 0f)
-    }
-
-    private fun near(label: String, what: String, a: Float?, b: Float?) {
-        require((a == null) == (b == null)) { "$label: $what null mismatch ($a vs $b)" }
-        if (a != null && b != null) require(abs(a - b) <= 1e-4f) { "$label: $what $a vs $b" }
-    }
-
-    /** True once the active keyframe finished its transition more than 1.5 s ago, so the live spring has converged. */
-    private fun isSettled(keyframes: List<BakedKeyframe>, t: Float): Boolean {
-        var idx = -1
-        for (i in keyframes.indices) {
-            if (keyframes[i].timeSec <= t) idx = i else break
-        }
-        if (idx < 0) return false
-        val kf = keyframes[idx]
-        return t - kf.timeSec >= kf.duration + 1.5f
     }
 
     @Test
@@ -150,50 +109,8 @@ class EngineInvariantTest {
                 walker.seekTo(t)
                 val fresh = EngineHarness.create(script, envelope, noAmplitude, kfs)
                 fresh.seekTo(t)
-                assertSameState("$name at $t", fresh, walker)
+                EngineAsserts.assertSameState("$name at $t", fresh, walker)
             }
-        }
-    }
-
-    @Test
-    fun livePlaybackMatchesSeekOnceTheEngineHasSettled() {
-        for (name in Fixtures.SCRIPT_NAMES) {
-            val script = Fixtures.script(name)
-            val kfs = EngineHarness.compile(script)
-            if (kfs.isEmpty()) continue
-            val last = kfs.last()
-            val end = last.timeSec + last.duration + 3f
-            val silent = TestEnvelopes.silence(ceil(end))
-            val live = EngineHarness.create(script, silent, noAmplitude, kfs)
-            val seek = EngineHarness.create(script, silent, noAmplitude, kfs)
-            var compared = 0
-            var worst = 0f
-            for (i in 1..(end * EngineHarness.ENV_FPS).toInt()) {
-                live.tick(1f / EngineHarness.ENV_FPS, 0f)
-                val t = live.currentTimeSec
-                if (!isSettled(kfs, t)) continue
-                seek.seekTo(t)
-                for (b in live.currentAngles.indices) worst = max(worst, abs(live.currentAngles[b] - seek.currentAngles[b]))
-                val label = "$name at $t"
-                near(label, "zoom", live.currentCameraZoom, seek.currentCameraZoom)
-                near(label, "panX", live.currentCameraPanX, seek.currentCameraPanX)
-                near(label, "panY", live.currentCameraPanY, seek.currentCameraPanY)
-                near(label, "horizon", live.currentHorizonY, seek.currentHorizonY)
-                val fl = live.currentFigureOverrides
-                val fs = seek.currentFigureOverrides
-                near(label, "figureX", fl.x, fs.x)
-                near(label, "figureY", fl.y, fs.y)
-                near(label, "figureScale", fl.scale, fs.scale)
-                near(label, "headScale", fl.headScale, fs.headScale)
-                near(label, "figureOpacity", fl.opacity, fs.opacity)
-                assertEquals("$label: expression", live.currentExpression, seek.currentExpression)
-                assertEquals("$label: scene", live.currentSceneShape + live.currentSceneAtmosphere, seek.currentSceneShape + seek.currentSceneAtmosphere)
-                assertEquals("$label: caption", live.currentCaption, seek.currentCaption)
-                assertEquals("$label: overlays", live.currentOverlays, seek.currentOverlays)
-                compared++
-            }
-            assertTrue("$name: no settled frame was compared", compared > 0)
-            assertTrue("$name: worst angle difference $worst over $compared settled frames", worst <= 1e-4f)
         }
     }
 

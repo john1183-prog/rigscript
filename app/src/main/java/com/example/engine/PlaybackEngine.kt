@@ -225,6 +225,14 @@ class PlaybackEngine {
 
     /** True when the active keyframe's ease is `"rigid"` — [tick] bypasses spring integration entirely when this is set. */
     private var activeKeyframeIsRigid: Boolean = false
+
+    /**
+     * True only after [loadTimeline] was called with `snapToCurrentTime = false` (a script edit while
+     * playing): until the angles have converged on the new target, [tick] chases it with a spring so the
+     * figure does not pop. At every other time [currentAngles] IS the analytic evaluation that seek and
+     * export use, so preview and export agree (WP0.5, spring parity).
+     */
+    private var reloadChase: Boolean = false
     /** Merged, sorted, deterministic blink trigger times (script + natural). Set via [loadBlinkSchedule]. */
     @Volatile private var blinkSchedule: FloatArray = FloatArray(0)
     /** Deterministic idle-fidget trigger times, scheduled only inside sufficiently silent stretches. Set via [loadFidgetSchedule]. */
@@ -262,6 +270,9 @@ class PlaybackEngine {
         if (snapToCurrentTime) {
             baseAngles.copyInto(currentAngles)
             springVelocities.fill(0f)
+            reloadChase = false
+        } else {
+            reloadChase = true
         }
     }
 
@@ -345,6 +356,7 @@ class PlaybackEngine {
         currentTimeSec = 0f
         smoothedAmplitude = 0f
         springVelocities.fill(0f)
+        reloadChase = false
         resolveBaseAngles(0f, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
         lastCueScanTimeSec = 0f
@@ -374,19 +386,22 @@ class PlaybackEngine {
         }
         lastCueScanTimeSec = currentTimeSec
 
-        // 1. Resolve target angles (and V2 expression/camera/shake) from timeline
-        resolveBaseAngles(currentTimeSec, useAnalyticalSpring = false)
+        // 1. Resolve the pose with the SAME evaluation seek and export use (analytic spring for "spring"
+        //    events and, with easeAllWithSpring, for every non-rigid ease; the event's own stiffness and
+        //    damping apply). Preview therefore shows what the export will contain (WP0.5, spring parity;
+        //    before this, the preview chased the eased value with a fixed stiffness 320 / damping 32 spring).
+        resolveBaseAngles(currentTimeSec, useAnalyticalSpring = true)
 
-        // 2. Spring-integrate currentAngles toward baseAngles — EXCEPT for
-        //    "rigid" keyframes, which must snap with zero physics character.
-        //    Letting the spring chase a suddenly-updated target still LOOKS
-        //    springy for a few frames; rigid means mechanical, not "springy
-        //    toward a new goalpost".
-        if (activeKeyframeIsRigid) {
+        // 2. currentAngles is that evaluation. The one exception is a hot reload while playing
+        //    (loadTimeline with snapToCurrentTime = false): chase the new target with the spring until it
+        //    has converged, so an edit does not make the figure pop. "rigid" keyframes always snap.
+        if (reloadChase && !activeKeyframeIsRigid) {
+            applySpringIntegration(safeDt)
+            if (chaseConverged()) reloadChase = false
+        } else {
             baseAngles.copyInto(currentAngles)
             springVelocities.fill(0f)
-        } else {
-            applySpringIntegration(safeDt)
+            reloadChase = false
         }
 
         // 3. Layer amplitude-driven motion on top
@@ -400,6 +415,7 @@ class PlaybackEngine {
     fun seekTo(timeSec: Float) {
         currentTimeSec = timeSec
         springVelocities.fill(0f)
+        reloadChase = false
         resolveBaseAngles(timeSec, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
         // V2 — a seek/scrub should never replay every sound effect between the
@@ -424,6 +440,7 @@ class PlaybackEngine {
     fun seekToWithAmplitude(timeSec: Float, rawAmp: Float, mouthShape: Int = MouthShape.CLOSED) {
         currentTimeSec = timeSec
         springVelocities.fill(0f)
+        reloadChase = false
         resolveBaseAngles(timeSec, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
         applyAmplitudeMotion(1f / 30f, rawAmp)
@@ -666,6 +683,14 @@ class PlaybackEngine {
     private val springStep = FloatArray(2)   // [0]=newPos, [1]=newVel
 
     /** 4-step Euler spring integration toward [baseAngles]. */
+    /** True once every bone is within 0.01 degrees of its target and has almost stopped moving. */
+    private fun chaseConverged(): Boolean {
+        for (i in 0 until n) {
+            if (abs(currentAngles[i] - baseAngles[i]) > 0.01f || abs(springVelocities[i]) > 0.1f) return false
+        }
+        return true
+    }
+
     private fun applySpringIntegration(dt: Float) {
         val subDt = dt / 4f
         repeat(4) {

@@ -2330,6 +2330,86 @@ approved by the person before implementing:**
   42 tests passed, goldens compared on Gradle with the real parser; locally 32
   tests via `tools/localjvm`). Not device-confirmed.
 
+- **2026-10-11 — WP0.5: triage of the reported findings, spring parity and
+  small fixes (Phase 0 closes).**
+  Every item of the verify-first list was re-checked against HEAD and has an
+  outcome. Fixed (pure code with local and CI tests, Android code compiled by
+  CI only, none device-tested):
+  - *Spring parity (B1), `2251960`.* `PlaybackEngine.tick` now resolves
+    transitions with the same analytic evaluation as seek and export, so the
+    preview shows what the export contains (before, the preview chased the
+    eased value with a fixed stiffness 320 / damping 32 spring and ignored the
+    event's own parameters: up to about 100 degrees apart mid-transition in
+    the fixtures). The old chase survives only as a transient after a hot
+    reload while playing (`loadTimeline(snapToCurrentTime = false)`), ending
+    when converged; seek, reset and a snapping reload clear it. Direction
+    chosen: the live path follows the export, because the export is the
+    artefact people publish and the goldens pin it (unchanged). `SpringParityTest`
+    (5 tests): live equals seek at every frame of every fixture, also with
+    amplitude motion against the export loop, for six eases x six spring
+    settings x overlapping or not x `easeAllWithSpring` on and off x 30 and 60
+    fps ticks; the event's spring parameters change the live angles; a hot
+    reload eases and then matches seek. Four of the five fail on the previous
+    engine.
+  - *Sound-effect cue at exactly 0 s, `2afe780`* (a WP0.4 finding): live
+    ticking scanned (last, now] from 0, so a cue at 0 never played in the
+    preview although the export mixes it; now it fires once at the start and
+    after a restart.
+  - *`rigid` as an overlay enter/exit ease (R10), `cf28053`:* accepted by the
+    validator; `EasingMath.ease("rigid", t)` is 1, so it snaps.
+  - *Canvas exporter, `087976f`:* targets already built are released when a
+    later one throws (and a half-built target releases itself); `queueFrame`
+    checks the input buffer and fails with both sizes (`KEY_MAX_INPUT_SIZE` is
+    deliberately not set: for encoders it is only a hint and cannot be
+    verified without devices); `drainUntilEndOfStream` fails after 30 s
+    without output; the GLES smoke test uses the project's bitrate.
+  - *`AudioPlayer`, `9e3ff5c`:* a generation counter makes a late `prepare`
+    release its own player instead of overwriting or leaking; the completion
+    listener is stored and applied when the player exists (nothing calls it
+    today). *`AmplitudeAnalyzer`, `e6217ce`:* honours cancellation (rethrown,
+    not turned into an empty result) and fails after 30 to 60 s without
+    progress. *GLES TEMPORARY mouth diagnostic removed, `7f33781`:* logging
+    only, its premise superseded by the rotation fix recorded below in this
+    file; the roughly 2 px GLES offset (R1) stays with the GLES work packages.
+  Verified and deferred (nothing changed):
+  - *Unknown pose drops the whole event:* CONFIRMED (fixture 07: 11 events,
+    10 keyframes; its expression, zoom and caption are lost). WP2.5.
+  - *Two events on one `timeSec`:* CONFIRMED (fixture 05 at 13.5 s: the first
+    pose is never visible, an instant 130 degree jump). WP2.5 (design).
+  - *Overlapping transitions pop:* CONFIRMED only off the defaults. Largest
+    bone jump when a second event starts 0.3 s into a 0.8 s transition: 0.001
+    degrees with the default spring, 8.3 with a soft spring (60/6), 81 with
+    `linear` and 103 with `ease_in_out` when `easeAllWithSpring` is off. The
+    next transition starts from the previous target, not the current pose.
+    Phase 2 (blend from the current pose).
+  - *`springAnalytical` clamp discontinuity:* CONFIRMED for damping ratios
+    below about 0.15: the value at t = 1 jumps (0.944 to 1.0 for 280/2, 1.116
+    to 1.0 for 60/1) and the 1.5 clamp is reached; the default 280/28 peaks at
+    1.008. Changing it changes exports of such scripts: Phase 2.
+  - *Camera-shake aliasing:* CONFIRMED by arithmetic: `sin(137.5 t)` is 21.9
+    Hz, above the 15 Hz Nyquist limit at 30 fps, and `cos(93.7 t)` is 14.9 Hz.
+    Changing it changes every shaken export (I1); Phase 2 camera work.
+  - *Fixed dt in amplitude motion:* CONFIRMED and wider than reported:
+    `applyAmplitudeMotion` ignores its `dt` and smooths once per call, so the
+    preview (render rate) and a 60 fps export smooth twice as fast per second as
+    a 30 fps export. Planned fix: `1 - factor^(dt * 30)` with the real frame
+    step passed by the exporter; goldens (30 fps) would not change. WP1.x,
+    with the exporter work.
+  Not a defect: *`copyAudioTrack` reusing one buffer* is the canonical
+  extractor-to-muxer loop (`writeSampleData` copies synchronously). *GLES
+  `figureAlpha`* is applied to all five command types; what differs is that
+  Canvas composites the figure as one layer while GLES multiplies each
+  primitive's alpha, so overlaps look different at partial opacity.
+  Older open items, both ALREADY FIXED at HEAD: landscape zoom clamp (`3fddab3`;
+  the 9:16 anchoring is in `RigRenderer`, `GlesFigureFrame`,
+  `AnimationSurfaceView` and `VideoExporter`) and the DEMO ground line
+  (`d04c069`; `AnimScript.DEMO` sets `showGroundLine = false` at the scene
+  change).
+  Classification (A4): bug fixes and parity (Craft-neutral, I1 kept: goldens
+  unchanged). Verification: VERIFIED-BY-CI (run 38171565298 on `7f33781`: build
+  success, 48 tests, 15 Kotlin warnings as before); pure code also run locally.
+  Not device-confirmed.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

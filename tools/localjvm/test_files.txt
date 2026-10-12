@@ -9,3 +9,4 @@ GoldenCompareTest.kt
 EngineInvariantTest.kt
 EngineAsserts.kt
 SpringParityTest.kt
+ExportAudioPlanTest.kt

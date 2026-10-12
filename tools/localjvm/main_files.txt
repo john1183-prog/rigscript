@@ -13,3 +13,5 @@ engine/Expression.kt
 engine/ScriptValidator.kt
 engine/FigureOverrides.kt
 engine/Scene.kt
+data/SoundEffectClip.kt
+engine/ExportAudioPlan.kt

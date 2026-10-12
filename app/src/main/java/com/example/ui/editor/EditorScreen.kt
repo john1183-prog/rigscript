@@ -1399,6 +1399,17 @@ private fun ExportPanel(
                             }
                         }
                     }
+                    val warnings = exportedFile.flatMap { it.warnings }.distinct()
+                    if (warnings.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Heads-up", style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                            warnings.forEach { w ->
+                                Text("• $w", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
                 }
             }
         }

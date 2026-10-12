@@ -39,7 +39,13 @@ import java.nio.ByteBuffer
  *               [com.example.data.ExportSettings.dualAspectExport] is set),
  *               and the UI needs to label which file is which.
  */
-data class ExportResult(val uri: Uri, val location: String, val aspectLabel: String)
+data class ExportResult(
+    val uri: Uri,
+    val location: String,
+    val aspectLabel: String,
+    /** Things the export did NOT do as asked (a skipped sound-effect cue, a failed mix, ...), for the UI to show. */
+    val warnings: List<String> = emptyList()
+)
 
 /**
  * Encodes the animation to an H.264/MP4 file (or, with
@@ -98,7 +104,6 @@ object VideoExporter {
         val bufferInfo = MediaCodec.BufferInfo()
         var videoTrackIdx      = -1
         var audioTrackIdx      = -1
-        var mixedAudioTrackIdx = -1
         var muxerStarted       = false
         var encoderReleased    = false
         var muxerReleased      = false
@@ -128,7 +133,7 @@ object VideoExporter {
         // instead of the export being truncated.
         val lastKf    = keyframes.lastOrNull()
         val scriptEnd = if (lastKf != null) lastKf.timeSec + lastKf.duration else 0f
-        val totalSec  = maxOf(scriptEnd, project.audioDurationSec) + 1f
+        val totalSec  = ExportAudioPlan.totalSec(scriptEnd, project.audioDurationSec)
         val totalFrames = (totalSec * fps).toInt().coerceAtLeast(1)
 
         // Pre-baked amplitude envelope, indexed at AMPLITUDE_ANALYSIS_FPS (always 30fps,
@@ -167,36 +172,18 @@ object VideoExporter {
                 runCatching { BitmapFactory.decodeFile(overlay.imagePath) }.getOrNull()
             else null
 
-        // V2 — background music + sound effects. Computed ONCE and reused for
-        // every target below — see the class doc comment's "single pass"
-        // explanation. Only actually decodes/mixes/re-encodes when either is
-        // configured; every other export keeps using the fast verbatim-copy
-        // audio path, untouched.
-        val music = project.backgroundMusic
-        val soundEffectsById = project.soundEffects.associateBy { it.id }
-        val soundEffectTriggers: List<AudioMixer.SoundEffectTrigger> =
-            TimelineCompiler.extractSoundEffectCues(project.script).mapNotNull { cue ->
-                val clip = soundEffectsById[cue.clipId] ?: return@mapNotNull null
-                AudioMixer.SoundEffectTrigger(cue.timeSec, clip.filePath, clip.volume * cue.volumeMultiplier)
-            }
-        val useMixer = settings.embedAudio && (music.musicFilePath != null || soundEffectTriggers.isNotEmpty())
-        val mixedTrack: AudioMixer.EncodedAudioTrack? =
-            if (useMixer) {
-                runCatching {
-                    AudioMixer.buildMixedTrack(
-                        narrationPath   = project.audioFilePath,
-                        musicPath       = music.musicFilePath,
-                        narrationVolume = music.narrationVolume,
-                        musicVolume     = music.volume,
-                        loopMusic       = music.loop,
-                        totalSec        = totalSec,
-                        soundEffects    = soundEffectTriggers
-                    )
-                }.onFailure { Log.e(TAG, "Background music mix failed, falling back to narration-only", it) }
-                    .getOrNull()
-            } else null
+        // WP1.1 — the audio, prepared ONCE and reused for every target below (see the class doc comment's
+        // "single pass" explanation): narration passthrough, or a mix of narration, music and sound effects,
+        // or nothing. ExportAudioPlan decides; every skipped cue or fallback becomes a warning on the result.
+        val audio = ExportAudio.prepare(
+            embedAudio    = settings.embedAudio,
+            narrationPath = project.audioFilePath,
+            music         = project.backgroundMusic,
+            cues          = TimelineCompiler.extractSoundEffectCues(project.script),
+            library       = project.soundEffects,
+            totalSec      = totalSec
+        )
 
-        // ── Build one ExportTarget per aspect ratio ───────────────────────────
         val builtTargets = ArrayList<ExportTarget>()
         val targets: List<ExportTarget> = try {
             aspectsToExport.map { aspect ->
@@ -271,11 +258,7 @@ object VideoExporter {
         fun startMuxerIfNeeded(t: ExportTarget) {
             if (!t.muxerStarted) {
                 t.videoTrackIdx = t.muxer.addTrack(t.encoder.outputFormat)
-                if (mixedTrack != null) {
-                    t.mixedAudioTrackIdx = t.muxer.addTrack(mixedTrack.format)
-                } else if (settings.embedAudio && project.audioFilePath != null) {
-                    t.audioTrackIdx = addAudioTrack(t.muxer, project.audioFilePath)
-                }
+                t.audioTrackIdx = audio.addTrack(t.muxer)
                 t.muxer.start(); t.muxerStarted = true
             }
         }
@@ -353,22 +336,11 @@ object VideoExporter {
                 if (isEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
         }
 
+        val audioWriteWarnings = ArrayList<String>()
         /** Writes the shared mixed/verbatim audio into [t]'s muxer — same source data, once per target, no re-decode/re-mix. */
         fun writeAudio(t: ExportTarget) {
-            if (!t.muxerStarted) return
-            if (t.mixedAudioTrackIdx >= 0 && mixedTrack != null) {
-                val audioInfo = MediaCodec.BufferInfo()
-                for (s in mixedTrack.samples) {
-                    val buf = ByteBuffer.wrap(s.data)
-                    audioInfo.offset = 0
-                    audioInfo.size = s.data.size
-                    audioInfo.presentationTimeUs = s.presentationTimeUs
-                    audioInfo.flags = s.flags
-                    t.muxer.writeSampleData(t.mixedAudioTrackIdx, buf, audioInfo)
-                }
-            } else if (t.audioTrackIdx >= 0 && project.audioFilePath != null) {
-                copyAudioTrack(project.audioFilePath, t.muxer, t.audioTrackIdx, (totalSec * 1_000_000L).toLong())
-            }
+            if (!t.muxerStarted || t.audioTrackIdx < 0) return
+            audioWriteWarnings += audio.write(t.muxer, t.audioTrackIdx, (totalSec * 1_000_000L).toLong())
         }
 
         var overallSuccess = false
@@ -463,7 +435,8 @@ object VideoExporter {
             Log.i(TAG, "Exported $totalFrames frames x ${targets.size} target(s) -> " +
                 targets.joinToString { it.output.location })
 
-            targets.map { ExportResult(it.output.uri, it.output.location, it.aspectLabel) }
+            val warnings = (audio.warnings + audioWriteWarnings).distinct()
+            targets.map { ExportResult(it.output.uri, it.output.location, it.aspectLabel, warnings) }
 
         } finally {
             for (t in targets) {
@@ -637,7 +610,7 @@ object VideoExporter {
                                 // real narration file) is what actually
                                 // needed confirming here.
                                 if (project.audioFilePath != null) {
-                                    audioTrackIdx = addAudioTrack(muxer, project.audioFilePath)
+                                    audioTrackIdx = ExportAudio.addNarrationTrack(muxer, project.audioFilePath)
                                 }
                                 muxer.start(); muxerStarted = true
                             }
@@ -748,7 +721,7 @@ object VideoExporter {
                 encoder.signalEndOfInputStream()
                 drain(untilEos = true)
                 if (audioTrackIdx >= 0 && project.audioFilePath != null) {
-                    copyAudioTrack(project.audioFilePath, muxer, audioTrackIdx, (durationSec * 1_000_000L).toLong())
+                    ExportAudio.copyNarration(project.audioFilePath, muxer, audioTrackIdx, (durationSec * 1_000_000L).toLong())
                 }
                 onProgress?.invoke(1f, 0f)
 
@@ -917,46 +890,4 @@ object VideoExporter {
             }
         }
     }
-
-    // ── Audio helpers ─────────────────────────────────────────────────────────
-
-    private fun addAudioTrack(muxer: MediaMuxer, audioPath: String): Int =
-        runCatching {
-            val ex = MediaExtractor().also { it.setDataSource(audioPath) }
-            for (i in 0 until ex.trackCount) {
-                val fmt = ex.getTrackFormat(i)
-                if (fmt.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                    val idx = muxer.addTrack(fmt)
-                    ex.release()
-                    return idx
-                }
-            }
-            ex.release(); -1
-        }.getOrElse { Log.e(TAG, "addAudioTrack failed", it); -1 }
-
-    private fun copyAudioTrack(
-        audioPath: String, muxer: MediaMuxer, trackIdx: Int, maxPtsUs: Long
-    ) = runCatching {
-        val ex = MediaExtractor().also { it.setDataSource(audioPath) }
-        var src = -1
-        for (i in 0 until ex.trackCount) {
-            if (ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME)
-                    ?.startsWith("audio/") == true) { src = i; break }
-        }
-        if (src < 0) { ex.release(); return@runCatching }
-        ex.selectTrack(src)
-
-        val buf  = ByteBuffer.allocate(512 * 1024)
-        val info = MediaCodec.BufferInfo()
-        while (true) {
-            val sz = ex.readSampleData(buf, 0)
-            if (sz < 0 || ex.sampleTime > maxPtsUs) break
-            info.offset = 0; info.size = sz
-            info.presentationTimeUs = ex.sampleTime
-            info.flags = ex.sampleFlags
-            muxer.writeSampleData(trackIdx, buf, info)
-            ex.advance()
-        }
-        ex.release()
-    }.onFailure { Log.e(TAG, "copyAudioTrack failed", it) }
 }

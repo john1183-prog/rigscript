@@ -2410,6 +2410,37 @@ approved by the person before implementing:**
   success, 48 tests, 15 Kotlin warnings as before); pure code also run locally.
   Not device-confirmed.
 
+- **2026-10-11 — WP1.1: shared export audio (`ExportAudioPlan` and `ExportAudio`).**
+  The spec's `ExportAudio.kt` is split in two so the decisions run on the JVM:
+  `ExportAudioPlan` (pure; 10 tests, also run by `tools/localjvm`) and
+  `ExportAudio` (MediaCodec and MediaMuxer glue, compiled by CI only).
+  `decideMode(embedAudio, hasNarration, hasMusic, sfxTriggerCount)` returns
+  `NONE`, `PASSTHROUGH` or `MIX` exactly as the Canvas export always chose
+  (mix when there is music or at least one resolvable cue, else copy the
+  narration). `resolveCues` maps script cues to library clips (volume = clip
+  volume times the cue multiplier, still unclamped until WP1.2) and reports
+  unknown ids once each with the number of skipped cues. `afterMixFailure` keeps
+  the narration when there is one and names the reason; `afterNarrationFailure`
+  and `totalSec` (the one export-length formula, `max(scriptEnd, audio) + 1 s`)
+  complete it. `ExportAudio.prepare` builds the plan once per export;
+  `PreparedAudio.addTrack(muxer)` and `write(muxer, trackIdx, maxDurationUs)`
+  (which returns warnings) replace the inline mixer, `addAudioTrack` and
+  `copyAudioTrack` code in `VideoExporter.export`. Narration-only exports add
+  the same track format and copy the same samples, so they are unchanged.
+  What used to disappear silently is now a warning on `ExportResult.warnings`
+  (new, default empty), listed under "Heads-up" in the export panel: cues whose
+  clip is not in the library, a failed mix (with the reason, falling back to the
+  narration), an unreadable narration, a narration copy that stops part-way.
+  The GLES smoke test keeps its own narration-only copy through
+  `ExportAudio.addNarrationTrack` and `copyNarration`; WP1.3 moves it onto
+  `prepare`. Not covered by tests: everything that touches MediaCodec,
+  MediaExtractor or MediaMuxer, and the Compose warning block.
+  Classification (A4): Direction-neutral plumbing; behaviour change only where
+  something used to be dropped without a word. Verification: VERIFIED-BY-CI
+  (run 38302108439 on `a2bc242`: build success, 58 tests, 15 Kotlin warnings as
+  before; the report's one "compiler error" line is a Kotlin daemon start-up
+  message during KSP, the build succeeded). Not device-confirmed.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

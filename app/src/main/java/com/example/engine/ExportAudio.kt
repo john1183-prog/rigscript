@@ -8,6 +8,7 @@ import android.util.Log
 import com.example.data.BackgroundMusicSettings
 import com.example.data.SoundEffectClip
 import java.nio.ByteBuffer
+import kotlinx.coroutines.CancellationException
 
 /**
  * The audio of an export, shared by the video backends (WP1.1). [ExportAudioPlan] decides what to do (pure,
@@ -74,7 +75,8 @@ object ExportAudio {
         music: BackgroundMusicSettings,
         cues: List<SoundEffectCue>,
         library: List<SoundEffectClip>,
-        totalSec: Float
+        totalSec: Float,
+        stillActive: () -> Boolean = { true }
     ): PreparedAudio {
         if (!embedAudio) return PreparedAudio(ExportAudioPlan.Mode.NONE, emptyList(), null, null, null)
 
@@ -92,10 +94,16 @@ object ExportAudio {
                     musicVolume     = music.volume,
                     loopMusic       = music.loop,
                     totalSec        = totalSec,
-                    soundEffects    = resolution.resolved.map { AudioMixer.SoundEffectTrigger(it.timeSec, it.filePath, it.volume) }
+                    soundEffects    = resolution.resolved.map { AudioMixer.SoundEffectTrigger(it.timeSec, it.filePath, it.volume) },
+                    stillActive     = stillActive
                 )
             }
-            val track = attempt.getOrNull()
+            // A cancelled export must stop, not be reported as a failed mix with a fallback.
+            val failure = attempt.exceptionOrNull()
+            if (failure is CancellationException) throw failure
+            val mixResult = attempt.getOrNull()
+            warnings += mixResult?.warnings.orEmpty()
+            val track = mixResult?.track
             if (track != null) return PreparedAudio(ExportAudioPlan.Mode.MIX, warnings, track, null, null)
 
             val reason = if (attempt.isFailure) ExportAudioPlan.reasonOf(attempt.exceptionOrNull()) else ExportAudioPlan.NOTHING_DECODABLE

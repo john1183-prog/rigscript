@@ -92,7 +92,7 @@ class SoundEffectPlayer {
                 Log.w(TAG, "Sound effect '${cue.clipId}' triggered before its clip finished loading — skipped.")
                 continue
             }
-            val v = (clipVolume * cue.volumeMultiplier).coerceIn(0f, 1f)
+            val v = AudioMath.effectiveSfxVolume(clipVolume, cue.volumeMultiplier)
             runCatching { soundPool.play(soundId, v, v, 0, 0, 1f) }
         }
     }

@@ -5,36 +5,32 @@ import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.util.Log
-import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlinx.coroutines.CancellationException
 
 /**
- * Decodes narration + background music to raw PCM, mixes them at their
- * configured volumes, and re-encodes the result to AAC as a single track
- * ready to hand to [android.media.MediaMuxer].
+ * Decodes narration, background music and sound effects to raw PCM, mixes them at their configured volumes, and
+ * re-encodes the result to AAC as a single track ready for [android.media.MediaMuxer].
  *
- * This is deliberately ONLY invoked by [VideoExporter] when
- * [com.example.data.BackgroundMusicSettings.musicFilePath] is actually set —
- * see that class's doc comment for why every other export keeps using the
- * fast verbatim-copy path instead of going through here.
+ * [ExportAudio] calls this when the export has background music and/or sound-effect cues (see
+ * [ExportAudioPlan.decideMode]); a narration-only export keeps the verbatim-copy path instead.
  *
- * Everything here is synchronous/blocking (same convention as
- * [VideoExporter]'s video encoder loop). [decodeToPcm] still holds one
- * input file's full PCM in memory at a time (narration, then music, then
- * each sound effect — never more than one "full length" buffer plus the
- * bounded set of already-converted ones needed for mixing); at 44.1kHz
- * stereo 16-bit that's roughly 176KB/second per file. What's NOT held in
- * memory anymore is the full MIXED output or a duplicate encoder-input
- * copy of it — [encodeMixedStreaming] mixes, overlays sound effects, and
- * feeds the AAC encoder in small chunks, so those two largest buffers
- * (previously the dominant cost for long projects) never exist. See
- * [encodeMixedStreaming]'s own doc comment for the before/after memory
- * comparison.
- * NOT yet verified against an actual on-device build — this is the
- * highest-risk unverified piece added so far because it's the first code
- * path exercising the audio decode/encode side of MediaCodec at all
- * (everything before this only used MediaCodec for video).
+ * Everything is synchronous and blocking, like [VideoExporter]'s video encoder loop, and bounded (WP1.2):
+ *  - every MediaCodec loop has a no-progress watchdog (about 5 s) and a cancellation check, so a stalled codec
+ *    fails the mix, which [ExportAudio] turns into a warning and a fallback to the narration, instead of hanging the
+ *    export;
+ *  - decoding follows the decoder's actual output format (sample rate, channels and PCM encoding: 16-bit, 8-bit or
+ *    float), not the input track's header, and an input that fails to decode becomes a warning in [MixResult]
+ *    instead of a silent gap;
+ *  - the final sum is soft-limited by [AudioMath.limitToShort]: bit-identical to a plain sum up to 0.89 of full
+ *    scale, shaped instead of hard-clipped above it.
+ *
+ * Memory: each input's full PCM is held once (about 176 KB per second at 44.1 kHz stereo 16-bit); the mixed output is
+ * produced and encoded in small chunks, so it never exists in full.
+ *
+ * The MediaCodec plumbing here is compiled by CI only and has not been verified on a device. The decisions and the
+ * arithmetic it relies on ([AudioMath], [ExportAudioPlan]) are unit-tested on the JVM.
  */
 object AudioMixer {
 
@@ -49,15 +45,28 @@ object AudioMixer {
     data class EncodedSample(val data: ByteArray, val presentationTimeUs: Long, val flags: Int)
     data class EncodedAudioTrack(val format: MediaFormat, val samples: List<EncodedSample>)
 
+    /** The mixed track (null when nothing could be mixed) and what was left out, in plain words (see [ExportAudio]). */
+    data class MixResult(val track: EncodedAudioTrack?, val warnings: List<String>)
+
+    /** No progress at all from a MediaCodec for this long means it is stalled. */
+    private const val WATCHDOG_MS = 5_000L
+
+    private fun checkActive(stillActive: () -> Boolean) {
+        if (!stillActive()) throw CancellationException("Audio mixing cancelled")
+    }
+
+    private fun pcmEncodingOf(format: MediaFormat): Int =
+        if (format.containsKey(MediaFormat.KEY_PCM_ENCODING)) format.getInteger(MediaFormat.KEY_PCM_ENCODING)
+        else AudioMath.ENCODING_PCM_16BIT
+
     /** A single sound-effect trigger resolved to an actual file, ready to mix. Timestamps beyond [buildMixedTrack]'s totalSec are simply clipped, same as any input running past the video's length. */
     data class SoundEffectTrigger(val timeSec: Float, val filePath: String, val volume: Float)
 
     /**
-     * Full pipeline: decode both inputs (either may be null/missing), convert
-     * both to [MIX_SAMPLE_RATE]/[MIX_CHANNELS], mix at the given volumes over
-     * [totalSec], and AAC-encode the result. Returns null if there's nothing
-     * to mix (both inputs missing/undecodable) — caller should fall back to
-     * the existing narration-only path in that case.
+     * Full pipeline: decode the inputs (any may be null or undecodable), convert them to
+     * [MIX_SAMPLE_RATE]/[MIX_CHANNELS], mix at the given volumes over [totalSec], and AAC-encode the result.
+     * The track is null when nothing could be decoded; [MixResult.warnings] names every input that was left out.
+     * [stillActive] is polled in every loop; when it turns false a [CancellationException] is thrown.
      */
     fun buildMixedTrack(
         narrationPath: String?,
@@ -66,128 +75,175 @@ object AudioMixer {
         musicVolume: Float,
         loopMusic: Boolean,
         totalSec: Float,
-        soundEffects: List<SoundEffectTrigger> = emptyList()
-    ): EncodedAudioTrack? {
-        val narrationPcm = narrationPath?.let { runCatching { decodeToPcm(it) }.getOrElse {
-            Log.e(TAG, "Failed to decode narration for mixing: $it"); null
-        } }
-        val musicPcm = musicPath?.let { runCatching { decodeToPcm(it) }.getOrElse {
-            Log.e(TAG, "Failed to decode background music: $it"); null
-        } }
-        if (narrationPcm == null && musicPcm == null && soundEffects.isEmpty()) return null
+        soundEffects: List<SoundEffectTrigger> = emptyList(),
+        stillActive: () -> Boolean = { true }
+    ): MixResult {
+        val warnings = ArrayList<String>()
+
+        fun decodeOrWarn(what: String, path: String): PcmAudio? {
+            checkActive(stillActive)
+            return try {
+                decodeToPcm(path, stillActive)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to decode $what for mixing: $path", e)
+                warnings += "The $what could not be decoded (${ExportAudioPlan.reasonOf(e)}) and was left out of the mix."
+                null
+            }
+        }
+
+        val narrationPcm = narrationPath?.let { decodeOrWarn("narration", it) }
+        val musicPcm = musicPath?.let { decodeOrWarn("background music", it) }
 
         val narrationConverted = narrationPcm?.let { convert(it, MIX_SAMPLE_RATE, MIX_CHANNELS) }
         val musicConverted = musicPcm?.let { convert(it, MIX_SAMPLE_RATE, MIX_CHANNELS) }
 
-        // Sound effect clips are short (a handful of seconds at most) — decoded
-        // and converted up front, once each, same as before. What changes below
-        // is that these are no longer overlaid into one giant in-memory mixed
-        // array; each chunk looks up which clips overlap ITS OWN sample range
-        // as it's produced.
-        val convertedEffects: List<Pair<SoundEffectTrigger, ShortArray>> = soundEffects.mapNotNull { trigger ->
-            val clipPcm = runCatching { decodeToPcm(trigger.filePath) }.getOrElse {
-                Log.e(TAG, "Failed to decode sound effect for mixing: ${trigger.filePath}", it); null
-            } ?: return@mapNotNull null
-            trigger to convert(clipPcm, MIX_SAMPLE_RATE, MIX_CHANNELS)
+        // Sound-effect clips are short; each distinct file is decoded and converted once (a clip used by many cues
+        // used to be decoded once per cue), and a file that fails is reported once.
+        val decodedClips = HashMap<String, ShortArray?>()
+        val convertedEffects = ArrayList<Pair<SoundEffectTrigger, ShortArray>>()
+        for (trigger in soundEffects) {
+            val clip = if (decodedClips.containsKey(trigger.filePath)) {
+                decodedClips[trigger.filePath]
+            } else {
+                val name = trigger.filePath.substringAfterLast('/')
+                val converted = decodeOrWarn("sound effect '$name'", trigger.filePath)
+                    ?.let { convert(it, MIX_SAMPLE_RATE, MIX_CHANNELS) }
+                decodedClips[trigger.filePath] = converted
+                converted
+            }
+            if (clip != null) convertedEffects += trigger to clip
+        }
+
+        if (narrationConverted == null && musicConverted == null && convertedEffects.isEmpty()) {
+            return MixResult(null, warnings)
         }
 
         val totalFrames = (totalSec * MIX_SAMPLE_RATE).toInt().coerceAtLeast(1)
-
-        return encodeMixedStreaming(
+        val track = encodeMixedStreaming(
             narration = narrationConverted, narrationVol = narrationVolume,
             music = musicConverted, musicVol = musicVolume,
             loopMusic = loopMusic, totalFrames = totalFrames, channels = MIX_CHANNELS,
-            soundEffects = convertedEffects
+            soundEffects = convertedEffects, stillActive = stillActive
         )
+        return MixResult(track, warnings)
     }
 
     // ── Decode ───────────────────────────────────────────────────────────────
 
     /**
-     * Decodes any audio file MediaExtractor can open to raw 16-bit PCM,
-     * interleaved by channel. WAV/raw-PCM sources ("audio/raw" track mime)
-     * are read directly with no codec involved; anything compressed
-     * (MP3/AAC/etc) goes through a synchronous [MediaCodec] decode loop.
+     * Decodes any audio file MediaExtractor can open to raw 16-bit PCM, interleaved by channel. WAV/raw-PCM
+     * sources ("audio/raw" track mime) are read directly with no codec involved; anything compressed goes through
+     * a synchronous [MediaCodec] decode loop. The sample rate, channel count and PCM encoding are taken from the
+     * decoder's OUTPUT format once it announces it (HE-AAC can double the rate, a decoder may output float), and
+     * 8-bit and float PCM are converted to 16-bit by [AudioMath.PcmConverter].
      */
-    private fun decodeToPcm(path: String): PcmAudio {
+    private fun decodeToPcm(path: String, stillActive: () -> Boolean): PcmAudio {
         val extractor = MediaExtractor()
-        extractor.setDataSource(path)
-        var trackIdx = -1
-        var format: MediaFormat? = null
-        for (i in 0 until extractor.trackCount) {
-            val f = extractor.getTrackFormat(i)
-            if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                trackIdx = i; format = f; break
+        try {
+            extractor.setDataSource(path)
+            var trackIdx = -1
+            var format: MediaFormat? = null
+            for (i in 0 until extractor.trackCount) {
+                val f = extractor.getTrackFormat(i)
+                if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                    trackIdx = i; format = f; break
+                }
             }
-        }
-        require(trackIdx >= 0 && format != null) { "No audio track found in $path" }
-        extractor.selectTrack(trackIdx)
+            require(trackIdx >= 0 && format != null) { "No audio track found in $path" }
+            extractor.selectTrack(trackIdx)
 
-        val sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        val channels   = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        val mime       = format.getString(MediaFormat.KEY_MIME)!!
+            var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            var channels   = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            val mime       = format.getString(MediaFormat.KEY_MIME)!!
 
-        val pcmBytes = ByteArrayOutputStream()
+            val sink = AudioMath.ShortSink()
+            val converter = AudioMath.PcmConverter(pcmEncodingOf(format))
 
-        if (mime == "audio/raw") {
-            val buf = ByteBuffer.allocate(64 * 1024)
-            while (true) {
-                buf.clear()
-                val sz = extractor.readSampleData(buf, 0)
-                if (sz < 0) break
-                val arr = ByteArray(sz)
-                buf.get(arr, 0, sz)
-                pcmBytes.write(arr)
-                extractor.advance()
-            }
-        } else {
-            val decoder = MediaCodec.createDecoderByType(mime)
-            decoder.configure(format, null, null, 0)
-            decoder.start()
-            val info = MediaCodec.BufferInfo()
-            var inputDone = false
-            var outputDone = false
-            while (!outputDone) {
-                if (!inputDone) {
-                    val inIdx = decoder.dequeueInputBuffer(10_000)
-                    if (inIdx >= 0) {
-                        val inBuf = decoder.getInputBuffer(inIdx)!!
-                        val sz = extractor.readSampleData(inBuf, 0)
-                        if (sz < 0) {
-                            decoder.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
+            if (mime == "audio/raw") {
+                require(AudioMath.bytesPerSample(converter.encoding) > 0) {
+                    "Unsupported PCM encoding ${converter.encoding} in $path"
+                }
+                val buf = ByteBuffer.allocate(64 * 1024)
+                val arr = ByteArray(64 * 1024)
+                while (true) {
+                    checkActive(stillActive)
+                    buf.clear()
+                    val sz = extractor.readSampleData(buf, 0)
+                    if (sz < 0) break
+                    buf.get(arr, 0, sz)
+                    converter.convert(arr, 0, sz, sink)
+                    extractor.advance()
+                }
+            } else {
+                val decoder = MediaCodec.createDecoderByType(mime)
+                try {
+                    decoder.configure(format, null, null, 0)
+                    decoder.start()
+                    val info = MediaCodec.BufferInfo()
+                    val watchdog = AudioMath.NoProgressWatchdog(WATCHDOG_MS)
+                    var scratch = ByteArray(64 * 1024)
+                    var inputDone = false
+                    var outputDone = false
+                    while (!outputDone) {
+                        checkActive(stillActive)
+                        var progressed = false
+                        if (!inputDone) {
+                            val inIdx = decoder.dequeueInputBuffer(10_000)
+                            if (inIdx >= 0) {
+                                progressed = true
+                                val inBuf = decoder.getInputBuffer(inIdx)!!
+                                val sz = extractor.readSampleData(inBuf, 0)
+                                if (sz < 0) {
+                                    decoder.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    inputDone = true
+                                } else {
+                                    decoder.queueInputBuffer(inIdx, 0, sz, extractor.sampleTime, 0)
+                                    extractor.advance()
+                                }
+                            }
+                        }
+                        val outIdx = decoder.dequeueOutputBuffer(info, 10_000)
+                        when {
+                            outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                                progressed = true
+                                val out = decoder.outputFormat
+                                sampleRate = out.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                                channels = out.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                                converter.encoding = pcmEncodingOf(out)
+                            }
+                            outIdx >= 0 -> {
+                                progressed = true
+                                if (info.size > 0 && (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                                    val outBuf = decoder.getOutputBuffer(outIdx)!!
+                                    if (scratch.size < info.size) scratch = ByteArray(info.size)
+                                    outBuf.position(info.offset)
+                                    outBuf.limit(info.offset + info.size)
+                                    outBuf.get(scratch, 0, info.size)
+                                    converter.convert(scratch, 0, info.size, sink)
+                                }
+                                val isEos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                                decoder.releaseOutputBuffer(outIdx, false)
+                                if (isEos) outputDone = true
+                            }
+                            // INFO_TRY_AGAIN_LATER: nothing yet, loop again (the watchdog below bounds the wait).
+                        }
+                        if (progressed) {
+                            watchdog.progress()
                         } else {
-                            decoder.queueInputBuffer(inIdx, 0, sz, extractor.sampleTime, 0)
-                            extractor.advance()
+                            check(!watchdog.expired()) { "Audio decoder stalled: no progress for ${WATCHDOG_MS / 1000} s" }
                         }
                     }
+                    decoder.stop()
+                } finally {
+                    runCatching { decoder.release() }
                 }
-                val outIdx = decoder.dequeueOutputBuffer(info, 10_000)
-                if (outIdx >= 0) {
-                    if (info.size > 0 && (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
-                        val outBuf = decoder.getOutputBuffer(outIdx)!!
-                        val arr = ByteArray(info.size)
-                        outBuf.position(info.offset)
-                        outBuf.limit(info.offset + info.size)
-                        outBuf.get(arr)
-                        pcmBytes.write(arr)
-                    }
-                    val isEos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                    decoder.releaseOutputBuffer(outIdx, false)
-                    if (isEos) outputDone = true
-                }
-                // INFO_TRY_AGAIN_LATER / INFO_OUTPUT_FORMAT_CHANGED: just loop again.
             }
-            decoder.stop()
-            decoder.release()
+            return PcmAudio(sink.toArray(), sampleRate, channels)
+        } finally {
+            runCatching { extractor.release() }
         }
-        extractor.release()
-
-        val bytes = pcmBytes.toByteArray()
-        val shortBuf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-        val samples = ShortArray(shortBuf.remaining())
-        shortBuf.get(samples)
-        return PcmAudio(samples, sampleRate, channels)
     }
 
     // ── Resample / channel conversion ───────────────────────────────────────
@@ -244,30 +300,20 @@ object AudioMixer {
     // ── Streaming mix + overlay + encode ────────────────────────────────────
 
     /**
-     * Fuses mix + sound-effect overlay + AAC encode into ONE chunked pass —
-     * this is what actually fixes the memory profile documented on this
-     * object's own class doc comment (176KB/second held for the full mixed
-     * track, PLUS a second full-length copy that used to exist inside the
-     * old encodeAac's own byte-array conversion). [narration]/[music] are
-     * still held fully in memory (read-only, sample-indexed — safe to share
-     * across chunks since no chunk mutates them), which is a smaller,
-     * bounded cost per input file; what's eliminated is the THIRD and
-     * FOURTH full-length buffers (the mixed output, and the encoder's own
-     * duplicate byte-array copy of it) that previously existed
-     * simultaneously alongside them — for a 10-minute stereo project that's
-     * roughly halving peak memory versus the old two-full-buffer approach.
+     * Fuses mix + sound-effect overlay + AAC encode into ONE chunked pass, so the full mixed output and an encoder
+     * copy of it never exist (see the class doc comment for the memory picture). [narration] and [music] are held
+     * fully in memory, read-only and sample-indexed. Below the soft limiter's knee the output is bit-identical to a
+     * plain sum of the inputs (AudioMathTest.normalMixesKeepTheirLevelBitForBit); above it the sum is shaped, not clipped.
      *
-     * Semantics are verified byte-for-byte identical to the old
-     * mix()+overlayAt() two-pass approach this replaces (checked against
-     * multiple chunk sizes including boundaries that split a sound-effect
-     * clip mid-chunk, a clip running past the mix's end, and looped music)
-     * — this is a memory optimization only, not a behavior change.
+     * Every wait on the encoder is bounded by a no-progress watchdog and checks [stillActive]; the encoder is always
+     * released, also on failure.
      */
     private fun encodeMixedStreaming(
         narration: ShortArray?, narrationVol: Float,
         music: ShortArray?, musicVol: Float,
         loopMusic: Boolean, totalFrames: Int, channels: Int,
         soundEffects: List<Pair<SoundEffectTrigger, ShortArray>>,
+        stillActive: () -> Boolean,
         sampleRate: Int = MIX_SAMPLE_RATE
     ): EncodedAudioTrack {
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels).apply {
@@ -276,129 +322,132 @@ object AudioMixer {
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
         }
         val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
+        try {
+            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.start()
 
-        // Pre-resolve each effect's absolute start SAMPLE (not frame) once,
-        // matching the old overlayAt's `startFrame.coerceAtLeast(0) * channels`.
-        val effects = soundEffects.map { (trigger, clip) ->
-            val startSample = (trigger.timeSec * sampleRate).toInt().coerceAtLeast(0) * channels
-            Triple(startSample, clip, trigger.volume)
-        }
+            // Each effect's absolute start SAMPLE (not frame), resolved once.
+            val effects = soundEffects.map { (trigger, clip) ->
+                val startSample = (trigger.timeSec * sampleRate).toInt().coerceAtLeast(0) * channels
+                AudioMath.PlacedEffect(startSample, clip, trigger.volume)
+            }
 
-        val chunkFrames = 4096
-        val bytesPerFrame = 2 * channels
-        val usPerFrame = 1_000_000.0 / sampleRate
+            val chunkFrames = 4096
+            val bytesPerFrame = 2 * channels
+            val usPerFrame = 1_000_000.0 / sampleRate
 
-        val outSamples = ArrayList<EncodedSample>()
-        var outputFormat = format
-        val info = MediaCodec.BufferInfo()
+            val outSamples = ArrayList<EncodedSample>()
+            var outputFormat = format
+            val info = MediaCodec.BufferInfo()
 
-        fun drain(blockForEos: Boolean) {
-            while (true) {
-                val outIdx = encoder.dequeueOutputBuffer(info, if (blockForEos) 10_000L else 0L)
-                when {
-                    outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> return
-                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> outputFormat = encoder.outputFormat
-                    outIdx >= 0 -> {
-                        val isConfig = (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
-                        if (!isConfig && info.size > 0) {
-                            val buf = encoder.getOutputBuffer(outIdx)!!
-                            val arr = ByteArray(info.size)
-                            buf.position(info.offset); buf.limit(info.offset + info.size)
-                            buf.get(arr)
-                            // EOS flag stripped here — it only has meaning between this
-                            // encoder and its own MediaCodec queue, not to MediaMuxer,
-                            // which VideoExporter writes these samples into later.
-                            outSamples += EncodedSample(arr, info.presentationTimeUs,
-                                info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM.inv())
+            fun drain(blockForEos: Boolean) {
+                val drainWatchdog = AudioMath.NoProgressWatchdog(WATCHDOG_MS)
+                while (true) {
+                    checkActive(stillActive)
+                    val outIdx = encoder.dequeueOutputBuffer(info, if (blockForEos) 10_000L else 0L)
+                    when {
+                        outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                            if (!blockForEos) return
+                            // Finishing: keep waiting for the end-of-stream buffer, but not forever.
+                            check(!drainWatchdog.expired()) {
+                                "Audio encoder gave no output for ${WATCHDOG_MS / 1000} s while finishing"
+                            }
                         }
-                        val isEos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                        encoder.releaseOutputBuffer(outIdx, false)
-                        if (isEos) return
-                    }
-                    else -> return
-                }
-            }
-        }
-
-        // Reused across chunks — allocated once, not once per chunk, same
-        // "zero allocation in the hot loop" principle as PlaybackEngine's
-        // pre-allocated FloatArrays.
-        val chunkShorts = ShortArray(chunkFrames * channels)
-        val chunkBytes = ByteArray(chunkFrames * channels * 2)
-
-        var frame = 0
-        var presentationTimeUs = 0L
-        while (frame < totalFrames) {
-            val thisChunkFrames = minOf(chunkFrames, totalFrames - frame)
-            val chunkStartSample = frame * channels
-            val chunkSamples = thisChunkFrames * channels
-
-            // ── Mix narration + music for this chunk only ──
-            for (j in 0 until chunkSamples) {
-                val i = chunkStartSample + j // absolute sample index — same basis as the old whole-buffer mix()
-                var sample = 0
-                if (narration != null && i < narration.size) {
-                    sample += (narration[i] * narrationVol).toInt()
-                }
-                if (music != null && music.isNotEmpty()) {
-                    val idx = if (loopMusic) i % music.size else i
-                    if (idx < music.size) sample += (music[idx] * musicVol).toInt()
-                }
-                chunkShorts[j] = sample.coerceIn(-32768, 32767).toShort()
-            }
-
-            // ── Overlay sound effects that intersect this chunk's sample range ──
-            val chunkEndSampleExclusive = chunkStartSample + chunkSamples
-            for ((startSample, clip, volume) in effects) {
-                val clipEndSampleExclusive = startSample + clip.size
-                if (clipEndSampleExclusive <= chunkStartSample || startSample >= chunkEndSampleExclusive) continue
-                for (j in 0 until chunkSamples) {
-                    val absIdx = chunkStartSample + j
-                    val clipIdx = absIdx - startSample
-                    if (clipIdx in clip.indices) {
-                        val mixedSample = chunkShorts[j] + (clip[clipIdx] * volume).toInt()
-                        chunkShorts[j] = mixedSample.coerceIn(-32768, 32767).toShort()
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            outputFormat = encoder.outputFormat
+                            drainWatchdog.progress()
+                        }
+                        outIdx >= 0 -> {
+                            drainWatchdog.progress()
+                            val isConfig = (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
+                            if (!isConfig && info.size > 0) {
+                                val buf = encoder.getOutputBuffer(outIdx)!!
+                                val arr = ByteArray(info.size)
+                                buf.position(info.offset); buf.limit(info.offset + info.size)
+                                buf.get(arr)
+                                // EOS flag stripped here: it only has meaning between this encoder and its own
+                                // MediaCodec queue, not to MediaMuxer, which receives these samples later.
+                                outSamples += EncodedSample(arr, info.presentationTimeUs,
+                                    info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM.inv())
+                            }
+                            val isEos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                            encoder.releaseOutputBuffer(outIdx, false)
+                            if (isEos) return
+                        }
+                        else -> {
+                            if (!blockForEos) return
+                            check(!drainWatchdog.expired()) {
+                                "Audio encoder gave no output for ${WATCHDOG_MS / 1000} s while finishing"
+                            }
+                        }
                     }
                 }
             }
 
-            val chunkByteSize = chunkSamples * 2
-            ByteBuffer.wrap(chunkBytes, 0, chunkByteSize).order(ByteOrder.LITTLE_ENDIAN)
-                .asShortBuffer().put(chunkShorts, 0, chunkSamples)
+            // Reused across chunks: allocated once, not once per chunk.
+            val chunkShorts = ShortArray(chunkFrames * channels)
+            val scratch = IntArray(chunkFrames * channels)
+            val chunkBytes = ByteArray(chunkFrames * channels * 2)
+            val inputWatchdog = AudioMath.NoProgressWatchdog(WATCHDOG_MS)
 
-            var offset = 0
-            while (offset < chunkByteSize) {
+            var frame = 0
+            var presentationTimeUs = 0L
+            while (frame < totalFrames) {
+                checkActive(stillActive)
+                val thisChunkFrames = minOf(chunkFrames, totalFrames - frame)
+                val chunkStartSample = frame * channels
+                val chunkSamples = thisChunkFrames * channels
+
+                AudioMath.mixChunk(
+                    chunkShorts, scratch, chunkStartSample, chunkSamples,
+                    narration, narrationVol, music, musicVol, loopMusic, effects
+                )
+
+                val chunkByteSize = chunkSamples * 2
+                ByteBuffer.wrap(chunkBytes, 0, chunkByteSize).order(ByteOrder.LITTLE_ENDIAN)
+                    .asShortBuffer().put(chunkShorts, 0, chunkSamples)
+
+                var offset = 0
+                while (offset < chunkByteSize) {
+                    checkActive(stillActive)
+                    val inIdx = encoder.dequeueInputBuffer(10_000)
+                    if (inIdx >= 0) {
+                        val size = minOf(16384, chunkByteSize - offset) // KEY_MAX_INPUT_SIZE cap
+                        val inBuf = encoder.getInputBuffer(inIdx)!!
+                        inBuf.clear()
+                        inBuf.put(chunkBytes, offset, size)
+                        encoder.queueInputBuffer(inIdx, 0, size, presentationTimeUs, 0)
+                        presentationTimeUs += ((size / bytesPerFrame) * usPerFrame).toLong()
+                        offset += size
+                        inputWatchdog.progress()
+                    } else {
+                        check(!inputWatchdog.expired()) { "Audio encoder accepted no input for ${WATCHDOG_MS / 1000} s" }
+                    }
+                    drain(false)
+                }
+
+                frame += thisChunkFrames
+            }
+
+            var eosQueued = false
+            inputWatchdog.progress()
+            while (!eosQueued) {
+                checkActive(stillActive)
                 val inIdx = encoder.dequeueInputBuffer(10_000)
                 if (inIdx >= 0) {
-                    val size = minOf(16384, chunkByteSize - offset) // KEY_MAX_INPUT_SIZE cap, mirrors old chunking safety
-                    val inBuf = encoder.getInputBuffer(inIdx)!!
-                    inBuf.clear()
-                    inBuf.put(chunkBytes, offset, size)
-                    encoder.queueInputBuffer(inIdx, 0, size, presentationTimeUs, 0)
-                    presentationTimeUs += ((size / bytesPerFrame) * usPerFrame).toLong()
-                    offset += size
+                    encoder.queueInputBuffer(inIdx, 0, 0, presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                    eosQueued = true
+                } else {
+                    check(!inputWatchdog.expired()) { "Audio encoder accepted no input for ${WATCHDOG_MS / 1000} s" }
                 }
                 drain(false)
             }
+            drain(true)
 
-            frame += thisChunkFrames
+            encoder.stop()
+            return EncodedAudioTrack(outputFormat, outSamples)
+        } finally {
+            runCatching { encoder.release() }
         }
-
-        var eosQueued = false
-        while (!eosQueued) {
-            val inIdx = encoder.dequeueInputBuffer(10_000)
-            if (inIdx >= 0) {
-                encoder.queueInputBuffer(inIdx, 0, 0, presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                eosQueued = true
-            }
-            drain(false)
-        }
-        drain(true)
-
-        encoder.stop()
-        encoder.release()
-        return EncodedAudioTrack(outputFormat, outSamples)
     }
 }

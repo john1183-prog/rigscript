@@ -23,6 +23,7 @@ import com.example.data.ProjectDef
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
@@ -181,7 +182,8 @@ object VideoExporter {
             music         = project.backgroundMusic,
             cues          = TimelineCompiler.extractSoundEffectCues(project.script),
             library       = project.soundEffects,
-            totalSec      = totalSec
+            totalSec      = totalSec,
+            stillActive   = { isActive }
         )
 
         val builtTargets = ArrayList<ExportTarget>()

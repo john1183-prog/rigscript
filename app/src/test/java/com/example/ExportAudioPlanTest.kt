@@ -68,6 +68,14 @@ class ExportAudioPlanTest {
     }
 
     @Test
+    fun cueVolumesAreClampedExactlyLikeThePreview() {
+        // A multiplier above 1 used to be mixed at more than the clip's own level in the export while the preview
+        // clamped it (B1). Both now use AudioMath.effectiveSfxVolume.
+        val r = ExportAudioPlan.resolveCues(listOf(cue(1f, "boom", 1.5f), cue(2f, "click", 4f), cue(3f, "click", -1f)), library)
+        assertEquals(listOf(1f, 1f, 0f), r.resolved.map { it.volume })
+    }
+
+    @Test
     fun unknownCueIdsAreReportedOncePerIdWithTheNumberOfSkippedCues() {
         val r = ExportAudioPlan.resolveCues(
             listOf(cue(1f, "ghost"), cue(2f, "click"), cue(3f, "ghost"), cue(4f, "phantom"), cue(5f, "ghost")),

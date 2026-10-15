@@ -10,3 +10,4 @@ EngineInvariantTest.kt
 EngineAsserts.kt
 SpringParityTest.kt
 ExportAudioPlanTest.kt
+AudioMathTest.kt

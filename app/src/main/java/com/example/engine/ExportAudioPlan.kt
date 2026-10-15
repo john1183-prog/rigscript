@@ -51,7 +51,7 @@ object ExportAudioPlan {
             )
     }
 
-    /** Volume rule as before WP1.2: clip volume times the cue's multiplier, not clamped. */
+    /** Volume rule shared with the preview player: [AudioMath.effectiveSfxVolume], clip volume times the cue's multiplier, clamped to 0..1. */
     fun resolveCues(cues: List<SoundEffectCue>, library: List<SoundEffectClip>): CueResolution {
         val byId = library.associateBy { it.id }
         val resolved = ArrayList<ResolvedCue>()
@@ -63,7 +63,7 @@ object ExportAudioPlan {
                 unresolved += cue.clipId
                 skipped++
             } else {
-                resolved += ResolvedCue(cue.timeSec, clip.filePath, clip.volume * cue.volumeMultiplier)
+                resolved += ResolvedCue(cue.timeSec, clip.filePath, AudioMath.effectiveSfxVolume(clip.volume, cue.volumeMultiplier))
             }
         }
         return CueResolution(resolved, unresolved.toList(), skipped)

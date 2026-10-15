@@ -22,6 +22,10 @@ object Assert {
     @JvmStatic fun assertEquals(message: String?, expected: Float, actual: Float, delta: Float) {
         if (!(Math.abs(expected - actual) <= delta)) bad("$message expected:<$expected> but was:<$actual>")
     }
+    @JvmStatic fun assertArrayEquals(expecteds: ShortArray, actuals: ShortArray) = assertArrayEquals(null, expecteds, actuals)
+    @JvmStatic fun assertArrayEquals(message: String?, expecteds: ShortArray, actuals: ShortArray) {
+        if (!expecteds.contentEquals(actuals)) bad("$message arrays differ: ${expecteds.toList()} vs ${actuals.toList()}")
+    }
     @JvmStatic fun assertArrayEquals(expecteds: FloatArray, actuals: FloatArray, delta: Float) = assertArrayEquals(null, expecteds, actuals, delta)
     @JvmStatic fun assertArrayEquals(message: String?, expecteds: FloatArray, actuals: FloatArray, delta: Float) {
         if (expecteds.size != actuals.size) bad("$message array lengths differ: ${expecteds.size} vs ${actuals.size}")

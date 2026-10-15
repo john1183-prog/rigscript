@@ -16,3 +16,6 @@ engine/Scene.kt
 data/SoundEffectClip.kt
 engine/ExportAudioPlan.kt
 engine/AudioMath.kt
+engine/GlesEligibility.kt
+engine/ExportBackendPlan.kt
+data/ExportSettings.kt

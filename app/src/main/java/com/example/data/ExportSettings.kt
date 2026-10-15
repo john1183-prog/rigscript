@@ -40,6 +40,11 @@ import kotlinx.serialization.Serializable
  *               9:16 + 16:9 covers the two dominant real-world targets
  *               (short-form vertical vs. landscape/presentation) this app's
  *               audience actually asks for.
+ * [renderer]    "AUTO" | "GLES" | "CANVAS" (WP1.3). Which backend draws and
+ *               encodes the video. "AUTO" (default) uses GLES only on a device
+ *               where the built-in GLES check has passed and Canvas otherwise;
+ *               "GLES" and "CANVAS" force one. Any other value behaves as
+ *               "AUTO". How it resolves: [com.example.engine.ExportBackendPlan].
  */
 @Serializable
 data class ExportSettings(
@@ -49,7 +54,8 @@ data class ExportSettings(
     val bitrateMbps: Int = 8,
     val embedAudio: Boolean = true,
     val outputFormat: String = "MP4",
-    val dualAspectExport: Boolean = false
+    val dualAspectExport: Boolean = false,
+    val renderer: String = "AUTO"
 ) {
     /** Resolved pixel dimensions for the export canvas, for a given [aspect] (defaults to this settings' own [aspectRatio]). */
     fun dimensions(aspect: String = aspectRatio): Pair<Int, Int> {

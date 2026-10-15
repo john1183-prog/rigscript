@@ -11,3 +11,6 @@ EngineAsserts.kt
 SpringParityTest.kt
 ExportAudioPlanTest.kt
 AudioMathTest.kt
+GlesEligibilityTest.kt
+ExportBackendPlanTest.kt
+ExportSettingsRendererTest.kt

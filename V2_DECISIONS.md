@@ -2441,6 +2441,47 @@ approved by the person before implementing:**
   before; the report's one "compiler error" line is a Kotlin daemon start-up
   message during KSP, the build succeeded). Not device-confirmed.
 
+- **2026-10-11 — WP1.2: AudioMixer hardening and the shared audio math
+  (`AudioMath`).**
+  Pure and unit-tested (`AudioMathTest`, 13 tests, also run by
+  `tools/localjvm`): `effectiveSfxVolume(clip, multiplier)` (the product
+  clamped to 0..1, NaN as 0) is now the one volume rule, used by the preview
+  player (`SoundEffectPlayer`) and, through `ExportAudioPlan.resolveCues`, the
+  mixer; `softLimit` and `limitToShort` are the identity up to 0.89 of full
+  scale and a tanh shoulder with the same slope above it (monotonic,
+  odd-symmetric, never leaving the 16-bit range); `pcmToShorts` and
+  `PcmConverter` convert 16-bit, unsigned 8-bit and float PCM for any
+  chunking of the input; `mixChunk` forms the narration, music and effect sum
+  and limits it once (bit-identical to the old two-stage hard-clip mix for
+  normal levels, tested against a reference); `NoProgressWatchdog` has an
+  injectable clock.
+  `AudioMixer` (MediaCodec plumbing, compiled by CI only): every decode and
+  encode loop has a no-progress watchdog (5 s) and a cancellation check and the
+  codecs are always released; `drain(blockForEos)` now really waits for the
+  end-of-stream buffer instead of returning on the first empty poll; decoding
+  follows the decoder's OUTPUT format (rate, channels, `KEY_PCM_ENCODING`)
+  after `INFO_OUTPUT_FORMAT_CHANGED`; `buildMixedTrack` returns a `MixResult`
+  whose warnings name every input that failed to decode (each effect file is
+  decoded once per file, not once per cue); `ExportAudio.prepare` appends them,
+  lets cancellation propagate and receives the export job's `isActive`; the
+  stale class comment is rewritten.
+  Deliberate behaviour changes: (1) a cue multiplier above 1 no longer makes
+  the export louder than the preview; (2) a mix above 0.89 of full scale is
+  shaped instead of hard-clipped (normal mixes are unchanged); (3) when no input
+  decodes at all the mixer returns no track, where before it could encode a
+  silent AAC track for a script that only had effect cues, and the fallback
+  (narration, else no audio) comes with a warning; (4) HE-AAC, float and 8-bit
+  decoder output no longer produces a wrong rate or garbage.
+  Not covered by tests: all MediaCodec behaviour (watchdog timing, the
+  end-of-stream wait, format changes, cancellation), on a device or at all.
+  Follow-up: `AmplitudeAnalyzer` still assumes 16-bit decoder output and the
+  input header's rate for its envelope; give it the same output-format handling
+  when its tests exist.
+  Classification (A4): bug fixes and parity; Direction-neutral. Verification:
+  VERIFIED-BY-CI (run 38658374170 on `3fc1749`: build success, 72 tests, 15
+  Kotlin warnings as before); pure code also run locally (62 tests). Not
+  device-confirmed.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

@@ -67,8 +67,22 @@ import java.util.concurrent.Executors
  * plus the existing circle/line primitives reused as-is for trees/clouds/
  * stars/snow/rain/ground-line. Text / captions / overlays remain later
  * phases.
+ *
+ * WP1.3: ONE EGL context can drive several output surfaces — dual-aspect
+ * export has one encoder input surface per aspect. [drawFigureFrame]'s
+ * `targetIndex` picks which surface a frame is drawn to and presented on
+ * (`eglMakeCurrent` is switched only when the target changes). Programs and
+ * textures are shared by the context; the size-dependent caches (captions,
+ * overlay text, reference text, glow FBOs) are keyed by canvas size.
  */
-class GlesFrameRenderer(private val outputSurface: Surface) {
+class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
+
+    /** The single-target form: one encoder surface. */
+    constructor(outputSurface: Surface) : this(listOf(outputSurface))
+
+    private val targetCount: Int = outputSurfaces.size.also {
+        require(it > 0) { "GlesFrameRenderer needs at least one output surface" }
+    }
 
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "GlesExportThread") }
 
@@ -77,7 +91,10 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
     private var eglContext: EGLContext  = EGL14.EGL_NO_CONTEXT
-    private var eglSurface: EGLSurface  = EGL14.EGL_NO_SURFACE
+    /** One window surface per output surface, same order (target 0, 1, ...); all share [eglContext]. */
+    private val eglSurfaces = ArrayList<EGLSurface>()
+    /** Which target's surface is current on the render thread; -1 when none. */
+    private var currentTarget = -1
     private var initialized = false
 
     /**
@@ -196,22 +213,19 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
 
     /** One rasterized reference-overlay-text bitmap's texture, plus its LOCAL (unscaled) half-extents — always symmetric around the origin, unlike [OverlayTextTexture] (no align concept here — [RigRenderer.drawReferenceOverlay]'s TEXT case is always center-anchored). */
     private class ReferenceTextTexture(val texId: Int, val halfW: Float, val halfH: Float)
-    private var refTextTextureCache: ReferenceTextTexture? = null
-    private var refTextTextureKey: String? = null
+    /** Keyed on every rasterization input including the canvas size; a few entries, because a dual-aspect export alternates two sizes. */
+    private val refTextTextureCache = LinkedHashMap<String, ReferenceTextTexture>()
 
     /**
      * Offscreen ping-pong pair for overlay-shape glow's two-pass Gaussian
      * blur — see [drawGlowShape]'s doc comment. Allocated lazily on first
-     * use (canvas dimensions aren't known at [init] time — [drawFigureFrame]
-     * receives them per-call), sized to exactly [glowFboW]x[glowFboH] and
-     * reallocated only if that size ever changes.
+     * use per canvas size (sizes aren't known at [init] time —
+     * [drawFigureFrame] receives them per-call) and kept, one pair per
+     * size: a dual-aspect export alternates two sizes frame by frame, and
+     * reallocating two full-frame textures every frame would be far too slow.
      */
-    private var glowFboA = 0
-    private var glowTexA = 0
-    private var glowFboB = 0
-    private var glowTexB = 0
-    private var glowFboW = 0
-    private var glowFboH = 0
+    private class GlowFbos(val fboA: Int, val texA: Int, val fboB: Int, val texB: Int)
+    private val glowFbosBySize = LinkedHashMap<Long, GlowFbos>()
 
     private companion object {
         // Matches VideoExporter's own TAG convention — separate constant
@@ -220,6 +234,9 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         // through a VideoExporter caller. Used by init()'s GPU/driver
         // logging — error-hardening pass, V2_DECISIONS.md.
         const val TAG = "GlesFrameRenderer"
+
+        /** Glow FBO pairs kept at once (one per canvas size in use). */
+        const val MAX_GLOW_SIZES = 4
 
         // Round-capped line via a signed-distance field against the segment [0,1] on u.
         // a_uv: u = position along axis normalised by segment length (0=start, 1=end,
@@ -428,14 +445,10 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * before the six `buildProgram` calls below for why shader/program
      * failures specifically say which of the six.
      *
-     * NOT YET what a caller actually does with that failure, as of the
-     * error-hardening pass (V2_DECISIONS.md): the only caller today
-     * (`exportGlesSmokeTest`) just surfaces it as `Result.failure` — there
-     * is no fallback to the Canvas path anywhere yet. "The caller falls
-     * back to software rendering" describes the eventual intent once GLES
-     * is wired into real export, not current behavior — worth being
-     * explicit about rather than leaving this comment read as a standing
-     * contract that's already honored.
+     * What a caller does with a failure here is decided by
+     * [ExportBackendPlan.onGlesFailure] (WP1.3): `AUTO` falls back to
+     * Canvas with a visible message; a forced `GLES` reports the error and
+     * offers "Retry with Canvas".
      */
     suspend fun init() = withContext(dispatcher) {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
@@ -464,16 +477,17 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         )
         check(eglContext != EGL14.EGL_NO_CONTEXT) { "eglCreateContext failed" }
 
-        eglSurface = EGL14.eglCreateWindowSurface(
-            eglDisplay, configs[0]!!, outputSurface, intArrayOf(EGL14.EGL_NONE), 0
-        )
-        check(eglSurface != EGL14.EGL_NO_SURFACE) {
-            "eglCreateWindowSurface failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
+        for ((i, target) in outputSurfaces.withIndex()) {
+            val s = EGL14.eglCreateWindowSurface(
+                eglDisplay, configs[0]!!, target, intArrayOf(EGL14.EGL_NONE), 0
+            )
+            check(s != EGL14.EGL_NO_SURFACE) {
+                "eglCreateWindowSurface failed (target $i), eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
+            }
+            eglSurfaces += s
         }
 
-        check(EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
-            "eglMakeCurrent failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
-        }
+        makeCurrentTarget(0)
 
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
@@ -565,24 +579,24 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
                 overlayTextTextureCache.clear()
             }
             if (refImageTexId != 0) { GLES20.glDeleteTextures(1, intArrayOf(refImageTexId), 0); refImageTexId = 0; refImageBitmapRef = null }
-            refTextTextureCache?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
-            refTextTextureCache = null
-            refTextTextureKey = null
-            if (glowFboA != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboA), 0); glowFboA = 0 }
-            if (glowFboB != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboB), 0); glowFboB = 0 }
-            if (glowTexA != 0) { GLES20.glDeleteTextures(1, intArrayOf(glowTexA), 0); glowTexA = 0 }
-            if (glowTexB != 0) { GLES20.glDeleteTextures(1, intArrayOf(glowTexB), 0); glowTexB = 0 }
-            glowFboW = 0
-            glowFboH = 0
+            if (refTextTextureCache.isNotEmpty()) {
+                GLES20.glDeleteTextures(refTextTextureCache.size, refTextTextureCache.values.map { it.texId }.toIntArray(), 0)
+                refTextTextureCache.clear()
+            }
+            for (f in glowFbosBySize.values) deleteGlowFbos(f)
+            glowFbosBySize.clear()
             if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-                if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
+                for (surface in eglSurfaces) {
+                    if (surface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, surface)
+                }
                 if (eglContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, eglContext)
                 EGL14.eglTerminate(eglDisplay)
             }
+            eglSurfaces.clear()
+            currentTarget = -1
             eglDisplay = EGL14.EGL_NO_DISPLAY
             eglContext = EGL14.EGL_NO_CONTEXT
-            eglSurface = EGL14.EGL_NO_SURFACE
             initialized = false
             ownerThread = null
         }
@@ -593,12 +607,23 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
     /** Clears to [color] (RGB floats 0..1) and swaps. Superseded by [drawFigureFrame] for real content. */
     suspend fun drawColorFrame(color: FloatArray, presentationTimeNs: Long) = withContext(dispatcher) {
         check(initialized) { "drawColorFrame called before init()" }
+        makeCurrentTarget(0)
         GLES20.glClearColor(color[0], color[1], color[2], 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-        EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs)
-        check(EGL14.eglSwapBuffers(eglDisplay, eglSurface)) {
+        EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurfaces[0], presentationTimeNs)
+        check(EGL14.eglSwapBuffers(eglDisplay, eglSurfaces[0])) {
             "eglSwapBuffers failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
         }
+    }
+
+    /** Makes target [targetIndex]'s window surface current (a no-op when it already is). Render thread only. */
+    private fun makeCurrentTarget(targetIndex: Int) {
+        if (targetIndex == currentTarget) return
+        val surface = eglSurfaces[targetIndex]
+        check(EGL14.eglMakeCurrent(eglDisplay, surface, surface, eglContext)) {
+            "eglMakeCurrent failed (target $targetIndex), eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
+        }
+        currentTarget = targetIndex
     }
 
     // ── Frame rendering (figure + background/scene/atmosphere) ─────────────────
@@ -625,12 +650,14 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * problem was upstream of the swap entirely. This check turns that same
      * mistake, if it recurs, into an immediate, specific error instead.
      */
-    fun drawFigureFrame(frame: GlesFigureFrame, presentationTimeNs: Long) {
+    fun drawFigureFrame(frame: GlesFigureFrame, presentationTimeNs: Long, targetIndex: Int = 0) {
         check(initialized) { "drawFigureFrame called before init()" }
         check(Thread.currentThread() === ownerThread) {
             "drawFigureFrame called from ${Thread.currentThread().name}, but the EGL context " +
                 "is current on ${ownerThread?.name} — wrap the caller in withContext(dispatcher)"
         }
+        check(targetIndex in 0 until targetCount) { "drawFigureFrame: no target $targetIndex (this renderer has $targetCount)" }
+        makeCurrentTarget(targetIndex)
 
         val w = frame.canvasW.toFloat()
         val h = frame.canvasH.toFloat()
@@ -824,9 +851,9 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
             )
         }
 
-        EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs)
-        check(EGL14.eglSwapBuffers(eglDisplay, eglSurface)) {
-            "eglSwapBuffers failed, eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
+        EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurfaces[targetIndex], presentationTimeNs)
+        check(EGL14.eglSwapBuffers(eglDisplay, eglSurfaces[targetIndex])) {
+            "eglSwapBuffers failed (target $targetIndex), eglGetError=0x${Integer.toHexString(EGL14.eglGetError())}"
         }
     }
 
@@ -1543,7 +1570,7 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      */
     private fun ensureRefTextTexture(text: String, textColorArgb: Int, showBackdrop: Boolean, sizePx: Float, canvasW: Int, canvasH: Int): ReferenceTextTexture {
         val key = "$text|$textColorArgb|$showBackdrop|$sizePx|$canvasW|$canvasH"
-        if (refTextTextureKey == key) refTextTextureCache?.let { return it }
+        refTextTextureCache[key]?.let { return it }
 
         val minDim = minOf(canvasW, canvasH).toFloat()
         refTextPaint.color = textColorArgb
@@ -1578,10 +1605,12 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
         bmp.recycle()
 
-        refTextTextureCache?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
+        if (refTextTextureCache.size >= 4) {
+            val oldestKey = refTextTextureCache.keys.first()
+            refTextTextureCache.remove(oldestKey)?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
+        }
         val result = ReferenceTextTexture(texId, texW / 2f, texH / 2f)
-        refTextTextureCache = result
-        refTextTextureKey = key
+        refTextTextureCache[key] = result
         return result
     }
 
@@ -1625,17 +1654,27 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
         }
     }
 
-    /** Allocates/reallocates the glow ping-pong FBO pair to exactly [w]x[h], skipping the work entirely if already that size. */
-    private fun ensureGlowFbos(w: Int, h: Int) {
-        if (glowFboW == w && glowFboH == h && glowFboA != 0) return
-        if (glowFboA != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboA), 0); GLES20.glDeleteTextures(1, intArrayOf(glowTexA), 0) }
-        if (glowFboB != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(glowFboB), 0); GLES20.glDeleteTextures(1, intArrayOf(glowTexB), 0) }
-
+    /**
+     * The glow ping-pong FBO pair for exactly [w]x[h]: allocated on first use and kept, so a dual-aspect export that
+     * alternates two sizes never reallocates. At most [MAX_GLOW_SIZES] sizes are kept (the eldest is deleted first).
+     */
+    private fun ensureGlowFbos(w: Int, h: Int): GlowFbos {
+        val key = (w.toLong() shl 32) or (h.toLong() and 0xFFFFFFFFL)
+        glowFbosBySize[key]?.let { return it }
+        if (glowFbosBySize.size >= MAX_GLOW_SIZES) {
+            val oldestKey = glowFbosBySize.keys.first()
+            glowFbosBySize.remove(oldestKey)?.let { deleteGlowFbos(it) }
+        }
         val (fboA, texA) = createFboTexture(w, h)
         val (fboB, texB) = createFboTexture(w, h)
-        glowFboA = fboA; glowTexA = texA
-        glowFboB = fboB; glowTexB = texB
-        glowFboW = w; glowFboH = h
+        val made = GlowFbos(fboA, texA, fboB, texB)
+        glowFbosBySize[key] = made
+        return made
+    }
+
+    private fun deleteGlowFbos(f: GlowFbos) {
+        GLES20.glDeleteFramebuffers(2, intArrayOf(f.fboA, f.fboB), 0)
+        GLES20.glDeleteTextures(2, intArrayOf(f.texA, f.texB), 0)
     }
 
     private fun createFboTexture(w: Int, h: Int): Pair<Int, Int> {
@@ -1721,27 +1760,27 @@ class GlesFrameRenderer(private val outputSurface: Surface) {
      * caller — see [drawFigureFrame]'s overlay loop.
      */
     private fun drawGlowShape(overlay: GlesFigureFrame.OverlayShapeDraw, canvasW: Int, canvasH: Int, w: Float, h: Float) {
-        ensureGlowFbos(canvasW, canvasH)
+        val fbos = ensureGlowFbos(canvasW, canvasH)
         val stepPx = (overlay.glowRadiusPx / 4f).coerceAtLeast(0.1f)
 
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, glowFboA)
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbos.fboA)
         GLES20.glViewport(0, 0, canvasW, canvasH)
         GLES20.glClearColor(0f, 0f, 0f, 0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         drawOverlayCommands(overlay.commands, w, h, colorOverride = overlay.glowColor)
 
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, glowFboB)
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbos.fboB)
         GLES20.glViewport(0, 0, canvasW, canvasH)
         GLES20.glClearColor(0f, 0f, 0f, 0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glDisable(GLES20.GL_BLEND)
-        drawBlurPass(glowTexA, stepPx / canvasW, 0f)
+        drawBlurPass(fbos.texA, stepPx / canvasW, 0f)
         GLES20.glEnable(GLES20.GL_BLEND)
 
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
         GLES20.glViewport(0, 0, canvasW, canvasH)
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-        drawBlurPass(glowTexB, 0f, stepPx / canvasH)
+        drawBlurPass(fbos.texB, 0f, stepPx / canvasH)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
     }
 

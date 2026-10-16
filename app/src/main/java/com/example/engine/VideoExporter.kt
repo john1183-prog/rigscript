@@ -453,50 +453,15 @@ object VideoExporter {
 
     } // end withContext(Dispatchers.Default)
 
-    // ── GLES export rewrite: diagnostic (Phase 1-4) ─────────────────────────────
+    // ── GLES diagnostic (the debug buttons in the export panel) ───────────────────────────────────────────────
 
     /**
-     * GLES export rewrite diagnostic (see V2_DECISIONS.md).
-     *
-     * Renders the first [durationSec] seconds of [project]'s REAL timeline —
-     * same [PlaybackEngine], same envelope/blink/fidget loading, same
-     * [RigRenderer.computeFkMatrices] the Canvas path itself now calls — but
-     * through [GlesFrameRenderer.drawFigureFrame] instead of
-     * [RigRenderer.draw]'s Canvas calls. This is deliberate: the point of
-     * this diagnostic is to prove the GLES geometry agrees with what a real
-     * export would show for a real pose, not just that some frame renders.
-     * Duplicating the FK/timeline logic here instead of reusing it would
-     * have reintroduced exactly the parity risk the "export-only" decision
-     * was contingent on mitigating — see V2_DECISIONS.md's History entry.
-     *
-     * Scope as of this session (stress-test + audio fixes, following the
-     * text phase): bones, head, joints, mouth, eyes, eyebrows, background
-     * (solid/gradient/sky+ground), scene shapes (mountains/city/trees/
-     * clouds), stars, ground line, atmosphere (fog/rain/snow), captions,
-     * `type == "text"`/`"shape"` overlay layers (true two-pass Gaussian
-     * blur glow), camera zoom/pan/shake (applied to everything above except
-     * atmosphere, which stays screen-space — matching [RigRenderer.draw]
-     * exactly), and now a verbatim copy of the project's own narration
-     * audio track if it has one (see [copyAudioTrack] call below — this
-     * function had no audio muxing at all before this session, despite an
-     * earlier version of this comment claiming "lip-synced"; the mouth
-     * moved from the same envelope [export] uses, but the output file
-     * itself carried no audio to actually judge sync against). Still no
-     * `type == "figure"` overlays, particle trails, or the music/
-     * sound-effect mixing [export]'s real `AudioMixer` path does (see
-     * V2_DECISIONS.md's Deferred section) — narration-only, verbatim, is
-     * enough to confirm mouth-sync, which is what actually needed
-     * confirming here. Not a full preview of a real export.
-     *
-     * Still deliberately NOT called from [export] — same reasoning as every
-     * prior phase: this can't render the full picture yet, so wiring it
-     * into a real user's export would visibly regress it. Remove this
-     * function and its UI trigger once a later phase makes GLES the real
-     * export path.
-     *
-     * On any EGL/GLES failure this returns [Result.failure] with no video
-     * written, same as Phase 1 — a diagnostic should report failure
-     * clearly, not silently fall back to something else.
+     * The debug "GLES export test": the real GLES backend ([GlesExporter]) on the active project, single aspect, for
+     * [durationSec] seconds (the plain test is about 3 s; the stress test passes the project's full length), named
+     * `<project>_gles_test` and labelled "GLES figure test". Since WP1.3 this is no longer a separate, narrower
+     * implementation: it exercises exactly the code a GLES export uses (including the project's bitrate, VBR when the
+     * encoder has it, and audio through [ExportAudio]). A failure comes back as [Result.failure] with the reason;
+     * cancellation is rethrown so the caller can report it as a cancellation. WP1.6 moves the buttons under Diagnostics.
      */
     suspend fun exportGlesSmokeTest(
         context: Context,
@@ -504,243 +469,25 @@ object VideoExporter {
         keyframes: List<BakedKeyframe>,
         amplitudeSettings: com.example.data.AmplitudeSettings = com.example.data.AmplitudeSettings(),
         durationSec: Float = 3f,
-        // Stress-test support (V2_DECISIONS.md — "GLES export rewrite —
-        // stress test"). Optional and defaulted to null so this stays a
-        // no-op for the plain ~3s quick-check path.
         onProgress: ((progress: Float, etaSec: Float?) -> Unit)? = null
-    ): Result<ExportResult> = withContext(Dispatchers.Default) {
-        runCatching {
-            val settings   = project.exportSettings
-            val fps        = settings.fps
-            val appearance = project.appearance
-            val (width, height) = settings.dimensions(settings.aspectRatio)
-            val figureScaleDim =
-                if (width < height) width.toFloat()
-                else height * (9f / 16f)
-
-            // Text phase, sub-phase 3 (V2_DECISIONS.md) — decoded ONCE up
-            // front, same reasoning and same pattern as export()'s own
-            // "I/O must never happen inside the per-frame loop" comment.
-            val referenceOverlay = project.referenceOverlay
-            val referenceOverlayBitmap: Bitmap? =
-                if (referenceOverlay.type == com.example.data.ReferenceOverlay.OverlayType.IMAGE && referenceOverlay.imagePath != null)
-                    runCatching { BitmapFactory.decodeFile(referenceOverlay.imagePath) }.getOrNull()
-                else null
-
-            // Same timeline-resolution pipeline export() itself uses — see
-            // this function's doc comment for why that reuse matters here.
-            @Suppress("DEPRECATION")
-            val envelope: FloatArray = EnvelopeStore.readAmplitudeWithFallback(
-                project.amplitudeEnvelopePath, project.amplitudeEnvelope)
-            @Suppress("DEPRECATION")
-            val mouthEnvelope: IntArray = EnvelopeStore.readMouthShapesWithFallback(
-                project.mouthShapeEnvelopePath, project.mouthShapeEnvelope)
-            val envFps = AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS
-
-            val engine = PlaybackEngine().also {
-                it.loadTimeline(keyframes)
-                it.amplitudeSettings = amplitudeSettings
-                it.loadBlinkSchedule(project.script.blinkEvents, durationSec)
-                it.loadFidgetSchedule(envelope, envFps)
-                // Overlay shapes (V2_DECISIONS.md): matches export()'s own
-                // setup exactly, same TimelineCompiler.extractOverlayLayers
-                // call — this smoke test previously never loaded overlay
-                // layers at all, so engine.currentOverlays would always have
-                // returned empty regardless of what the script actually had.
-                it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
-                // Text phase (V2_DECISIONS.md): same gap as overlay layers
-                // above — this smoke test reads engine.currentCaption
-                // (captionText param, see the fromFkMatrices call below) but
-                // never called loadCaptions, so it would always have
-                // resolved to null regardless of the script's actual
-                // ScriptEvent.caption fields. Matches export()'s own setup
-                // exactly, same TimelineCompiler.extractCaptions call.
-                it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
-            }
-
-            val totalFrames = (durationSec * fps).toInt().coerceAtLeast(1)
-            val exportStartMs = System.currentTimeMillis()
-            // Reused every frame, filled in place by computeFkMatrices — same
-            // "pre-allocate once" convention RigRenderer's own instance field
-            // follows, so this loop doesn't allocate 10 Matrix objects/frame.
-            val matrices = Array(StickFigureRig.BONE_COUNT) { android.graphics.Matrix() }
-            val showJoints = appearance.showJointsOnExport
-
-            val videoFormat = MediaFormat.createVideoFormat(MIME, width, height).apply {
-                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, settings.bitrateMbps * 1_000_000)
-                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
-                // Explicit, not left to the driver default — see
-                // V2_DECISIONS.md's color-equivalence note. BT.601 matches
-                // the coefficients argbToNV12 uses on the software path,
-                // so a real GLES export should look the same, not shifted
-                // in tint/contrast.
-                setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT601_PAL)
-                setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
-            }
-            val encoder = MediaCodec.createEncoderByType(MIME)
-            encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            val inputSurface = encoder.createInputSurface()
-            encoder.start()
-
-            val output = OutputTarget.create(context, project.projectName + "_gles_test")
-            val muxer = output.openMuxer()
-            val bufferInfo = MediaCodec.BufferInfo()
-            var videoTrackIdx = -1
-            var audioTrackIdx = -1
-            var muxerStarted = false
-            var encoderReleased = false
-            var muxerReleased = false
-            var success = false
-            val glesRenderer = GlesFrameRenderer(inputSurface)
-
-            /** Same shape as [export]'s drainAvailable/drainUntilEndOfStream, merged since there's only one target here. */
-            fun drain(untilEos: Boolean) {
-                while (true) {
-                    val outIdx = encoder.dequeueOutputBuffer(bufferInfo, if (untilEos) TIMEOUT else 0L)
-                    when {
-                        outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> if (untilEos) continue else return
-                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            if (!muxerStarted) {
-                                videoTrackIdx = muxer.addTrack(encoder.outputFormat)
-                                // Verbatim narration copy only -- not the full
-                                // AudioMixer path export() uses for music/
-                                // sound-effect mixing. This stays a diagnostic
-                                // tool, not the real export pipeline; the
-                                // common case (does the mouth track match a
-                                // real narration file) is what actually
-                                // needed confirming here.
-                                if (project.audioFilePath != null) {
-                                    audioTrackIdx = ExportAudio.addNarrationTrack(muxer, project.audioFilePath)
-                                }
-                                muxer.start(); muxerStarted = true
-                            }
-                        }
-                        outIdx >= 0 -> {
-                            val isConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                            if (!isConfig && muxerStarted && bufferInfo.size > 0) {
-                                muxer.writeSampleData(videoTrackIdx, encoder.getOutputBuffer(outIdx)!!, bufferInfo)
-                            }
-                            encoder.releaseOutputBuffer(outIdx, false)
-                            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
-                        }
-                    }
-                }
-            }
-
-            try {
-                glesRenderer.init()
-
-                // The entire per-frame loop runs inside ONE withContext(dispatcher) —
-                // not one dispatch per frame, and NOT left unwrapped either. A first
-                // draft called glesRenderer.drawFigureFrame() directly here, outside
-                // any withContext(dispatcher) — it ran on whatever Dispatchers.Default
-                // worker thread happened to resume this coroutine after init()
-                // suspended, not the thread the EGL context is actually current on.
-                // Every void-returning GL call silently no-oped there; only
-                // eglSwapBuffers has a checked return, so that's the only place it
-                // visibly failed, as a bare "eglSwapBuffers failed" that took real
-                // reasoning to trace back to a thread-affinity bug rather than
-                // anything wrong with the swap itself. drain()/dequeueOutputBuffer
-                // don't touch EGL/GL state, so they're fine to run in here too —
-                // no reason to hop threads twice per frame to keep them out.
-                withContext(glesRenderer.dispatcher) {
-                    for (frameIdx in 0 until totalFrames) {
-                        if (frameIdx % 10 == 0) currentCoroutineContext().ensureActive()
-
-                        val timeSec = frameIdx.toFloat() / fps
-                        val envIdx  = if (envelope.isNotEmpty())
-                            (timeSec * envFps).toInt().coerceIn(0, envelope.size - 1) else -1
-                        val rawAmp  = if (envIdx >= 0) envelope[envIdx] else 0f
-                        val mouth   = if (envIdx >= 0 && mouthEnvelope.isNotEmpty())
-                            mouthEnvelope[envIdx.coerceAtMost(mouthEnvelope.size - 1)] else MouthShape.CLOSED
-                        engine.seekToWithAmplitude(timeSec, rawAmp, mouth)
-
-                        val overrides = engine.currentFigureOverrides
-                        val scale = figureScaleDim * (overrides.scale ?: appearance.characterScale)
-                        val rootX = width  * (overrides.x ?: appearance.rootAnchorX)
-                        val rootY = height * (overrides.y ?: appearance.rootAnchorY) + engine.currentHipBobOffset * scale
-
-                        RigRenderer.computeFkMatrices(engine.currentAngles, rootX, rootY, scale, matrices)
-                        val glesFrame = GlesFigureFrame.fromFkMatrices(
-                            matrices, appearance, overrides, width, height, scale, showJoints,
-                            // Phase 3 (mouth/eyes — V2_DECISIONS.md): same four
-                            // engine.current* reads export()'s real RigRenderer.draw
-                            // call uses (see that call site) — this smoke test was
-                            // previously discarding all four after resolving them
-                            // via seekToWithAmplitude above.
-                            mouthShape      = engine.currentMouthShape,
-                            mouthOpenness   = engine.currentAmplitude,
-                            eyeOpenness     = engine.currentEyeOpenness,
-                            expression      = engine.currentExpression,
-                            // Phase 4 (background/scene/atmosphere — V2_DECISIONS.md):
-                            // same five engine.current* reads, same reasoning.
-                            skyColor        = engine.currentSkyColor,
-                            groundColor     = engine.currentGroundColor,
-                            horizonY        = engine.currentHorizonY,
-                            sceneShape      = engine.currentSceneShape,
-                            sceneAtmosphere = engine.currentSceneAtmosphere,
-                            timeSec         = timeSec,
-                            // Camera phase (V2_DECISIONS.md): same four
-                            // engine.current* reads the Canvas renderer.draw
-                            // call above already uses — this smoke test was
-                            // previously resolving these via
-                            // seekToWithAmplitude and then discarding all
-                            // four, same pattern as the Phase 3/4 fixes
-                            // above it.
-                            cameraZoom            = engine.currentCameraZoom,
-                            cameraPanX            = engine.currentCameraPanX,
-                            cameraPanY            = engine.currentCameraPanY,
-                            cameraShakeIntensity  = engine.currentShakeIntensity,
-                            // Overlay shapes (V2_DECISIONS.md): matches export()'s
-                            // own RigRenderer.draw call site — engine.currentOverlays
-                            // is time-resolved but NOT yet parented; fromFkMatrices
-                            // applies parenting itself using bone anchors it builds
-                            // during its own bone loop (mirrors RigRenderer.draw's
-                            // own needsBoneAnchors + applyParenting call, just folded
-                            // into the existing loop instead of a separate pre-pass).
-                            overlays        = engine.currentOverlays,
-                            // Text phase (V2_DECISIONS.md) — same engine.currentCaption
-                            // read the Canvas renderer.draw call above already uses.
-                            captionText     = engine.currentCaption,
-                            // Text phase, sub-phase 3 — decoded once, above.
-                            referenceOverlay       = referenceOverlay,
-                            referenceOverlayBitmap = referenceOverlayBitmap
-                        )
-
-                        val presentationTimeNs = frameIdx.toLong() * 1_000_000_000L / fps
-                        glesRenderer.drawFigureFrame(glesFrame, presentationTimeNs)
-                        drain(untilEos = false)
-                        // Progress can go straight to 1.0 -- unlike export()'s
-                        // 0.90f-then-writeAudio split, audio here is a single
-                        // fast verbatim copy after video drains, not a
-                        // per-frame interleaved write worth reserving headroom
-                        // for.
-                        onProgress?.invoke(frameIdx.toFloat() / totalFrames, computeEtaSec(frameIdx + 1, totalFrames, exportStartMs))
-                    }
-                }
-                encoder.signalEndOfInputStream()
-                drain(untilEos = true)
-                if (audioTrackIdx >= 0 && project.audioFilePath != null) {
-                    ExportAudio.copyNarration(project.audioFilePath, muxer, audioTrackIdx, (durationSec * 1_000_000L).toLong())
-                }
-                onProgress?.invoke(1f, 0f)
-
-                encoder.stop(); encoder.release(); encoderReleased = true
-                if (muxerStarted) { muxer.stop(); muxer.release(); muxerReleased = true }
-                output.finish(context)
-                success = true
-
-                Log.i(TAG, "GLES figure test: $totalFrames frames, audioTrackIdx=$audioTrackIdx -> ${output.location}")
-                ExportResult(output.uri, output.location, "GLES figure test")
-            } finally {
-                glesRenderer.release()
-                if (!encoderReleased) { runCatching { encoder.stop() }; runCatching { encoder.release() } }
-                if (muxerStarted && !muxerReleased) { runCatching { muxer.stop() }; runCatching { muxer.release() } }
-                if (!success) output.abort(context)
-            }
-        }
+    ): Result<ExportResult> = try {
+        Result.success(
+            GlesExporter.export(
+                context           = context,
+                project           = project,
+                keyframes         = keyframes,
+                amplitudeSettings = amplitudeSettings,
+                onProgress        = { progress, eta -> onProgress?.invoke(progress, eta) },
+                limitSec          = durationSec,
+                singleAspect      = true,
+                nameSuffix        = "_gles_test",
+                aspectLabel       = "GLES figure test"
+            ).first()
+        )
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Result.failure(e)
     }
 
     /**
@@ -748,7 +495,7 @@ object VideoExporter {
      * API-29+ (MediaStore, scoped storage) vs API 26-28 (legacy public dir +
      * runtime permission + manual media-scan) code paths.
      */
-    private sealed class OutputTarget {
+    internal sealed class OutputTarget {
         abstract val uri: Uri
         abstract val location: String
         abstract fun openMuxer(): MediaMuxer
@@ -848,7 +595,7 @@ object VideoExporter {
      * Returns null before [MIN_FRAMES_FOR_ETA] frames — see that constant's
      * doc comment for why.
      */
-    private fun computeEtaSec(framesDone: Int, totalFrames: Int, startMs: Long): Float? {
+    internal fun computeEtaSec(framesDone: Int, totalFrames: Int, startMs: Long): Float? {
         if (framesDone < MIN_FRAMES_FOR_ETA) return null
         val elapsedMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1L)
         val msPerFrame = elapsedMs.toFloat() / framesDone

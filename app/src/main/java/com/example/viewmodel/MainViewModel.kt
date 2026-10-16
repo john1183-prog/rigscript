@@ -107,6 +107,75 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var exportJob: Job? = null
 
+    // ── GLES export backend (WP1.3) ───────────────────────────────────────────
+
+    private val glesStore = GlesEligibilityStore(app)
+
+    /**
+     * What is known about the GLES backend on this device. The start-up rule has already been applied here: a
+     * check marker left over from the last run means that run crashed, and GLES is out for this build.
+     */
+    private val _glesState = MutableStateFlow<GlesState>(glesStore.applyLaunchRule())
+    val glesState: StateFlow<GlesState> = _glesState.asStateFlow()
+
+    /** Non-null after a forced-GLES export failed: the message to show with the "Retry with Canvas" button. */
+    private val _canvasRetryOffer = MutableStateFlow<String?>(null)
+    val canvasRetryOffer: StateFlow<String?> = _canvasRetryOffer.asStateFlow()
+    private var pendingCanvasRetry: (() -> Unit)? = null
+
+    /** The result of the last "Re-run GLES check", shown under its button. */
+    private val _glesCheckNote = MutableStateFlow<String?>(null)
+    val glesCheckNote: StateFlow<String?> = _glesCheckNote.asStateFlow()
+
+    private fun backendLabel(b: Backend): String = if (b == Backend.GLES) "GLES" else "Canvas"
+
+    /** [project] with the renderer replaced for this one export (the stored setting is not touched). */
+    private fun withRenderer(project: ProjectDef, renderer: String?): ProjectDef =
+        if (renderer == null) project
+        else project.copy(exportSettings = project.exportSettings.copy(renderer = renderer))
+
+    private fun offerCanvasRetry(appContext: Context, message: String, preview: Boolean) {
+        pendingCanvasRetry = {
+            if (preview) exportPreview(appContext, rendererOverride = RendererSetting.CANVAS)
+            else exportVideo(appContext, rendererOverride = RendererSetting.CANVAS)
+        }
+        _canvasRetryOffer.value = message
+    }
+
+    /** "Retry with Canvas" after a forced-GLES export failed: the same export once more on Canvas. */
+    fun retryExportWithCanvas() {
+        val retry = pendingCanvasRetry ?: return
+        pendingCanvasRetry = null
+        _canvasRetryOffer.value = null
+        retry()
+    }
+
+    /**
+     * "Re-run GLES check". Forgets the stored verdict and any crash marker, then runs the capability probe (is there an
+     * H.264 encoder for these sizes that takes a surface). A failed probe is stored as the verdict (Auto keeps using
+     * Canvas). A passed probe is NOT a pass of the GLES check: the full on-device check (WP1.6) is what will make Auto
+     * choose GLES, so until it exists the verdict stays "not checked yet" and Auto keeps using Canvas.
+     */
+    fun rerunGlesCheck() {
+        if (exportJob != null) {
+            viewModelScope.launch { _message.emit("Wait for the running export to finish first") }
+            return
+        }
+        val settings = _activeProject.value?.exportSettings ?: ExportSettings()
+        viewModelScope.launch {
+            glesStore.reset()
+            val problem = withContext(Dispatchers.Default) { GlesExporter.probe(settings) }
+            if (problem != null) {
+                glesStore.record(GlesState.Ineligible(problem))
+                _glesCheckNote.value = "GLES is not possible on this device: $problem. Auto uses Canvas."
+            } else {
+                _glesCheckNote.value = "The video encoder looks capable of the GLES path, but the full GLES check is not part " +
+                    "of this version yet, so Auto keeps using Canvas. You can still force GLES above."
+            }
+            _glesState.value = glesStore.state()
+        }
+    }
+
     // ── Snackbar ──────────────────────────────────────────────────────────────
 
     private val _message = MutableSharedFlow<String>()
@@ -751,8 +820,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun exportVideo(context: Context) {
+    /**
+     * Exports the active project. The backend (Canvas or GLES) follows the project's renderer setting; see
+     * [ExportRouter]. [rendererOverride] replaces the setting for this one export only ("Retry with Canvas").
+     */
+    fun exportVideo(context: Context, rendererOverride: String? = null) {
         val project = _activeProject.value ?: return
+        val exportProject = withRenderer(project, rendererOverride)
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:Export")
         exportJob = viewModelScope.launch {
@@ -761,23 +835,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _exportProgress.value = 0f
             _exportEtaSec.value   = null
             _exportedFile.value   = emptyList()
+            _canvasRetryOffer.value = null
+            pendingCanvasRetry = null
             try {
                 val compiled = compileTimeline(project.script)
-                val results = VideoExporter.export(
+                val outcome = ExportRouter.export(
                     context           = context,
-                    project           = project,
+                    project           = exportProject,
                     keyframes         = compiled,
                     amplitudeSettings = _amplitudeSettings.value,
+                    store             = glesStore,
                     onProgress        = { progress, eta -> _exportProgress.value = progress; _exportEtaSec.value = eta }
                 )
+                _glesState.value = glesStore.state()
+                val results = outcome.results
                 _exportedFile.value = results
+                val via = backendLabel(outcome.backend)
                 _message.emit(
-                    if (results.size > 1) "Export complete: ${results.size} files (${results.joinToString { it.aspectLabel }})"
-                    else "Export complete: ${results.first().location}"
+                    if (results.size > 1) "Export complete ($via): ${results.size} files (${results.joinToString { it.aspectLabel }})"
+                    else "Export complete ($via): ${results.first().location}"
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 _message.emit("Export cancelled")
                 throw e
+            } catch (e: ExportRouter.GlesFailure) {
+                _glesState.value = glesStore.state()
+                _message.emit(e.decision.message)
+                if (e.decision.offerRetryWithCanvas) offerCanvasRetry(context.applicationContext, e.decision.message, preview = false)
             } catch (e: Exception) {
                 _message.emit("Export failed: ${e.message}")
             } finally {
@@ -821,7 +905,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * that's an accepted tradeoff for reusing one correct audio pipeline
      * rather than building a second, faster-but-approximate one.
      */
-    fun exportPreview(context: Context) {
+    fun exportPreview(context: Context, rendererOverride: String? = null) {
         val project = _activeProject.value ?: return
         if (exportJob != null) return   // a preview or a real export is already running
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -832,7 +916,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 resolution = "360p",
                 bitrateMbps = 2,
                 fps = minOf(project.exportSettings.fps, 24),
-                dualAspectExport = false
+                dualAspectExport = false,
+                renderer = rendererOverride ?: project.exportSettings.renderer
             )
         )
         exportJob = viewModelScope.launch {
@@ -841,20 +926,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _exportProgress.value = 0f
             _exportEtaSec.value   = null
             _exportedFile.value   = emptyList()
+            _canvasRetryOffer.value = null
+            pendingCanvasRetry = null
             try {
                 val compiled = compileTimeline(project.script)
-                val results = VideoExporter.export(
+                val outcome = ExportRouter.export(
                     context           = context,
                     project           = previewProject,
                     keyframes         = compiled,
                     amplitudeSettings = _amplitudeSettings.value,
+                    store             = glesStore,
                     onProgress        = { progress, eta -> _exportProgress.value = progress; _exportEtaSec.value = eta }
                 )
-                _exportedFile.value = results.map { it.copy(aspectLabel = "Preview (360p)") }
-                _message.emit("Preview render complete")
+                _glesState.value = glesStore.state()
+                _exportedFile.value = outcome.results.map { it.copy(aspectLabel = "Preview (360p)") }
+                _message.emit("Preview render complete (${backendLabel(outcome.backend)})")
             } catch (e: kotlinx.coroutines.CancellationException) {
                 _message.emit("Preview cancelled")
                 throw e
+            } catch (e: ExportRouter.GlesFailure) {
+                _glesState.value = glesStore.state()
+                _message.emit(e.decision.message)
+                if (e.decision.offerRetryWithCanvas) offerCanvasRetry(context.applicationContext, e.decision.message, preview = true)
             } catch (e: Exception) {
                 _message.emit("Preview failed: ${e.message}")
             } finally {

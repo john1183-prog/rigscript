@@ -48,7 +48,10 @@ import com.example.data.ScriptEvent
 import com.example.engine.AudioPlayer
 import com.example.engine.BakedKeyframe
 import com.example.engine.EnvelopeStore
+import com.example.engine.ExportBackendPlan
 import com.example.engine.ExportResult
+import com.example.engine.GlesState
+import com.example.engine.RendererSetting
 import com.example.ui.canvas.AnimationSurfaceView
 import com.example.ui.components.ColorPickerRow
 import com.example.viewmodel.MainViewModel
@@ -76,6 +79,9 @@ fun EditorScreen(
     val exportProg   by vm.exportProgress.collectAsStateWithLifecycle()
     val exportEta    by vm.exportEtaSec.collectAsStateWithLifecycle()
     val exportedFile by vm.exportedFile.collectAsStateWithLifecycle()
+    val glesState    by vm.glesState.collectAsStateWithLifecycle()
+    val glesCheckNote by vm.glesCheckNote.collectAsStateWithLifecycle()
+    val canvasRetryOffer by vm.canvasRetryOffer.collectAsStateWithLifecycle()
     val messages     = vm.message
 
     // Preview-only aspect toggle — lets the person see how a script
@@ -564,6 +570,11 @@ fun EditorScreen(
                 2 -> ExportPanel(
                     settings     = project?.exportSettings ?: ExportSettings(),
                     exportedFile = exportedFile,
+                    glesState    = glesState,
+                    glesCheckNote = glesCheckNote,
+                    canvasRetryOffer = canvasRetryOffer,
+                    onRetryWithCanvas = { vm.retryExportWithCanvas() },
+                    onRerunGlesCheck  = { vm.rerunGlesCheck() },
                     onChange     = { vm.updateExportSettings(it) },
                     onExport     = { triggerExport() },
                     onExportPreview = { triggerExportPreview() },
@@ -1361,6 +1372,11 @@ private fun AudioCategoryContent(
 private fun ExportPanel(
     settings: ExportSettings,
     exportedFile: List<ExportResult>,
+    glesState: GlesState,
+    glesCheckNote: String?,
+    canvasRetryOffer: String?,
+    onRetryWithCanvas: () -> Unit,
+    onRerunGlesCheck: () -> Unit,
     onChange: (ExportSettings) -> Unit,
     onExport: () -> Unit,
     onExportPreview: () -> Unit,
@@ -1414,6 +1430,23 @@ private fun ExportPanel(
             }
         }
 
+        // WP1.3: a forced GLES export failed. Nothing is replaced silently; the person chooses.
+        if (canvasRetryOffer != null) {
+            Card(colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f))) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(canvasRetryOffer, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                    Text("You chose GLES, so the export was not switched to Canvas on its own.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    Button(onClick = onRetryWithCanvas, modifier = Modifier.fillMaxWidth()) {
+                        Text("Retry with Canvas")
+                    }
+                }
+            }
+        }
+
         Text("Export Settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
         LabeledSwitch("Export both 9:16 and 16:9", settings.dualAspectExport) {
@@ -1439,6 +1472,29 @@ private fun ExportPanel(
         }
         LabeledSwitch("Embed audio in video", settings.embedAudio) {
             onChange(settings.copy(embedAudio = it))
+        }
+
+        // WP1.3 — which backend draws and encodes the video.
+        val rendererLabel = when (RendererSetting.normalize(settings.renderer)) {
+            RendererSetting.GLES   -> "GLES"
+            RendererSetting.CANVAS -> "Canvas"
+            else                   -> "Auto"
+        }
+        SegmentedRow("Renderer", listOf("Auto", "GLES", "Canvas"), rendererLabel) {
+            onChange(settings.copy(renderer = it.uppercase()))
+        }
+        Text(ExportBackendPlan.resolve(settings.renderer, glesState).explanation,
+            style = MaterialTheme.typography.bodySmall)
+        Text("Auto uses the faster GPU path (GLES) only after a GLES check has passed on this phone, and Canvas otherwise. " +
+            "Pick GLES or Canvas to force one.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+        OutlinedButton(onClick = onRerunGlesCheck, modifier = Modifier.fillMaxWidth()) {
+            Text("Re-run GLES check", fontSize = 12.sp)
+        }
+        if (glesCheckNote != null) {
+            Text(glesCheckNote, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
         }
 
         Spacer(Modifier.height(8.dp))
@@ -1467,7 +1523,7 @@ private fun ExportPanel(
         TextButton(onClick = onGlesSmokeTest, modifier = Modifier.fillMaxWidth()) {
             Text("GLES export test (debug)", fontSize = 12.sp)
         }
-        Text("Renders ~3s of the real timeline through the new GPU export path — full figure + background/scene/atmosphere + overlay shapes/glow + camera pan/zoom/shake now, still no captions or text/figure overlays, a diagnostic check, not a real export.",
+        Text("Renders ~3s of the real timeline through the GPU export path, the same code a GLES export uses (single aspect, with the audio). A diagnostic check; it does not change the Renderer setting.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
 
@@ -1475,7 +1531,7 @@ private fun ExportPanel(
         TextButton(onClick = onGlesStressTest, modifier = Modifier.fillMaxWidth()) {
             Text("GLES stress test — full project (debug)", fontSize = 12.sp)
         }
-        Text("Same GPU path, but renders this project's actual full length instead of ~3s — a real unattended run, not a quick check. Can take a while for a long project; watch for heat, stalls, or slowdown.",
+        Text("Same GPU path, but renders this project's actual full length instead of ~3s: a real unattended run, not a quick check. Can take a while for a long project; watch for heat, stalls, or slowdown.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
     }

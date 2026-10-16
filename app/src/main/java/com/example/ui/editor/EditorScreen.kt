@@ -1485,7 +1485,7 @@ private fun ExportPanel(
         }
         Text(ExportBackendPlan.resolve(settings.renderer, glesState).explanation,
             style = MaterialTheme.typography.bodySmall)
-        Text("Auto uses the faster GPU path (GLES) only after a GLES check has passed on this phone, and Canvas otherwise. " +
+        Text("Auto uses the GPU path (GLES) only after a GLES check has passed on this phone, and Canvas otherwise. " +
             "Pick GLES or Canvas to force one.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))

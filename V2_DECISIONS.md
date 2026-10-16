@@ -2482,6 +2482,106 @@ approved by the person before implementing:**
   Kotlin warnings as before); pure code also run locally (62 tests). Not
   device-confirmed.
 
+- **2026-10-16 — WP1.3: GLES as a real export backend, renderer `AUTO`.**
+  Four steps, each pushed and CI-checked on its own. (a) Pure rules, unit-tested
+  (`GlesEligibilityTest` 17, `ExportBackendPlanTest` 23, `ExportSettingsRendererTest`
+  4, `ExportSettingsJsonTest` 4 on CI only; all but the last run by
+  `tools/localjvm`): `GlesEligibility` (states `Eligible`, `Ineligible(reason)`,
+  `Unknown`; the cache key; the stored text form, which reads damaged text as
+  nothing; the crash-marker rule), `ExportBackendPlan` (how `AUTO | GLES | CANVAS`
+  resolves; what a GLES failure does at each stage; the probe rule) and
+  `EncoderPlan` (size alignment, bitrate clamping). `ExportSettings.renderer`
+  (`"AUTO"` default, JSON only; the legacy blobs still decode, `LegacyJsonTest`
+  unchanged). (b) Trails. (c) `GlesExporter`, `ExportRouter`,
+  `GlesEligibilityStore`, the multi-surface renderer. (d) The view-model and the
+  Renderer controls.
+  Decisions:
+  - *`AUTO` resolution.* GLES only when the stored verdict for this build is
+    `Eligible`; `Unknown` and `Ineligible` use Canvas; `GLES` and `CANVAS` force.
+    Only the full on-device check (WP1.6) can produce `Eligible`, and it does not
+    exist yet, so in this version `AUTO` uses Canvas on every device. That is the
+    conservative reading of the brief ("until then, or if the check fails, use
+    Canvas") and the Renderer help line says it. "Re-run GLES check" resets the
+    verdict and the crash marker and runs the encoder capability probe only; a
+    failed probe is stored as `Ineligible(reason)`, a passed probe changes
+    nothing (it is not a pass of the check).
+  - *Where the verdict lives.* SharedPreferences (`GlesEligibilityStore`), not the
+    per-project `ExportSettings` JSON: it is a fact about the phone, not a
+    project (no Room change, I8). The brief's "app version code" is not enough:
+    `versionCode` is 1 in `app/build.gradle.kts` (VERIFIED-BY-READING), so a new
+    debug build would inherit an old verdict. The "app version" string is
+    `versionCode.lastUpdateTime` and the key adds `Build.FINGERPRINT`; the pure
+    function takes both as plain strings and length-prefixes them.
+  - *Crash-loop guard.* The marker (the key) is written before a check and
+    removed after it; found at launch for the current key it records
+    `Ineligible("crashed")` with no automatic retry; a marker from another build is
+    just removed; the record is written before the marker is cleared. Only the
+    check sets the marker, not real exports: a process death during a ten-minute
+    export is indistinguishable from the person closing the app, so a marker there
+    would switch GLES off by mistake. A native crash inside a real GLES export is
+    therefore not recorded (known limit). Nothing sets the marker in this version
+    (WP1.6 will); the launch rule is wired and tested.
+  - *Fallback.* Failures before the first two seconds of frames (probe, init, the
+    first frames) are GLES's, so they store `Ineligible(reason)`; a later failure
+    (a full disk, a thermal stop) does not. `AUTO` then runs the whole export again
+    on Canvas and puts "GLES failed: reason; exported with Canvas" in the result's
+    warnings (shown under Heads-up); a forced `GLES` reports the error and offers
+    "Retry with Canvas" (one export, the stored setting untouched). The brief only
+    names init and the first frames; later failures falling back too, without a
+    verdict, is the conservative choice (the person still gets a video). Output-file
+    and audio problems are not GLES failures and propagate unchanged.
+  - *Dual aspect.* One EGL context, one `EGLSurface` per encoder input surface
+    (`GlesFrameRenderer(List<Surface>)`, the single-surface constructor remains),
+    `eglMakeCurrent` only when the target changes (`makeCurrentTarget`), programs
+    and textures shared by the context, `drawFigureFrame(frame, ns, targetIndex)`.
+    The timeline is resolved once per frame; the FK matrices and the
+    `GlesFigureFrame` are built per target. Caches that depend on the canvas size:
+    captions and overlay text were already keyed by it; the reference-text texture
+    is now a small keyed map (4) and the glow FBO pair a map keyed by size (4),
+    because alternating two sizes through a one-slot cache would reallocate two
+    full-frame textures every frame. Rejected: two renderers (two contexts, two
+    threads, duplicated resources), which the brief also rules out.
+  - *Trails.* `TrailGeometry` (pure, `TrailGeometryTest` 5) holds the numbers
+    (stroke 0.6 of the layer size, segment opacity from the oldest to 0.6 of the
+    layer's, a segment under 0.5 px is a dot); `RigRenderer.drawGmsTrail` reads
+    them with the same arithmetic as before (tested against the original
+    expressions), and `GlesFigureFrame` emits the segments as ordinary round-capped
+    line commands (a circle for a dot) drawn just before their layer in the behind,
+    front and screen groups, like Canvas. Rejected: expanding trails into faded
+    layer copies in the resolver; it would change what Canvas draws (I1) and the
+    goldens, and the trail is not a layer, only a chain of segments. Both paths
+    use the same antialiasing as their other lines; any pixel difference is
+    R3-type, not a logic difference.
+  - *Exporter.* `GlesExporter` (new file) mirrors the Canvas path: the same
+    `totalSec`, sizes (`ExportSettings.dimensions`, aligned up to the encoder's
+    alignment when it asks for more, with a note), the project's fps and bitrate
+    (clamped into the encoder's reported range, with a note), 5 s keyframe
+    interval, VBR when supported, `ExportAudio` (honours `embedAudio`), the same
+    `OutputTarget`, progress (0.90 headroom) and ETA. Different on purpose:
+    surface input, BT.601 limited colour tags, the encoder created by the name
+    that was probed. The end-of-stream wait gives up after 30 s without output and
+    checks cancellation on every poll; the whole clean-up runs under
+    `NonCancellable`, which also fixes a leak in the old smoke test (a cancelled
+    coroutine cannot enter `withContext`, so the GL thread was never shut down).
+    `exportGlesSmokeTest` is now a wrapper over it (single aspect, `_gles_test`,
+    label "GLES figure test"; cancellation is rethrown instead of becoming a
+    failure); the two debug buttons stay in the export panel until WP1.6.
+    `OutputTarget` and `computeEtaSec` became `internal` for this.
+  - *Not done here.* The amplitude-smoothing frame step (WP0.5 follow-up) is NOT
+    changed: it would change exports of old scripts at 24 and 60 fps, which I1
+    does not allow without an exception John has not given (OPEN QUESTION in
+    `IMPLEMENTATION_LOG.md`; both backends share the engine, so they agree with
+    each other either way). The background quick check, its scheduling and the
+    mutex against a concurrent export belong to WP1.6 with the check itself.
+  Classification (A4): export engineering and parity, Direction-neutral; trails
+  are a parity fix (the script already asked for them). Verification:
+  VERIFIED-BY-CI (runs 38813259669 on `6f968ea`, 38842935619 on `bdc0a2c`,
+  38887540933 on `ecd2416`, 38887866754 on `7daed4f`: build success, 125 tests, 15
+  Kotlin warnings as before). NOT device-confirmed: everything that touches
+  MediaCodec, EGL or the screen (the encoder probe, surface creation, the
+  multi-surface renderer, the end-of-stream wait, cancellation, the trail drawing,
+  the panel).
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

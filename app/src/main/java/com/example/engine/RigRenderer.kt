@@ -619,13 +619,15 @@ class RigRenderer {
             val (x1, y1) = pts[i + 1]
             // Oldest segment most transparent, newest (closest to current
             // position) most opaque, capped below the layer's own opacity.
-            val segProgress = (i + 1).toFloat() / (n - 1).toFloat()
+            // The numbers live in TrailGeometry (WP1.3), shared with the GLES
+            // renderer so a trail looks the same on both; same arithmetic as
+            // the inline expressions this replaced.
             gmsShapePaint.shader = null
             gmsShapePaint.color = baseColor
-            gmsShapePaint.alpha = combinedAlpha(baseColor, layer.opacity * segProgress * 0.6f)
+            gmsShapePaint.alpha = combinedAlpha(baseColor, TrailGeometry.segmentOpacity(layer.opacity, i, n))
             gmsShapePaint.style = Paint.Style.STROKE
             gmsShapePaint.strokeCap = Paint.Cap.ROUND
-            gmsShapePaint.strokeWidth = (layer.radius ?: (layer.height ?: 0.015f)) * min(w, h) * 0.6f
+            gmsShapePaint.strokeWidth = TrailGeometry.strokeWidthPx(layer.radius, layer.height, w, h)
             canvas.drawLine(x0 * w, y0 * h, x1 * w, y1 * h, gmsShapePaint)
         }
         gmsShapePaint.style = Paint.Style.FILL

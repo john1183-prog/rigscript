@@ -19,7 +19,7 @@ mkdir -p "$OUT/main" "$OUT/test" "$OUT/run"
   "$H/stubs/serialization.kt" "$H/stubs/mouthshape.kt" "$H/stubs/androidlog.kt" $MAIN
 "$KOTLIN_HOME/bin/kotlinc" -nowarn -jvm-target 17 -cp "$OUT/main:$CP" -d "$OUT/test" \
   "$H/stubs/junit.kt" "$H/LocalJson.kt" "$H/LocalFixtures.kt" "$H/LocalRunner.kt" $TEST
-CLASSES=${*:-"com.example.TestEnvelopesTest com.example.FixtureParseTest com.example.GoldenCompareTest com.example.EngineInvariantTest com.example.SpringParityTest com.example.ExportAudioPlanTest com.example.AudioMathTest com.example.GlesEligibilityTest com.example.ExportBackendPlanTest com.example.ExportSettingsRendererTest com.example.GoldenTest"}
+CLASSES=${*:-"com.example.TestEnvelopesTest com.example.FixtureParseTest com.example.GoldenCompareTest com.example.EngineInvariantTest com.example.SpringParityTest com.example.ExportAudioPlanTest com.example.AudioMathTest com.example.GlesEligibilityTest com.example.ExportBackendPlanTest com.example.ExportSettingsRendererTest com.example.TrailGeometryTest com.example.GoldenTest"}
 status=0
 (cd "$OUT/run" && java -Drepo.root="$ROOT" -cp "$OUT/main:$OUT/test:$CP" localjvm.LocalRunnerKt $CLASSES > out.txt 2>&1) || status=$?
 grep -v '^CAPTURE|' "$OUT/run/out.txt" || true

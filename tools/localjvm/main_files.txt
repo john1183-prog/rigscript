@@ -19,3 +19,4 @@ engine/AudioMath.kt
 engine/GlesEligibility.kt
 engine/ExportBackendPlan.kt
 data/ExportSettings.kt
+engine/TrailGeometry.kt

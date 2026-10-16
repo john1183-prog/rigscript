@@ -14,3 +14,4 @@ AudioMathTest.kt
 GlesEligibilityTest.kt
 ExportBackendPlanTest.kt
 ExportSettingsRendererTest.kt
+TrailGeometryTest.kt

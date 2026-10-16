@@ -41,9 +41,8 @@ import com.example.data.ReferenceOverlay
  * [OverlayTextDraw]/[OverlayDraw] doc comments) — the latter in the SAME
  * ordered [behindOverlays]/[frontOverlays] lists as shape overlays, not
  * separate ones, so a script mixing shape and text overlays in one group
- * keeps their relative Z-order. Scoped deliberately narrow still: particle
- * trails remain unimplemented in GLES — see V2_DECISIONS.md for the
- * exact boundary and why.
+ * keeps their relative Z-order. WP1.3 added particle/physics trails (see
+ * [buildTrailDraw]), so GLES now draws everything the Canvas path draws.
  */
 data class GlesFigureFrame(
     /** Canvas pixel width this frame was computed for. */
@@ -504,9 +503,11 @@ data class GlesFigureFrame(
             else emptyList()
             val (worldOverlays, screenOverlaysResolved) = resolvedOverlays.partition { !it.screenSpace }
             val (behindResolved, frontResolved) = worldOverlays.partition { !it.inFrontOfFigure }
-            val behindOverlays = behindResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
-            val frontOverlays  = frontResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
-            val screenOverlays = screenOverlaysResolved.mapNotNull { buildOverlayDraw(it, canvasW, canvasH, minDim, appearance) }
+            // WP1.3: a layer's motion trail (physics layers with trail = true) is drawn just BEFORE the layer itself,
+            // in all three groups, exactly like RigRenderer.draw's `drawGmsTrail` then `drawGmsOverlay` pairs.
+            val behindOverlays = behindResolved.flatMap { overlayDrawsWithTrail(it, canvasW, canvasH, minDim, appearance) }
+            val frontOverlays  = frontResolved.flatMap { overlayDrawsWithTrail(it, canvasW, canvasH, minDim, appearance) }
+            val screenOverlays = screenOverlaysResolved.flatMap { overlayDrawsWithTrail(it, canvasW, canvasH, minDim, appearance) }
 
             val bgColor = (overrides.bgColor ?: appearance.exportBgColor).toInt()
             // These two are DELIBERATELY independent — see groundLineYFraction's
@@ -775,6 +776,49 @@ data class GlesFigureFrame(
             )
         }
 
+        /** The layer's trail (if it has one) followed by the layer itself (if it draws anything): Canvas's order. */
+        private fun overlayDrawsWithTrail(
+            layer: ResolvedOverlay, canvasW: Int, canvasH: Int, minDim: Float, appearance: AppearanceSettings
+        ): List<OverlayDraw> {
+            val trail = buildTrailDraw(layer, canvasW, canvasH)
+            val item = buildOverlayDraw(layer, canvasW, canvasH, minDim, appearance)
+            return when {
+                trail != null && item != null -> listOf(trail, item)
+                trail != null -> listOf(trail)
+                item != null -> listOf(item)
+                else -> emptyList()
+            }
+        }
+
+        /**
+         * WP1.3 — a fading motion trail as ordinary overlay geometry: one round-capped line per segment, with the
+         * numbers from [TrailGeometry] (shared with `RigRenderer.drawGmsTrail`). A segment under half a pixel long
+         * is a round dot instead, because that is what Canvas draws for a zero-length round-capped line and the GLES
+         * line primitive skips lines that short. Points are world fractions; like every other overlay shape the
+         * result is camera-transformed afterwards (screen-space layers are not). Null when there is no trail.
+         */
+        private fun buildTrailDraw(layer: ResolvedOverlay, canvasW: Int, canvasH: Int): OverlayDraw? {
+            val pts = layer.trailPoints
+            val n = pts.size
+            if (!TrailGeometry.hasTrail(n)) return null
+
+            val baseColor = layer.color.toInt()
+            val halfWidth = TrailGeometry.strokeWidthPx(layer.radius, layer.height, canvasW, canvasH) / 2f
+            val commands = ArrayList<OverlayDrawCommand>(n - 1)
+            for (i in 0 until n - 1) {
+                val x0 = pts[i].first * canvasW;     val y0 = pts[i].second * canvasH
+                val x1 = pts[i + 1].first * canvasW; val y1 = pts[i + 1].second * canvasH
+                val alpha = RigRenderer.combinedAlphaChannel(baseColor, TrailGeometry.segmentOpacity(layer.opacity, i, n))
+                val color = (alpha shl 24) or (baseColor and 0xFFFFFF)
+                commands += if (TrailGeometry.isDot(x0, y0, x1, y1)) {
+                    OverlayDrawCommand.Circle((x0 + x1) / 2f, (y0 + y1) / 2f, halfWidth, color)
+                } else {
+                    OverlayDrawCommand.Line(x0, y0, x1, y1, halfWidth, color)
+                }
+            }
+            return OverlayDraw.Shape(OverlayShapeDraw(commands = commands, glow = false, glowColor = 0, glowRadiusPx = 0f))
+        }
+
         /** Dispatches to [buildOverlayShapeDraw], [buildOverlayTextDraw], or [buildOverlayFigureDraw] by [ResolvedOverlay.type] — see [OverlayDraw] doc comment for why this is one list, not two. */
         private fun buildOverlayDraw(
             layer: ResolvedOverlay,
@@ -786,7 +830,7 @@ data class GlesFigureFrame(
             "shape"  -> buildOverlayShapeDraw(layer, canvasW, canvasH, minDim)?.let { OverlayDraw.Shape(it) }
             "text"   -> buildOverlayTextDraw(layer, canvasW, canvasH)?.let { OverlayDraw.Text(it) }
             "figure" -> buildOverlayFigureDraw(layer, canvasW, canvasH, minDim, appearance)?.let { OverlayDraw.Shape(it) }
-            else     -> null   // particle trails — still unimplemented, see class doc comment.
+            else     -> null   // particle layers are expanded into ordinary shape layers by OverlayResolver before this point.
         }
 
         /**

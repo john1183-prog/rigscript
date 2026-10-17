@@ -281,7 +281,7 @@ object OverlayResolver {
 
         val clampedP = progress.coerceIn(0f, 1f)
 
-        // Find active segment [segIdx, segIdx + 1]
+        // Find the active segment [segIdx, segIdx + 1]: keyframes 0..segIdx are at or before the progress, the rest after it.
         var segIdx = 0
         for (i in 0 until kfs.size - 1) {
             if (clampedP >= kfs[i].t) {
@@ -289,30 +289,36 @@ object OverlayResolver {
             }
         }
 
-        val k0 = kfs[segIdx]
-        val k1 = kfs[segIdx + 1]
-        val dt = k1.t - k0.t
-        val segT = if (dt > 0.00001f) ((clampedP - k0.t) / dt).coerceIn(0f, 1f) else 1f
-        val easedT = EasingMath.ease(k0.ease, segT)
-
+        /**
+         * Standard keyframe interpolation, PER PROPERTY (WP1.4 / R9). The value runs from the nearest keyframe at or
+         * before the progress that DEFINES the property (the layer's base value at t = 0 when none does) to the nearest
+         * keyframe after it that defines it, over the span between those two and eased by the ease of the keyframe the
+         * span starts at. A keyframe that leaves the property out is skipped, so a property omitted from a middle
+         * keyframe moves smoothly across it (it used to hold flat and then move only in the last segment). After the
+         * last keyframe that defines the property the value holds. When the two keyframes around the progress both
+         * define the property, this is exactly the old segment-by-segment rule, number for number.
+         */
         fun interpolateProp(
             getter: (OverlayAnimKeyframe) -> Float?,
             baseVal: Float
         ): Float {
-            var startVal = baseVal
+            var startIdx = -1
             for (i in segIdx downTo 0) {
-                val v = getter(kfs[i])
-                if (v != null) {
-                    startVal = v
-                    break
-                }
+                if (getter(kfs[i]) != null) { startIdx = i; break }
             }
-            val targetVal = getter(k1)
-            return if (targetVal != null) {
-                startVal + (targetVal - startVal) * easedT
-            } else {
-                startVal
+            var endIdx = -1
+            for (j in segIdx + 1 until kfs.size) {
+                if (getter(kfs[j]) != null) { endIdx = j; break }
             }
+            val startVal = (if (startIdx >= 0) getter(kfs[startIdx]) else null) ?: baseVal
+            val endVal = (if (endIdx >= 0) getter(kfs[endIdx]) else null) ?: return startVal
+
+            // With no defining keyframe at or before the progress the span starts at t = 0 (kfs[0]).
+            val startKf = if (startIdx >= 0) kfs[startIdx] else kfs[0]
+            val dt = kfs[endIdx].t - startKf.t
+            val segT = if (dt > 0.00001f) ((clampedP - startKf.t) / dt).coerceIn(0f, 1f) else 1f
+            val easedT = EasingMath.ease(startKf.ease, segT)
+            return startVal + (endVal - startVal) * easedT
         }
 
         return ResolvedAnimProperties(
@@ -513,7 +519,17 @@ object OverlayResolver {
 
     // ── Phase 2: parenting ───────────────────────────────────────────────────
 
-    private data class WorldState(val x: Float, val y: Float, val rotationDeg: Float, val scale: Float, val opacity: Float)
+    /**
+     * [screenSpace] is the EFFECTIVE draw space (WP1.4 / R7): parenting wins over a layer's own
+     * [OverlayLayer.screenSpace] flag, because a layer drawn in a different space than what it is attached to
+     * would drift away from it whenever the camera moves. A layer attached to a bone is in world space (the figure
+     * is); a layer attached to another layer takes that layer's effective space; only an unparented layer (or one
+     * whose parent cannot be resolved, which is treated as unparented) uses its own flag.
+     */
+    private data class WorldState(
+        val x: Float, val y: Float, val rotationDeg: Float, val scale: Float, val opacity: Float,
+        val screenSpace: Boolean
+    )
 
     /**
      * Compounds [TimeResolvedOverlay.localX]/etc into final world-fraction
@@ -544,7 +560,7 @@ object OverlayResolver {
                 trailPoints = p.trailPointsLocal,
                 figurePoseAngles = p.figurePoseAngles, figureExpression = p.figureExpression,
                 inFrontOfFigure = p.inFrontOfFigure,
-                screenSpace = p.screenSpace
+                screenSpace = w.screenSpace
             )
         }
     }
@@ -561,14 +577,14 @@ object OverlayResolver {
         val world: WorldState = when {
             p.parentBone != null -> {
                 val anchor = boneAnchors[p.parentBone]
-                if (anchor == null) WorldState(p.localX, p.localY, p.localRotationDeg, p.localScale, p.opacity)
-                else WorldState(anchor.first + p.localX, anchor.second + p.localY, p.localRotationDeg, p.localScale, p.opacity)
+                if (anchor == null) WorldState(p.localX, p.localY, p.localRotationDeg, p.localScale, p.opacity, p.screenSpace)
+                else WorldState(anchor.first + p.localX, anchor.second + p.localY, p.localRotationDeg, p.localScale, p.opacity, screenSpace = false)
             }
             !p.parentLayer.isNullOrBlank() && p.id !in visiting && visiting.size < 8 -> {
                 val parentLayerId = p.parentLayer as String
                 val parent = byId[parentLayerId]
                 if (parent == null) {
-                    WorldState(p.localX, p.localY, p.localRotationDeg, p.localScale, p.opacity)
+                    WorldState(p.localX, p.localY, p.localRotationDeg, p.localScale, p.opacity, p.screenSpace)
                 } else {
                     visiting += p.id
                     val pw = resolveWorld(parent, byId, boneAnchors, cache, visiting)
@@ -582,11 +598,12 @@ object OverlayResolver {
                         pw.x + rx, pw.y + ry,
                         pw.rotationDeg + p.localRotationDeg,
                         pw.scale * p.localScale,
-                        pw.opacity * p.opacity
+                        pw.opacity * p.opacity,
+                        pw.screenSpace
                     )
                 }
             }
-            else -> WorldState(p.localX, p.localY, p.localRotationDeg, p.localScale, p.opacity)
+            else -> WorldState(p.localX, p.localY, p.localRotationDeg, p.localScale, p.opacity, p.screenSpace)
         }
         if (p.id.isNotBlank()) cache[p.id] = world
         return world

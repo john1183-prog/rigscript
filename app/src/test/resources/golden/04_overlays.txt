@@ -1,6 +1,6 @@
 golden 1 fixture=04_overlays
 input events=7 layers=32 blinks=0 total=34.5000
-warnings 10
+warnings 11
 warn Overlay layer 's_circle' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
 warn Overlay layer 's_arrow' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
 warn Overlay layer 's_cross' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
@@ -8,6 +8,7 @@ warn Overlay layer 'pl_root' may overlap the figure during its active window (ap
 warn Overlay layer 's_anim_trail' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
 warn Overlay layer 's_behind_figure' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
 warn Overlay layer 's_faded_rotated' may overlap the figure during its active window (approximate check) — reposition, or use parentBone if overlap is intended.
+warn Overlay layer(s) whose anim keyframes set opacity and end visible while exitStyle is not "none" — keyframed opacity takes precedence over the exit style, so the layer cuts out at endSec instead of fading; key a final opacity of 0 and set exitStyle to "none": t_anim
 warn Overlay layers 't_anim' and 's_anim_trail' overlap in both time and position — they may visually collide on screen.
 warn Overlay layers 't_behind_figure' and 's_anim_trail' overlap in both time and position — they may visually collide on screen.
 warn Overlay layers 't_behind_figure' and 's_behind_figure' overlap in both time and position — they may visually collide on screen.
@@ -334,7 +335,7 @@ ov n=13 sumx=7.5781 sumy=5.6403
 o t_hud_screen_space text/rect pb=- pl=- x=0.1200 y=0.0800 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0400 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=true txt=HUD
 o t_world_space text/rect pb=- pl=- x=0.8800 y=0.0800 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0400 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=WORLD
 o f_moving figure/rect pb=- pl=- x=0.7722 y=0.7000 rot=20.0000 sc=0.6000 op=0.7000 col=ffce93d8 grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=0 front=true ss=false txt=-
-o t_anim text/rect pb=- pl=- x=0.4997 y=0.3000 rot=0.0000 sc=0.9996 op=0.9993 col=ffffffff grad=- w=- h=- r=- fs=0.0700 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=MOVE
+o t_anim text/rect pb=- pl=- x=0.4997 y=0.3000 rot=14.9893 sc=0.9996 op=0.9993 col=ffffffff grad=- w=- h=- r=- fs=0.0700 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=MOVE
 o pl_root shape/rect pb=- pl=- x=0.4974 y=0.4171 rot=0.0000 sc=1.0000 op=1.0000 col=ff7e57c2 grad=- w=0.1000 h=0.1000 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o pl_child shape/circle pb=- pl=pl_root x=0.0000 y=-0.0800 rot=0.0000 sc=1.0000 op=1.0000 col=fffff176 grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o s_anim_trail shape/circle pb=- pl=- x=0.4286 y=0.2411 rot=0.0000 sc=1.0000 op=1.0000 col=ffff8a65 grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-

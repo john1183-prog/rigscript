@@ -282,6 +282,37 @@ object ScriptValidator {
             }
         }
 
+        // R7 (WP1.4): parenting wins over screenSpace (see OverlayLayer.screenSpace). Reported only where an explicit
+        // screenSpace = true is actually overridden: a VALID parentBone always means world space, and so does a
+        // parentLayer whose own flag is false. A child of a screen-space parent that also says true agrees with it,
+        // and one that says false (the default) simply inherits the space, so neither is reported.
+        layers.filter { layer ->
+            val pb = layer.parentBone
+            when {
+                !layer.screenSpace -> false
+                pb != null -> pb in knownBoneIds
+                else -> {
+                    val parent = layer.parentLayer?.takeIf { it.isNotBlank() }?.let { idToLayer[it] }
+                    parent != null && !parent.screenSpace
+                }
+            }
+        }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "Overlay layer(s) with screenSpace=true that also have a parent — parenting wins, so screenSpace is ignored and the layer follows its parent's space (world space for a parentBone): ${bad.joinToString { it.id.ifBlank { "@${it.startSec}s" } }}"
+            }
+
+        // R8 (WP1.4): keyframed opacity takes precedence over the exit style (see OverlayLayer.anim). A layer whose
+        // keyed opacity is still visible after its last keyframe therefore has no exit fade and cuts out at endSec.
+        layers.filter { layer ->
+            val keyedEnd = layer.anim?.sortedBy { it.t }?.lastOrNull { it.opacity != null }?.opacity
+            keyedEnd != null && keyedEnd > 0.01f && layer.exitStyle != "none"
+        }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "Overlay layer(s) whose anim keyframes set opacity and end visible while exitStyle is not \"none\" — keyframed opacity takes precedence over the exit style, so the layer cuts out at endSec instead of fading; key a final opacity of 0 and set exitStyle to \"none\": ${bad.joinToString { it.id.ifBlank { "@${it.startSec}s" } }}"
+            }
+
         layers.filter { it.endSec <= it.startSec }
             .takeIf { it.isNotEmpty() }
             ?.let { bad ->

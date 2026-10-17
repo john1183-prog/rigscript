@@ -124,10 +124,25 @@ import kotlinx.serialization.Serializable
  * [screenSpace]     Whether this layer renders in screen space (true) after
  *                  the camera/world transform is restored, or in world space
  *                  (false, default) transformed by camera zoom/pan/shake.
+ *                  PARENTING WINS: a layer with a [parentBone] or a
+ *                  resolvable [parentLayer] ignores its own flag and draws in
+ *                  the space of what it is attached to (world space for a
+ *                  bone; the parent layer's own effective space for a layer),
+ *                  because it would otherwise drift from its parent whenever
+ *                  the camera moves. [com.example.engine.ScriptValidator]
+ *                  warns when an explicit true is overridden.
  * [anim]           Optional sub-timeline keyframes ([OverlayAnimKeyframe])
  *                  interpolating position, scale, opacity, and rotation
  *                  over [startSec..endSec]. When present, takes precedence
- *                  over enter/exit transforms for animated properties.
+ *                  over enter/exit transforms for animated properties. That
+ *                  includes opacity: keyframed opacity REPLACES the exit
+ *                  fade (the layer simply ends at its last keyed opacity),
+ *                  so to fade out, key a final opacity of 0 and set
+ *                  exitStyle "none" ([com.example.engine.ScriptValidator]
+ *                  warns about the combination that would cut out). Each
+ *                  property interpolates between the nearest keyframes that
+ *                  DEFINE it, so leaving it out of a middle keyframe does not
+ *                  make it hold (see [OverlayAnimKeyframe]).
  *
  * ── Phase 2: physics ─────────────────────────────────────────────────────
  * Closed-form (not frame-by-frame simulated) motion, computed fresh from
@@ -210,11 +225,17 @@ import kotlinx.serialization.Serializable
  *
  * [t]           Normalized timestamp in [0.0, 1.0], where 0.0 is [OverlayLayer.startSec]
  *               and 1.0 is [OverlayLayer.endSec].
- * [x]           Horizontal center position as fraction of canvas width. Null to carry forward.
- * [y]           Vertical center position as fraction of canvas height. Null to carry forward.
- * [scale]       Scale multiplier. Null to carry forward.
- * [opacity]     Ceiling alpha in [0.0, 1.0]. Null to carry forward.
- * [rotationDeg] Rotation angle in degrees. Null to carry forward.
+ * [x]           Horizontal center position as fraction of canvas width. Null to leave this keyframe out of x.
+ * [y]           Vertical center position as fraction of canvas height. Null to leave this keyframe out of y.
+ * [scale]       Scale multiplier. Null to leave this keyframe out of scale.
+ * [opacity]     Ceiling alpha in [0.0, 1.0]. Null to leave this keyframe out of opacity.
+ * [rotationDeg] Rotation angle in degrees. Null to leave this keyframe out of rotation.
+ *
+ * Each property is interpolated on its own between the nearest keyframes that DEFINE it (the layer's own value
+ * counts as the keyframe at t = 0, and the last defined value holds after the last keyframe that defines it). A
+ * keyframe that leaves a property null is simply skipped for that property, so omitting it from a middle keyframe
+ * does not make the value hold: it keeps moving across that keyframe. [ease] is the ease of the keyframe a span
+ * starts at (for that property).
  * [ease]        Easing curve applied to the segment between this keyframe and the next keyframe.
  *               Defaults to "linear". One of [com.example.engine.EasingMath]'s closed vocabulary.
  */

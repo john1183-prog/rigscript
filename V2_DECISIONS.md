@@ -2618,7 +2618,32 @@ approved by the person before implementing:**
     its first keyframes omit `rotationDeg`, its first definition is at the clamped t = 1
     (the fixture's t values 1, 2 and 3 all clamp to 1), so rotation now runs from 0 to 15
     across the window instead of holding 0. All other fixtures are unchanged.
-  - Tests: `OverlayParityRulesTest` (20, all pure, run by `tools/localjvm`).
+  - *R6, overlay text wrap width: CONFIRMED* (VERIFIED-BY-READING: `buildOverlayTextLayout`
+    fixed the width at `canvasW * 0.92f` whatever the anchor or alignment and positions the
+    block from the anchor, so left-aligned text at x = 0.1 spans 0.1 to 1.02 of the canvas and
+    text centred at x = 0.2 spans -0.26 to 0.66). Fix: `TextLayoutMath.availableWidthPx`
+    (pure): the room between the anchor and the edge minus the 4% margin the old 0.92
+    implied (left: to the right edge; right: from the left edge; centred: twice the smaller
+    distance), capped at 0.92 so anything unconstrained is exactly the old width (tested for
+    many canvas sizes), floored at 0.25 of the canvas so an anchor at the edge does not shrink
+    the text to nothing (it overflows, as before), and rounded down to a fiftieth of the
+    canvas so a moving anchor does not rebuild a layout every frame (it reflows in at most 50
+    steps). Both renderers already call the one builder, `RigRenderer.buildOverlayTextLayout`,
+    which now takes the width; the Canvas layout cache and the GLES texture cache include it.
+    The anchor is the layer's resolved x; camera zoom, rotation and scale are ignored.
+    Text that already fitted renders as before (lines are aligned inside the box, which is
+    anchored at its left, centre or right edge, so glyph positions do not depend on its width).
+  - *R11, caption box height: CONFIRMED* (the only limit was the room above the bottom margin,
+    and the shrink-then-truncate loop existed twice, in `RigRenderer.drawCaption` and
+    `GlesFrameRenderer.ensureCaptionTexture`). One pure `CaptionFit` now holds that loop
+    (tested equal to the old loop over a grid of canvas sizes, limits, line limits and
+    lengths) and both renderers call it. New `AppearanceSettings.captionMaxHeightFraction`
+    (default 0.5, JSON only): the whole box may use that share of the canvas height; 1 or more
+    removes the cap and an invalid value means no cap, so captions cannot vanish. Normal
+    one to three line captions are far below half the screen and render as before. The GLES
+    caption texture key includes the new value.
+  - Tests: `OverlayParityRulesTest` (20), `TextLayoutMathTest` (9), `CaptionFitTest` (9), all
+    pure and run by `tools/localjvm`; `CaptionSettingsJsonTest` (3, CI only).
   - Prompt docs (I5): not changed now. When the prompt next changes, add: parenting wins over
     `screenSpace`; keyed opacity replaces the exit fade (key a final opacity of 0, set
     `exitStyle` `"none"`); a property left out of a middle keyframe interpolates across it.

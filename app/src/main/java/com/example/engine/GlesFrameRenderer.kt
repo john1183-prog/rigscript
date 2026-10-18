@@ -1163,7 +1163,7 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
     private fun ensureCaptionTexture(text: String, frame: GlesFigureFrame): CaptionTexture {
         val canvasW = frame.canvasW
         val canvasH = frame.canvasH
-        val key = "$canvasW|$canvasH|$text|${frame.captionTextSizeFraction}|${frame.captionMaxWidthFraction}|${frame.captionBottomMarginFraction}|${frame.captionPaddingFraction}|${frame.captionBgColor}|${frame.captionTextColor}|${frame.captionMaxLines}"
+        val key = "$canvasW|$canvasH|$text|${frame.captionTextSizeFraction}|${frame.captionMaxWidthFraction}|${frame.captionBottomMarginFraction}|${frame.captionPaddingFraction}|${frame.captionBgColor}|${frame.captionTextColor}|${frame.captionMaxLines}|${frame.captionMaxHeightFraction}"
         captionTextureCache[key]?.let { return it }
 
         captionBgPaint.color = frame.captionBgColor
@@ -1173,11 +1173,11 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
         val padding      = canvasH * frame.captionPaddingFraction
         val bottomMargin = canvasH * frame.captionBottomMarginFraction
         val boxBottom = canvasH - bottomMargin
-        val maxLayoutHeight = (boxBottom - padding * 2f).coerceAtLeast(0f)
+        // R11 (WP1.4): the same CaptionFit as RigRenderer.drawCaption, so both renderers shrink, truncate and cap the
+        // box height identically.
+        val maxLayoutHeight = CaptionFit.maxLayoutHeight(canvasH, boxBottom, padding, frame.captionMaxHeightFraction)
 
-        var textSize = canvasH * frame.captionTextSizeFraction
-
-        fun buildLayout(size: Float, maxLines: Int = frame.captionMaxLines): StaticLayout {
+        fun buildLayout(size: Float, maxLines: Int): StaticLayout {
             captionTextPaint.textSize = size
             val builder = StaticLayout.Builder
                 .obtain(text, 0, text.length, captionTextPaint, maxWidth)
@@ -1191,27 +1191,15 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
             return builder.build()
         }
 
-        var layout = buildLayout(textSize)
-        val minTextSize = (canvasH * 0.01f).coerceAtLeast(1f)
-        var iterations = 0
-        while (layout.height > maxLayoutHeight && textSize > minTextSize && iterations++ < 25) {
-            textSize = (textSize * 0.9f).coerceAtLeast(minTextSize)
-            layout = buildLayout(textSize)
-            if (textSize == minTextSize) break
-        }
-
-        if (layout.height > maxLayoutHeight && layout.lineCount > 1) {
-            val avgLineHeight = (layout.height.toFloat() / layout.lineCount).coerceAtLeast(1f)
-            var fittingLines = (maxLayoutHeight / avgLineHeight).toInt().coerceIn(1, layout.lineCount)
-            if (frame.captionMaxLines > 0) {
-                fittingLines = minOf(fittingLines, frame.captionMaxLines)
-            }
-            layout = buildLayout(textSize, fittingLines)
-            while (layout.height > maxLayoutHeight && fittingLines > 1) {
-                fittingLines--
-                layout = buildLayout(textSize, fittingLines)
-            }
-        }
+        val layout = CaptionFit.fit(
+            initialTextSize    = canvasH * frame.captionTextSizeFraction,
+            minTextSize        = (canvasH * 0.01f).coerceAtLeast(1f),
+            maxLayoutHeight    = maxLayoutHeight,
+            configuredMaxLines = frame.captionMaxLines,
+            build              = { size, lines -> buildLayout(size, lines) },
+            heightOf           = { it.height },
+            linesOf            = { it.lineCount }
+        ).layout
 
         val boxLeft   = (canvasW - maxWidth) / 2f - padding
         val boxRight  = boxLeft + maxWidth + padding * 2f
@@ -1415,7 +1403,8 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
      */
     private fun ensureOverlayTextTexture(draw: GlesFigureFrame.OverlayTextDraw, canvasW: Int, canvasH: Int): OverlayTextTexture {
         val key = "${draw.text}|${draw.fontSizeFraction}|${draw.bold}|${draw.align}|${draw.colorArgb}|" +
-            "${draw.gradientColorArgb}|${draw.glow}|${draw.glowColorArgb}|${draw.glowRadiusFraction}|$canvasW|$canvasH"
+            "${draw.gradientColorArgb}|${draw.glow}|${draw.glowColorArgb}|${draw.glowRadiusFraction}|$canvasW|$canvasH|" +
+            "${draw.maxWidthPx}"
         overlayTextTextureCache[key]?.let { return it }
 
         val res = RigRenderer.buildOverlayTextLayout(
@@ -1425,7 +1414,8 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
             bold = draw.bold,
             align = draw.align,
             canvasW = canvasW,
-            canvasH = canvasH
+            canvasH = canvasH,
+            maxWidthPx = draw.maxWidthPx
         )
         overlayTextPaint.isFakeBoldText = draw.bold
         overlayTextPaint.textAlign = Paint.Align.LEFT

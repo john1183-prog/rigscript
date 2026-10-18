@@ -16,3 +16,5 @@ ExportBackendPlanTest.kt
 ExportSettingsRendererTest.kt
 TrailGeometryTest.kt
 OverlayParityRulesTest.kt
+TextLayoutMathTest.kt
+CaptionFitTest.kt

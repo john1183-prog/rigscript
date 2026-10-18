@@ -20,3 +20,5 @@ engine/GlesEligibility.kt
 engine/ExportBackendPlan.kt
 data/ExportSettings.kt
 engine/TrailGeometry.kt
+engine/TextLayoutMath.kt
+engine/CaptionFit.kt

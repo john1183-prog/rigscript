@@ -540,9 +540,11 @@ class RigRenderer {
      * can pan away from.
      *
      * Safely clamped so the caption box cannot extend off the top of the
-     * screen. If the text would overflow the available vertical height,
-     * it respects [AppearanceSettings.captionMaxLines] and iteratively reduces
-     * text size so the entire caption box remains within canvas bounds.
+     * screen, and (R11) capped at [AppearanceSettings.captionMaxHeightFraction]
+     * of the canvas height. If the text would overflow the available vertical
+     * height, it respects [AppearanceSettings.captionMaxLines] and iteratively
+     * reduces text size, then lines, so the entire caption box stays within
+     * that height ([CaptionFit]).
      */
     private fun drawCaption(canvas: Canvas, w: Int, h: Int, text: String, appearance: AppearanceSettings) {
         captionBgPaint.color = appearance.captionBgColor.toInt()
@@ -552,11 +554,11 @@ class RigRenderer {
         val padding = h * appearance.captionPaddingFraction
         val bottomMargin = h * appearance.captionBottomMarginFraction
         val boxBottom = h - bottomMargin
-        val maxLayoutHeight = (boxBottom - padding * 2f).coerceAtLeast(0f)
+        // R11 (WP1.4): the height limit and the shrink-then-truncate loop are CaptionFit's, shared with the GLES
+        // renderer; the whole box may use at most captionMaxHeightFraction of the canvas height.
+        val maxLayoutHeight = CaptionFit.maxLayoutHeight(h, boxBottom, padding, appearance.captionMaxHeightFraction)
 
-        var textSize = h * appearance.captionTextSizeFraction
-
-        fun buildLayout(size: Float, maxLines: Int = appearance.captionMaxLines): StaticLayout {
+        fun buildLayout(size: Float, maxLines: Int): StaticLayout {
             captionTextPaint.textSize = size
             val builder = StaticLayout.Builder
                 .obtain(text, 0, text.length, captionTextPaint, maxWidth)
@@ -570,27 +572,15 @@ class RigRenderer {
             return builder.build()
         }
 
-        var layout = buildLayout(textSize)
-        val minTextSize = (h * 0.01f).coerceAtLeast(1f)
-        var iterations = 0
-        while (layout.height > maxLayoutHeight && textSize > minTextSize && iterations++ < 25) {
-            textSize = (textSize * 0.9f).coerceAtLeast(minTextSize)
-            layout = buildLayout(textSize)
-            if (textSize == minTextSize) break
-        }
-
-        if (layout.height > maxLayoutHeight && layout.lineCount > 1) {
-            val avgLineHeight = (layout.height.toFloat() / layout.lineCount).coerceAtLeast(1f)
-            var fittingLines = (maxLayoutHeight / avgLineHeight).toInt().coerceIn(1, layout.lineCount)
-            if (appearance.captionMaxLines > 0) {
-                fittingLines = minOf(fittingLines, appearance.captionMaxLines)
-            }
-            layout = buildLayout(textSize, fittingLines)
-            while (layout.height > maxLayoutHeight && fittingLines > 1) {
-                fittingLines--
-                layout = buildLayout(textSize, fittingLines)
-            }
-        }
+        val layout = CaptionFit.fit(
+            initialTextSize    = h * appearance.captionTextSizeFraction,
+            minTextSize        = (h * 0.01f).coerceAtLeast(1f),
+            maxLayoutHeight    = maxLayoutHeight,
+            configuredMaxLines = appearance.captionMaxLines,
+            build              = { size, lines -> buildLayout(size, lines) },
+            heightOf           = { it.height },
+            linesOf            = { it.lineCount }
+        ).layout
 
         val boxLeft = (w - maxWidth) / 2f - padding
         val boxRight = boxLeft + maxWidth + padding * 2f
@@ -742,13 +732,17 @@ class RigRenderer {
         bold: Boolean,
         align: String,
         w: Int,
-        h: Int
+        h: Int,
+        anchorX: Float
     ): OverlayTextLayoutResult {
-        val key = "$text|$fontSizeFraction|$bold|$align|$w|$h"
+        // R6 (WP1.4): the wrap width depends on where the layer is anchored (TextLayoutMath), so it is part of the
+        // key. It is quantized, so a layer whose anchor moves stays cheap.
+        val maxWidthPx = TextLayoutMath.availableWidthPx(align, anchorX, w)
+        val key = "$text|$fontSizeFraction|$bold|$align|$w|$h|$maxWidthPx"
         overlayTextLayoutCache[key]?.let { return it }
         if (overlayTextLayoutCache.size > 200) overlayTextLayoutCache.clear()
 
-        val result = buildOverlayTextLayout(gmsTextPaint, text, fontSizeFraction, bold, align, w, h)
+        val result = buildOverlayTextLayout(gmsTextPaint, text, fontSizeFraction, bold, align, w, h, maxWidthPx)
         overlayTextLayoutCache[key] = result
         return result
     }
@@ -759,12 +753,13 @@ class RigRenderer {
         val baseColor = layer.color.toInt()
 
         // Multiline word-wrapping via StaticLayout (V2 Overlay-Text Step 2):
-        // wraps lines within 0.92f * canvasWidth at the requested fontSize,
-        // vertically centering the resulting multiline block around (0,0)
-        // (the layer's translated (x,y) anchor) and aligning lines relative
-        // to x = 0 ("left", "center", "right"). Shrinks fontSize ONLY when a
-        // single unbreakable word/token exceeds 0.92f * canvasWidth.
-        val res = cachedOverlayTextLayout(text, layer.fontSize, layer.bold, layer.align, w, h)
+        // wraps lines within the room the layer's anchor leaves on the canvas
+        // (TextLayoutMath, at most 0.92f * canvasWidth) at the requested
+        // fontSize, vertically centering the resulting multiline block around
+        // (0,0) (the layer's translated (x,y) anchor) and aligning lines
+        // relative to x = 0 ("left", "center", "right"). Shrinks fontSize ONLY
+        // when a single unbreakable word/token exceeds that width.
+        val res = cachedOverlayTextLayout(text, layer.fontSize, layer.bold, layer.align, w, h, layer.x)
         gmsTextPaint.isFakeBoldText = layer.bold
         gmsTextPaint.textAlign = Paint.Align.LEFT
         gmsTextPaint.textSize = res.textSize
@@ -1895,12 +1890,16 @@ class RigRenderer {
         )
 
         /**
-         * Builds a wrapped [StaticLayout] within `0.92f * canvasW` for an
-         * overlay text layer using the caller's thread-local [paint].
+         * Builds a wrapped [StaticLayout] within [maxWidthPx] pixels for an
+         * overlay text layer using the caller's thread-local [paint]. Both
+         * renderers call this one function, so they wrap identically. The
+         * width comes from [TextLayoutMath.availableWidthPx] (R6, WP1.4): the
+         * room the layer's anchor and alignment leave on the canvas, at most
+         * `0.92f * canvasW` (the old fixed width).
          *
          * Wraps sentences normally at word boundaries without shrinking.
          * Shrinks [textSize] ONLY if a single unbreakable word/token exceeds
-         * the maximum allowed width (`0.92f * canvasW`), bounded below by a
+         * the maximum allowed width, bounded below by a
          * safe positive minimum size (`(canvasH * 0.01f).coerceAtLeast(1f)`).
          */
         fun buildOverlayTextLayout(
@@ -1910,14 +1909,15 @@ class RigRenderer {
             bold: Boolean,
             align: String,
             canvasW: Int,
-            canvasH: Int
+            canvasH: Int,
+            maxWidthPx: Int
         ): OverlayTextLayoutResult {
             paint.isFakeBoldText = bold
             // StaticLayout handles alignment internally via Layout.Alignment;
             // paint.textAlign must be LEFT so StaticLayout.draw does not double-offset.
             paint.textAlign = Paint.Align.LEFT
 
-            val maxWidthInt = (canvasW * 0.92f).toInt().coerceAtLeast(1)
+            val maxWidthInt = maxWidthPx.coerceAtLeast(1)
             val maxWidthFloat = maxWidthInt.toFloat()
             val minTextSize = (canvasH * 0.01f).coerceAtLeast(1f)
             var textSize = (canvasH * fontSizeFraction).coerceAtLeast(minTextSize)

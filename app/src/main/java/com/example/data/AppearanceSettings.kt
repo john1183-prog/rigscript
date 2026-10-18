@@ -120,5 +120,11 @@ data class AppearanceSettings(
     /** Text colour for captions (ARGB Long). Default: white (0xFFFFFFFFL). */
     val captionTextColor: Long = 0xFFFFFFFFL,
     /** Maximum number of rendered caption lines. 0 = unlimited. */
-    val captionMaxLines: Int = 0
+    val captionMaxLines: Int = 0,
+    /**
+     * Tallest the whole caption box (text plus padding) may be, as a fraction of canvas height (WP1.4 / R11).
+     * A longer caption first shrinks, then loses lines (the last one is ellipsized), so it cannot cover most of the
+     * screen. 1 or more removes the cap. Default 0.5; normal one-to-three-line captions are far below it.
+     */
+    val captionMaxHeightFraction: Float = 0.5f
 )

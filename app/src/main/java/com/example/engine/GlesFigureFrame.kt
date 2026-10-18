@@ -133,6 +133,7 @@ data class GlesFigureFrame(
     val captionBgColor: Int = 0x99000000L.toInt(),
     val captionTextColor: Int = -1,
     val captionMaxLines: Int = 0,
+    val captionMaxHeightFraction: Float = CaptionFit.DEFAULT_MAX_HEIGHT_FRACTION,
 
     /**
      * Reference overlay (text phase, sub-phase 3 — V2_DECISIONS.md), or
@@ -336,7 +337,9 @@ data class GlesFigureFrame(
         val originX: Float,
         val originY: Float,
         val rotationDeg: Float,
-        val scale: Float
+        val scale: Float,
+        /** R6 (WP1.4): the wrap width in pixels ([TextLayoutMath.availableWidthPx] from the anchor), part of the texture cache key. */
+        val maxWidthPx: Int
     )
 
     /**
@@ -633,6 +636,7 @@ data class GlesFigureFrame(
                 captionBgColor              = appearance.captionBgColor.toInt(),
                 captionTextColor            = appearance.captionTextColor.toInt(),
                 captionMaxLines             = appearance.captionMaxLines,
+                captionMaxHeightFraction    = appearance.captionMaxHeightFraction,
                 referenceOverlayDraw        = referenceOverlayDraw
             )
         }
@@ -874,7 +878,8 @@ data class GlesFigureFrame(
                 originX = canvasW * layer.x,
                 originY = canvasH * layer.y,
                 rotationDeg = layer.rotationDeg,
-                scale = layer.scale
+                scale = layer.scale,
+                maxWidthPx = TextLayoutMath.availableWidthPx(layer.align, layer.x, canvasW)
             )
         }
 

@@ -2642,8 +2642,57 @@ approved by the person before implementing:**
     removes the cap and an invalid value means no cap, so captions cannot vanish. Normal
     one to three line captions are far below half the screen and render as before. The GLES
     caption texture key includes the new value.
-  - Tests: `OverlayParityRulesTest` (20), `TextLayoutMathTest` (9), `CaptionFitTest` (9), all
-    pure and run by `tools/localjvm`; `CaptionSettingsJsonTest` (3, CI only).
+  - *R2 and R5, zoomed, scaled and rotated text is soft on GLES: CONFIRMED* (VERIFIED-BY-READING:
+    `ensureOverlayTextTexture` rasterized every text once at its unscaled size, and
+    `drawOverlayTextDraw` snapped the quad to whole pixels only when `rotationDeg == 0 &&
+    scale == 1`, where `scale` already includes the camera zoom, so anything else was a 1x
+    bitmap resampled by the GPU, while Canvas re-renders the glyphs at the final size).
+    Fix: `TextRasterScale` (pure) rounds the on-screen scale (layer scale times camera zoom)
+    to the nearest quarter octave (0.25 to 4; exactly 1 at scale 1), and the bitmap is made by
+    drawing the already-wrapped, unscaled layout under a canvas scale of that value (so
+    wrapping stays identical to Canvas, as the Canvas path also scales a finished layout), at
+    most about 9% from 1:1 with the screen. The texture key includes the scale, so a zoom
+    animation makes only a handful of bitmaps per text (tested: at most 6 across a 1x to 2.5x
+    zoom, at most 17 over the whole range; the cache cap of 200 is unchanged). A bitmap over
+    4096 px on a side or 8 MP falls back to the old 1x bitmap. The pixel snap now applies to
+    upright text whose scale equals its raster scale to within 0.1% (always the case at scale
+    1, so unscaled text renders exactly as before), using the bitmap's pixel size for the quad.
+  - *R4, landscape GLES mouth faint: NOT CONFIRMED, no code change.* Both renderers call the
+    same `RigRenderer.computeMouthGeometry` with the same inputs (end and start points, head
+    radius `0.048 * scale * headScaleMultiplier`, shape, openness, expression); everything is
+    proportional to `scale`, which is `w` in portrait and `h * 9/16` in landscape for both
+    backends, so the geometry is orientation-independent in normalized units and identical
+    between backends by construction. A numeric model of the GLES oval shader (first-order
+    SDF, smoothstep half-band of 1 px) against exact area coverage for thin ellipses
+    (rx 10 and 12 px, ry 0.6 to 5 px, mouth-sized) gives the GLES shader MORE ink than exact
+    coverage (ratio 1.01 to 1.42) and the same visible width, so the shader does not explain
+    "20 px against 24 px, 40% less ink". The old measurement came from the smoke-test
+    exporter that has since been replaced by `GlesExporter` (same inputs as Canvas). To
+    reopen: measure mouth ink on frames from the new exporter in landscape (the WP1.6 self-test
+    is the place).
+  - *R1, GLES figure about 1.75 px higher: NOT CONFIRMED by reading, no code change.*
+    VERIFIED-BY-READING: `toClipX` and `toClipY` map continuous pixel coordinates exactly
+    (pixel-centre convention, y flipped, viewport equal to the canvas size), and the capsule,
+    oval and circle quads and their local coordinates are built from the same pixel
+    coordinates with no offset, so no vertical offset exists in the code. The element pattern
+    (text 0, rect about 1, figure about 1.75, mouth about 1.9) is not explained by a shared
+    transform. Hypotheses for the device measurement (the WP1.6 offset estimator): the AA
+    band shape (shader smoothstep of 2 px against Canvas area coverage), vertical chroma siting
+    of the hardware RGB to YUV conversion against the software NV12 conversion, and a
+    threshold-based silhouette fit.
+  - *R3, GLES polygons are not anti-aliased: CONFIRMED, NOT YET FIXED.* (`drawSolidTriangles`
+    and `drawSolidFan` are plain per-vertex-colour triangles, and the EGL config requests no
+    samples; the lines, circles and ovals have their own analytic AA.) Approach chosen for
+    the next session: an analytic edge fringe, a pure tested function that finds the
+    boundary edges of a triangle list or fan and returns one-pixel quads with alpha ramping
+    from the polygon's alpha to 0 (deterministic on every driver, JVM-testable). Not chosen
+    first: multisampled EGL, because a recordable multisampled config is not guaranteed and a
+    driver-specific failure (black or corrupted frames) could not be seen from here. The inset
+    question (a fringe grows the shape by about half a pixel) and the corner wedges are the
+    points to settle and test.
+  - Tests: `OverlayParityRulesTest` (20), `TextLayoutMathTest` (9), `CaptionFitTest` (9),
+    `TextRasterScaleTest` (9), all pure and run by `tools/localjvm`;
+    `CaptionSettingsJsonTest` (3, CI only).
   - Prompt docs (I5): not changed now. When the prompt next changes, add: parenting wins over
     `screenSpace`; keyed opacity replaces the exit fade (key a final opacity of 0, set
     `exitStyle` `"none"`); a property left out of a middle keyframe interpolates across it.

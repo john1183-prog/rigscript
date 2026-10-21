@@ -18,3 +18,4 @@ TrailGeometryTest.kt
 OverlayParityRulesTest.kt
 TextLayoutMathTest.kt
 CaptionFitTest.kt
+TextRasterScaleTest.kt

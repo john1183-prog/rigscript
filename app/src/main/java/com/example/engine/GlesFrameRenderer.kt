@@ -183,7 +183,15 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
      * [localB] are always symmetric — [RigRenderer.drawGmsText]'s
      * `baselineOffset` always centers vertically regardless of alignment.
      */
-    private class OverlayTextTexture(val texId: Int, val localL: Float, val localT: Float, val localR: Float, val localB: Float)
+    private class OverlayTextTexture(
+        val texId: Int,
+        /** Quad bounds in UNSCALED local units (the layer's own coordinate system, before its scale and the camera zoom). */
+        val localL: Float, val localT: Float, val localR: Float, val localB: Float,
+        /** The scale the bitmap was rasterized at (R2/R5, [TextRasterScale]); 1 for the old unscaled bitmap. */
+        val rasterScale: Float,
+        /** The bitmap's size in pixels: the quad's on-screen size when the text is shown at [rasterScale]. */
+        val pixelW: Int, val pixelH: Int
+    )
 
     /** Keyed on every rasterization input — see [CaptionTexture]'s cache doc comment for the same reasoning, extended here to cover gradient/glow/bold/align too, since all of those affect the rendered pixels. */
     private val overlayTextTextureCache = LinkedHashMap<String, OverlayTextTexture>()
@@ -1355,13 +1363,15 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
         // alpha already baked into tex's rasterized pixels (colorArgb/glowColorArgb
         // carry opacity in their alpha channel — see OverlayTextDraw's doc comment),
         // so 1f here, same as captions.
-        // For unrotated, unscaled text, snap quad origin to integer screen coordinates to preserve
-        // 1:1 texel-to-pixel mapping without bilinear filtering blur. Rotated/scaled quads use exact floats.
-        if (draw.rotationDeg == 0f && draw.scale == 1f) {
+        // For unrotated text whose bitmap lands pixel for pixel on the screen (the on-screen scale equals the scale
+        // it was rasterized at; always true at scale 1, as before), snap the quad origin to integer screen
+        // coordinates to preserve the 1:1 texel-to-pixel mapping without bilinear blur. Rotated quads, and ones
+        // within a step of the raster scale rather than on it, use exact floats.
+        if (draw.rotationDeg == 0f && TextRasterScale.isOneToOne(draw.scale, tex.rasterScale)) {
             val rx0 = kotlin.math.round(x0)
             val ry0 = kotlin.math.round(y0)
-            val rx1 = rx0 + (tex.localR - tex.localL)
-            val ry2 = ry0 + (tex.localB - tex.localT)
+            val rx1 = rx0 + tex.pixelW
+            val ry2 = ry0 + tex.pixelH
             drawTexturedQuad(tex.texId, rx0, ry0, rx1, ry0, rx1, ry2, rx0, ry2, 1f, w, h)
         } else {
             drawTexturedQuad(tex.texId, x0, y0, x1, y1, x2, y2, x3, y3, 1f, w, h)
@@ -1402,9 +1412,13 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
      * gradient text overlay's opacity ever looks subtly off on-device.
      */
     private fun ensureOverlayTextTexture(draw: GlesFigureFrame.OverlayTextDraw, canvasW: Int, canvasH: Int): OverlayTextTexture {
+        // R2/R5 (WP1.4): rasterize at the on-screen scale (the layer's scale times the camera zoom), rounded to a
+        // step, so zoomed, scaled and rotated text is not a 1x bitmap stretched by the GPU. The LAYOUT is still the
+        // unscaled one (same wrapping as Canvas, which scales the finished layout); only the drawing is scaled.
+        val requestedRasterScale = TextRasterScale.rasterScale(draw.scale)
         val key = "${draw.text}|${draw.fontSizeFraction}|${draw.bold}|${draw.align}|${draw.colorArgb}|" +
             "${draw.gradientColorArgb}|${draw.glow}|${draw.glowColorArgb}|${draw.glowRadiusFraction}|$canvasW|$canvasH|" +
-            "${draw.maxWidthPx}"
+            "${draw.maxWidthPx}|$requestedRasterScale"
         overlayTextTextureCache[key]?.let { return it }
 
         val res = RigRenderer.buildOverlayTextLayout(
@@ -1445,14 +1459,24 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
         val texT = kotlin.math.floor(res.localT - pad)
         val texB = kotlin.math.ceil(res.localB + pad)
 
-        val texW = (texR - texL).toInt().coerceAtLeast(1)
-        val texH = (texB - texT).toInt().coerceAtLeast(1)
+        // The bitmap covers the same local rectangle at requestedRasterScale pixels per local unit. A bitmap that
+        // would be too big for a GL texture falls back to the old 1x bitmap (the quad is then resampled, as before).
+        var rasterScale = requestedRasterScale
+        var texW = kotlin.math.ceil((texR - texL) * rasterScale).toInt().coerceAtLeast(1)
+        var texH = kotlin.math.ceil((texB - texT) * rasterScale).toInt().coerceAtLeast(1)
+        if (!TextRasterScale.fits(texW, texH)) {
+            rasterScale = 1f
+            texW = (texR - texL).toInt().coerceAtLeast(1)
+            texH = (texB - texT).toInt().coerceAtLeast(1)
+        }
         val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
         val bmpCanvas = Canvas(bmp)
         // Local (0,0) maps to bitmap-space (-texL, -texT); translating by
         // (layoutTranslateX - texL, layoutTranslateY - texT) places the
         // StaticLayout at the exact same local coordinates as RigRenderer.drawGmsText.
+        // The canvas scale (identity at 1x) makes Skia draw the glyphs at the final size.
         bmpCanvas.save()
+        bmpCanvas.scale(rasterScale, rasterScale)
         bmpCanvas.translate(res.layoutTranslateX - texL, res.layoutTranslateY - texT)
         res.layout.draw(bmpCanvas)
         bmpCanvas.restore()
@@ -1468,7 +1492,11 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
         bmp.recycle()
 
-        val result = OverlayTextTexture(texId, texL, texT, texR, texB)
+        // Local bounds from the bitmap's own pixel size, so the quad maps it exactly (no stretch); at 1x this is
+        // texR and texB as before.
+        val result = OverlayTextTexture(
+            texId, texL, texT, texL + texW / rasterScale, texT + texH / rasterScale, rasterScale, texW, texH
+        )
         if (overlayTextTextureCache.size >= 200) {
             val oldestKey = overlayTextTextureCache.keys.first()
             overlayTextTextureCache.remove(oldestKey)?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }

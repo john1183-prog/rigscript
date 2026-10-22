@@ -143,20 +143,20 @@ Each object in "overlayLayers" (all fields except "type"/"startSec"/
   "enterStyle": "string",          // "fade" | "pop" | "zoom" | "slideup" | "slidedown" | "none". Default "fade".
   "enterDuration": number,         // seconds. Default 0.35.
   "enterEase": "string",           // one of the exact ease ids below (plus "back"). Default "ease_out".
-  "exitStyle": "string",           // same vocabulary as enterStyle. Default "fade".
+  "exitStyle": "string",           // same vocabulary as enterStyle. Default "fade". Does not fade opacity that "anim" keys (see ANIM below): to fade out with keyframes, end with an opacity keyframe of 0 and set exitStyle "none".
   "exitDuration": number,          // seconds. Default 0.35.
   "exitEase": "string",            // Default "ease_in".
   "opacity": number,               // ceiling alpha 0..1 once fully "in". Default 1.
   "inFrontOfFigure": boolean,      // true = draws over the figure (default, original behavior). false = figure draws over THIS layer instead.
-  "screenSpace": boolean,          // true = renders in screen space after camera transform is restored (unaffected by camera zoom/pan/shake). false = world space (default).
-  "anim": [                        // optional sub-timeline keyframes for position, scale, opacity, and rotation over [startSec..endSec]. When present, takes precedence over enter/exit transforms for animated properties.
+  "screenSpace": boolean,          // true = renders in screen space after camera transform is restored (unaffected by camera zoom/pan/shake). false = world space (default). Ignored if parentBone or parentLayer is set: a parented layer follows its parent's space.
+  "anim": [                        // optional sub-timeline keyframes for position, scale, opacity, and rotation over [startSec..endSec]. When present, takes precedence over enter/exit transforms for animated properties (keyed opacity replaces the exit fade).
     {
       "t": number,                 // REQUIRED in keyframe. Normalized time 0..1 across [startSec..endSec] (0 = startSec, 1 = endSec).
-      "x": number | null,          // horizontal position fraction (0..1). Null carries forward from previous keyframe (or base x).
-      "y": number | null,          // vertical position fraction (0..1). Null carries forward from previous keyframe (or base y).
-      "scale": number | null,      // scale multiplier. Null carries forward (or base scale).
-      "opacity": number | null,    // alpha 0..1. Null carries forward (or base opacity).
-      "rotationDeg": number | null,// rotation in degrees. Null carries forward (or base rotationDeg).
+      "x": number | null,          // horizontal position fraction (0..1). Null = not set here: x interpolates between the nearest keyframes that set it (base x at t=0).
+      "y": number | null,          // vertical position fraction (0..1). Null = not set here: y interpolates between the nearest keyframes that set it (base y at t=0).
+      "scale": number | null,      // scale multiplier. Null = not set here: interpolates between the nearest keyframes that set it (base scale at t=0).
+      "opacity": number | null,    // alpha 0..1. Null = not set here: interpolates between the nearest keyframes that set it (base opacity at t=0).
+      "rotationDeg": number | null,// rotation in degrees. Null = not set here: interpolates between the nearest keyframes that set it (base rotationDeg at t=0).
       "ease": "string"             // easing curve to next keyframe: linear | ease_in | ease_out | ease_in_out | bounce | elastic_out | spring | back | rigid. Default "linear".
     }
   ] | null,
@@ -633,7 +633,9 @@ or tracks the figure. screenSpace does NOT change the basic normalized
 (x, y) coordinate convention (0..1 of viewport width/height still applies),
 and screen-space overlays are NOT automatically collision-aware: keep them
 positioned clear of the caption area (y > 0.7 in 9:16) and central figure
-action.
+action. A layer with parentBone or parentLayer ignores its own screenSpace
+and follows what it is attached to: a layer on a bone is in world space; a
+child of a screenSpace layer is in screen space too.
 
 OVERLAY ANIMATION KEYFRAMES (anim) — an optional sub-timeline keyframe
 array on any overlay layer, allowing properties to animate over time
@@ -666,21 +668,23 @@ scrubbing or seeking directly to an arbitrary timestamp evaluates the
 exact interpolated state without replaying the animation from the
 beginning.
 
-Missing-property carry-forward rules:
-  - A keyframe does not need to specify every property.
-  - If both surrounding keyframes define a property, it interpolates
-    smoothly across the segment.
-  - If only the earlier keyframe defines a property, that value carries
-    forward unchanged across the segment.
+Missing-property rules (each property is interpolated on its own):
+  - A keyframe does not need to specify every property. A keyframe that
+    leaves a property out is skipped for that property.
+  - A property interpolates smoothly between the nearest keyframes that DO
+    specify it, even across a middle keyframe that leaves it out.
   - If a property is introduced for the first time at a later keyframe,
     interpolation begins from the overlay layer's base resting value
-    (base x/y, scale, opacity, rotationDeg).
+    (base x/y, scale, opacity, rotationDeg) at t = 0.
+  - After the last keyframe that specifies a property, its value holds.
   - If a property is never specified in any keyframe, it holds the base
     OverlayLayer value throughout.
 
 Easing segment semantics:
   - The ease property on keyframe k_i controls the interpolation curve
     of the segment between k_i and k_{i+1}.
+  - For a property a keyframe leaves out, the span starts at the keyframe
+    that last specified it and uses that keyframe's ease.
   - The final keyframe's ease has no following segment and does not
     affect subsequent interpolation.
   - Supported easing names use the exact closed vocabulary:
@@ -695,6 +699,10 @@ Precedence over enter/exit transforms:
     transform behavior for that property, preventing double-application
     (for example, keyframe opacity fading will not double-fade with
     enterStyle "fade").
+  - The same goes for the exit: keyed opacity replaces the exit fade, so a
+    layer whose last opacity keyframe is above 0 simply ends at that
+    opacity when its window closes. To fade out with keyframes, end with an
+    opacity keyframe of 0 and set exitStyle "none".
   - Any enter/exit behavior not replaced by anim (such as an enter fade
     when only x/y are keyframed) remains active as authored.
   - When anim is absent or omitted, existing enter/exit behavior is

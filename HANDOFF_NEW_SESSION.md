@@ -9,12 +9,19 @@ git clone https://github.com/john1183-prog/rigscript.git && cd rigscript
 git log --oneline -10
 ```
 
-Expected HEAD: `4ec852a Fix portrait DEMO caption overlap`
+**Refreshed 2026-10-16 (V2 campaign, WP1.5).** This file started as a
+pre-campaign handoff (HEAD `4ec852a`, the `eb6b0b3` baseline era). The
+sections "Current repo state" and "Completed fixes" below are that history and
+are kept as such. The AUTHORITATIVE, current state is not in this file:
 
-If it matches, read `V2_DECISIONS.md` in full from the "GLES export rewrite"
-entry onward before touching anything. If it doesn't match, this document
-describes commits that never landed and you're starting from a different
-state — treat everything below as unreliable until confirmed.
+- `IMPLEMENTATION_LOG.md` → "RESUME HERE" (the Handoff Packet: shas, CI runs,
+  next steps, what is and is not device-tested) and "OPEN QUESTIONS";
+- `docs/CAMPAIGN_BRIEF.md` (the rules of the V2 campaign, invariants I1–I12);
+- `V2_DECISIONS.md` (every decision, newest "What's implemented" entries last).
+
+Verify the repo with `git log --oneline -10` and the CI report check run, not
+with a HEAD hash written in a document. Read `V2_DECISIONS.md` from the
+"GLES export rewrite" entry onward before touching rendering code.
 
 ---
 
@@ -87,31 +94,46 @@ smoke test portrait (9:16), and GLES smoke test landscape (16:9):
 
 ## Remaining work (priority order)
 
-### 1. Five-step overlay-text work [PLANNED, NOT YET IMPLEMENTED]
-A planned expansion to overlay text capabilities and caption styling.
-**None of this is implemented yet — do not write code or prompt for these until active:**
-- **Step 1: Caption clamping + AppearanceSettings wiring**: dynamic max lines,
-  box padding, and appearance overrides for subtitles.
-- **Step 2: Multiline overlay text**: `\n` line splitting, multi-line measurement,
-  and bounding box alignment.
-- **Step 3: `screenSpace` coordinate mode**: optional overlay flag to render in
-  viewport space rather than camera world space.
-- **Step 4: Overlay `anim` keyframes**: timeline keyframing for overlay properties
-  (position, scale, opacity, rotation).
-- **Step 5: Documentation & prompt updates**: sync schemas and prompt text once
-  the underlying engine code is shipped and verified.
+### 1. Overlay-text work [SHIPPED]
+The five-step overlay-text plan is in the code: caption clamping and
+`AppearanceSettings` wiring, multiline overlay text, `screenSpace`, overlay
+`anim` keyframes, and the prompt sync. What changed since, in V2 WP1.4 (see
+`V2_DECISIONS.md` "WP1.4"): parenting wins over `screenSpace` (a layer on a
+bone is in world space; a child of a screen-space layer is in screen space);
+keyed opacity still replaces the exit fade, and the validator warns when that
+would cut a layer out; a property left out of a middle `anim` keyframe now
+interpolates across it instead of holding; overlay text wraps within the room
+its anchor leaves (`TextLayoutMath`); captions share one fit (`CaptionFit`) and
+are capped at `AppearanceSettings.captionMaxHeightFraction` (default 0.5 of the
+canvas height). The prompt (`system_prompt.txt` and its mirror in
+`PROMPT_CONSIDERATIONS.md`, byte-identical) describes these.
 
-**Explicit out-of-scope follow-ups from the overlay plan**:
+**Explicit out-of-scope follow-ups from the overlay plan** (unchanged):
 - Motion-path curves (e.g. bezier trajectories)
 - Per-character / per-word animation (karaoke reveals)
 - Layer blend-modes or masking
 - Continuous particle emitters (burst-only remains the model)
 - Timeline editor UI
 
-### 2. Wire GLES into the real `export()` button [primary architecture goal]
-- Add an opt-in toggle (project setting or AppearanceSettings flag).
-- Wire GLES pipeline into `VideoExporter.export()` for selected projects.
-- Add an automatic fallback path to Canvas if GLES initialization fails on device.
+### 2. GLES in the real export [WIRED in V2 WP1.3; not yet device-verified]
+`ExportSettings.renderer` is `"AUTO"` (default), `"GLES"` or `"CANVAS"`, set
+from the Renderer selector in the export panel. `ExportRouter` runs the
+export:
+- `CANVAS`: the software path (`VideoExporter.export`), always.
+- `GLES`: `GlesExporter` (full length, audio through `ExportAudio`, dual
+  aspect, cancellation). If it fails the error is shown with a "Retry with
+  Canvas" button; nothing is replaced silently.
+- `AUTO`: GLES only on a device whose stored GLES verdict for this app build is
+  "passed"; otherwise Canvas. Only the full on-device check (WP1.6) can record
+  "passed", so until that exists `AUTO` means Canvas everywhere. If GLES fails
+  early (probe, init, the first two seconds of frames) in `AUTO`, the export is
+  redone on Canvas with a visible warning and the device is remembered as not
+  eligible. "Re-run GLES check" in the export panel resets the verdict and
+  runs the encoder probe.
+To compare, force each renderer in the panel and export the same project.
+The old debug buttons (GLES export test, 3 s and full length) now run the real
+`GlesExporter`. Everything GLES-specific compiles on CI but has not been seen
+on a device: see the Handoff Packet and, from WP1.7, `TEST_CHECKLIST.md`.
 
 ### 3. `jog_a`/`jog_b` foot-plant correction [deferred by design]
 The hip-bob technique that works for walk_a/walk_b was tried on jog and
@@ -121,9 +143,14 @@ Real fix requires a mid-stride keyframe (pose-authoring work), not this
 technique applied more broadly. Not started, not blocked, just deferred.
 
 ### 4. Build & verification status
-Local builds (`gradlew assembleDebug`) and device deployment (`adb install -r -d`)
-work cleanly. Verification is anchored by pixel analysis of exported MP4s via
-Python and `ffmpeg`. CI via GitHub Actions remains available on remote push.
+On John's phone: Termux builds and `adb install -r -d` work; verification there
+is pixel analysis of exported MP4s via Python and `ffmpeg`. In the V2 campaign
+sessions (a sandbox with no Android SDK) the compiler and the unit tests are
+GitHub Actions: push, then read the check run "CI report" (build result, test
+counts, compiler errors, warning count). Pure code is also compiled and tested
+locally with `tools/localjvm/run.sh` (kotlinc fetched on first use). Anything
+that touches MediaCodec, EGL or the screen is verified by CI compile only until
+John runs it on the phone.
 
 ### 5. `sit` pose arms [minor polish, not broken]
 The `sit` pose keeps its arms in the default standing-hang position rather

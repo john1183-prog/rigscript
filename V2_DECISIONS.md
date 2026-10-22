@@ -2582,8 +2582,10 @@ approved by the person before implementing:**
   multi-surface renderer, the end-of-stream wait, cancellation, the trail drawing,
   the panel).
 
-- **2026-10-16 — WP1.4 (in progress): GLES parity fixes, one item at a time.**
-  Each item is verified against HEAD first; only what is CONFIRMED is changed. Done so far:
+- **2026-10-16 — WP1.4: GLES parity fixes, one item at a time.**
+  Each item is verified against HEAD first; only what is CONFIRMED is changed. Outcomes (R10 is
+  WP3.5's): R6, R7, R8, R9, R11, R2/R5 and R3 CONFIRMED and fixed; R1 and R4 NOT CONFIRMED, no
+  change (to be measured on a device by the WP1.6 self-test):
   - *R7, `screenSpace` with a parent: CONFIRMED* (VERIFIED-BY-READING: `ScriptValidator`
     never mentions `screenSpace`; `OverlayResolver` copied the layer's own flag whatever
     its parent; both renderers split world and screen groups on that flag, so a parented
@@ -2706,9 +2708,15 @@ approved by the person before implementing:**
   - Tests: `OverlayParityRulesTest` (20), `TextLayoutMathTest` (9), `CaptionFitTest` (9),
     `TextRasterScaleTest` (9), `PolygonFringeTest` (11), all pure and run by
     `tools/localjvm`; `CaptionSettingsJsonTest` (3, CI only).
-  - Prompt docs (I5): not changed now. When the prompt next changes, add: parenting wins over
-    `screenSpace`; keyed opacity replaces the exit fade (key a final opacity of 0, set
-    `exitStyle` `"none"`); a property left out of a middle keyframe interpolates across it.
+  - Prompt docs (I5), done in WP1.5: `system_prompt.txt` and its mirror in
+    `PROMPT_CONSIDERATIONS.md` now say that parenting wins over `screenSpace` (a layer on a bone is
+    in world space, a child of a screen-space layer is in screen space); keyed opacity replaces the
+    exit fade (end with an opacity keyframe of 0 and set `exitStyle` `"none"`); and a property left
+    out of a middle keyframe interpolates between the nearest keyframes that set it, from the base
+    value at t = 0, holding after the last one (the old "carries forward unchanged" wording is gone,
+    because it would now be wrong). The null-property comments on the `anim` keyframe fields were
+    reworded to match. Verified with `cmp` of the block between the first two fences of
+    `PROMPT_CONSIDERATIONS.md` and the asset (57,772 bytes).
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

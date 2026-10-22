@@ -2680,19 +2680,32 @@ approved by the person before implementing:**
     band shape (shader smoothstep of 2 px against Canvas area coverage), vertical chroma siting
     of the hardware RGB to YUV conversion against the software NV12 conversion, and a
     threshold-based silhouette fit.
-  - *R3, GLES polygons are not anti-aliased: CONFIRMED, NOT YET FIXED.* (`drawSolidTriangles`
-    and `drawSolidFan` are plain per-vertex-colour triangles, and the EGL config requests no
-    samples; the lines, circles and ovals have their own analytic AA.) Approach chosen for
-    the next session: an analytic edge fringe, a pure tested function that finds the
-    boundary edges of a triangle list or fan and returns one-pixel quads with alpha ramping
-    from the polygon's alpha to 0 (deterministic on every driver, JVM-testable). Not chosen
-    first: multisampled EGL, because a recordable multisampled config is not guaranteed and a
-    driver-specific failure (black or corrupted frames) could not be seen from here. The inset
-    question (a fringe grows the shape by about half a pixel) and the corner wedges are the
-    points to settle and test.
+  - *R3, GLES polygons are not anti-aliased: CONFIRMED* (VERIFIED-BY-READING: `drawSolidTriangles`
+    and `drawSolidFan` are plain hard-edged per-vertex-colour triangles and the EGL config
+    requests no samples; lines, circles and ovals have their own analytic AA). Approach: an
+    analytic edge fringe, not multisampled EGL (a recordable multisampled config is not
+    guaranteed and a driver-specific failure, black or corrupted frames, could not be seen
+    from here; the fringe is the same on every driver). `PolygonFringe` (pure): for every
+    boundary edge of a triangle list or fan (an edge used by exactly one triangle, vertices
+    matched to 1/64 px) it makes a one-pixel strip just outside the edge whose colour is the
+    polygon's and whose alpha falls from the polygon's own to 0, plus a wedge at each corner
+    where exactly two boundary edges meet and are not collinear, so the strips join. It is
+    drawn right after the polygon with the existing alpha blending and the existing solid
+    shader, for scene `Triangles` (mountains, hills, buildings) and overlay `Polygon`
+    commands (triangle, star, ...), not for rects (canvas bands and pixel-aligned boxes). A
+    pixel whose centre is d pixels outside an edge gets alpha 1 - d. Known costs, accepted:
+    a polygon grows by about half a pixel on average (the ramp starts at the true edge
+    instead of being centred on it; the brief's own R3 evidence is about missing blended
+    pixels, not size), concave corners get a little double fringe, and where two different
+    colours meet the fringe of the later one blends over the earlier, like an AA'd edge.
+    `GlesFrameRenderer.POLYGON_ANTIALIAS` is the one-line switch. Tests: `PolygonFringeTest`
+    (11: strip and wedge counts, shared and interior edges, winding independence, outer
+    vertices outside the shape at the set width, colour and alpha, degenerate and broken
+    input, vertex noise). NOT seen on a device: whether the edges look right, and whether the
+    half-pixel growth is visible on thin shapes, are the first things to look at.
   - Tests: `OverlayParityRulesTest` (20), `TextLayoutMathTest` (9), `CaptionFitTest` (9),
-    `TextRasterScaleTest` (9), all pure and run by `tools/localjvm`;
-    `CaptionSettingsJsonTest` (3, CI only).
+    `TextRasterScaleTest` (9), `PolygonFringeTest` (11), all pure and run by
+    `tools/localjvm`; `CaptionSettingsJsonTest` (3, CI only).
   - Prompt docs (I5): not changed now. When the prompt next changes, add: parenting wins over
     `screenSpace`; keyed opacity replaces the exit fade (key a final opacity of 0, set
     `exitStyle` `"none"`); a property left out of a middle keyframe interpolates across it.

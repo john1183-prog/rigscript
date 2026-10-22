@@ -246,6 +246,9 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
         /** Glow FBO pairs kept at once (one per canvas size in use). */
         const val MAX_GLOW_SIZES = 4
 
+        /** R3 (WP1.4): anti-alias filled polygons with [PolygonFringe]. A switch, so it is one line to turn off if a device disagrees. */
+        const val POLYGON_ANTIALIAS = true
+
         // Round-capped line via a signed-distance field against the segment [0,1] on u.
         // a_uv: u = position along axis normalised by segment length (0=start, 1=end,
         // extended past both ends by the cap radius); v = signed lateral offset, ALSO
@@ -728,6 +731,7 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
                 is GlesFigureFrame.SceneDrawCommand.Triangles -> {
                     val colors = IntArray(cmd.points.size / 2) { cmd.color }
                     drawSolidTriangles(cmd.points, colors, w, h)
+                    if (POLYGON_ANTIALIAS) drawPolygonFringe(PolygonFringe.forTriangles(cmd.points, colors), w, h)
                 }
                 is GlesFigureFrame.SceneDrawCommand.Rect -> {
                     drawSolidRect(cmd.l, cmd.t, cmd.r, cmd.b, cmd.color, w, h)
@@ -1118,6 +1122,15 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
 
         GLES20.glDisableVertexAttribArray(aPos)
         GLES20.glDisableVertexAttribArray(aColor)
+    }
+
+    /**
+     * R3 (WP1.4): the anti-aliasing strip around a filled polygon, drawn right after the polygon with the same
+     * alpha blending. See [PolygonFringe] for what it is and what it deliberately does not do. Rects
+     * ([drawSolidRect]) are not given one: their edges are the canvas bands and pixel-aligned boxes.
+     */
+    private fun drawPolygonFringe(fringe: PolygonFringe.Fringe, canvasW: Float, canvasH: Float) {
+        if (!fringe.isEmpty) drawSolidTriangles(fringe.xy, fringe.colorsArgb, canvasW, canvasH)
     }
 
     /** Flat-filled axis-aligned rect via [drawSolidFan] with the same ARGB color at all 4 corners. */
@@ -1655,6 +1668,7 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
                 is GlesFigureFrame.OverlayDrawCommand.Polygon -> {
                     val colors = if (colorOverride != null) IntArray(cmd.colors.size) { colorOverride } else cmd.colors
                     drawSolidFan(cmd.points, colors, canvasW, canvasH)
+                    if (POLYGON_ANTIALIAS) drawPolygonFringe(PolygonFringe.forFan(cmd.points, colors), canvasW, canvasH)
                 }
                 is GlesFigureFrame.OverlayDrawCommand.Circle -> {
                     val c = argbToGlColor(colorOverride ?: cmd.color)

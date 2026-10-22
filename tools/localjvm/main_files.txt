@@ -23,3 +23,4 @@ engine/TrailGeometry.kt
 engine/TextLayoutMath.kt
 engine/CaptionFit.kt
 engine/TextRasterScale.kt
+engine/PolygonFringe.kt

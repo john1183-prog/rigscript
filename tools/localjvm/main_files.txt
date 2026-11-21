@@ -24,3 +24,5 @@ engine/TextLayoutMath.kt
 engine/CaptionFit.kt
 engine/TextRasterScale.kt
 engine/PolygonFringe.kt
+engine/DiagnosticsDsp.kt
+engine/GlesAcceptance.kt

@@ -20,3 +20,5 @@ TextLayoutMathTest.kt
 CaptionFitTest.kt
 TextRasterScaleTest.kt
 PolygonFringeTest.kt
+DiagnosticsDspTest.kt
+GlesAcceptanceTest.kt

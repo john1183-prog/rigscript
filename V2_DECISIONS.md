@@ -2734,7 +2734,7 @@ approved by the person before implementing:**
   `Ineligible` with the reason. The audio and mouth numbers are starting points chosen for the fixtures (440 Hz
   narration, 220 Hz music, 1 kHz bursts) and are to be tuned from device reports. Nothing here is device-verified,
   and R1 and R4 stay unconfirmed until the quick check runs on a phone. Tested on the JVM (42 tests; local run: 211
-  passed); CI pending.
+  passed; CI run 44942194255: 228 passed).
   Not in this step: fixture generation, decoding exported files, frame sampling, the Self-test screen and the quick
   check's scheduling (WP1.6b to d: Android code that needs CI to compile).
 

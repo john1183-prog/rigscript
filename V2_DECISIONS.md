@@ -2717,6 +2717,26 @@ approved by the person before implementing:**
     because it would now be wrong). The null-property comments on the `anim` keyframe fields were
     reworded to match. Verified with `cmp` of the block between the first two fences of
     `PROMPT_CONSIDERATIONS.md` and the asset (57,772 bytes).
+- **GLES acceptance rules and the DSP behind them (WP1.6a: pure code, no Android glue yet).** `DiagnosticsDsp`
+  measures a tone's amplitude with a Hann-windowed Goertzel (fraction of full scale); the level of a tone inside
+  +-50 ms windows around the SFX cues against the rest of the track (the weakest cue window is used, so one missing
+  cue shows); and, on grayscale frames, the GLES-vs-Canvas offset (the best integer shift of the gradient-magnitude
+  maps within +-3 px by normalized correlation, refined per axis by a parabola; positive means the GLES content is
+  right of or below Canvas), the mean absolute difference, a Laplacian-variance sharpness ratio, an anti-aliasing
+  census (pixels strictly between the darkest and the brightest of their 3x3 neighbourhood, which must span at
+  least 32 gray levels) and the mouth ink ratio. `GlesAcceptance` holds the brief's thresholds as constants and turns
+  the numbers into an `Evaluation` that maps to `GlesState`: on each of 4 frames offset <= 0.75 px, mean difference
+  <= 6, sharpness ratio >= 0.90 and anti-aliasing ratio >= 0.85; video durations within 0.1 s; an expected audio
+  source above amplitude 0.01 and an unexpected one below 0.003; an expected SFX at least 4 times louder at its cues
+  than elsewhere.
+  Rules: a NaN or a missing measurement fails, never passes; the ratios are one-sided, so a GLES that is sharper or
+  smoother than Canvas cannot fail; the mouth ink (R4) is reported only; a failed GLES export short-circuits to
+  `Ineligible` with the reason. The audio and mouth numbers are starting points chosen for the fixtures (440 Hz
+  narration, 220 Hz music, 1 kHz bursts) and are to be tuned from device reports. Nothing here is device-verified,
+  and R1 and R4 stay unconfirmed until the quick check runs on a phone. Tested on the JVM (42 tests; local run: 211
+  passed); CI pending.
+  Not in this step: fixture generation, decoding exported files, frame sampling, the Self-test screen and the quick
+  check's scheduling (WP1.6b to d: Android code that needs CI to compile).
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

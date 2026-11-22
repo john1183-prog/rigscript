@@ -15,6 +15,7 @@ import com.example.data.ExportSettings
 import com.example.data.ProjectDef
 import com.example.data.ReferenceOverlay
 import com.example.engine.VideoExporter.OutputTarget
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -98,7 +99,8 @@ object GlesExporter {
      *
      * [limitSec] renders only that many seconds (the debug test); `null` renders the full length like Canvas.
      * [singleAspect] ignores `dualAspectExport` (the debug test). [nameSuffix] is appended to the file name and
-     * [aspectLabel], when given, replaces the aspect text in the result.
+     * [aspectLabel], when given, replaces the aspect text in the result. [outputDir] (diagnostics) writes into that
+     * app-private directory instead of the public Movies collection.
      */
     suspend fun export(
         context: Context,
@@ -109,7 +111,8 @@ object GlesExporter {
         limitSec: Float? = null,
         singleAspect: Boolean = false,
         nameSuffix: String = "",
-        aspectLabel: String? = null
+        aspectLabel: String? = null,
+        outputDir: File? = null
     ): List<ExportResult> = withContext(Dispatchers.Default) {
 
         val settings = project.exportSettings
@@ -197,7 +200,7 @@ object GlesExporter {
             // Output files and muxers. Not a GLES failure either (a full disk fails Canvas the same way).
             for (t in targets) {
                 val labelSuffix = if (aspects.size > 1) "_${t.aspect.replace(":", "x")}" else ""
-                val out = OutputTarget.create(context, project.projectName + labelSuffix + nameSuffix)
+                val out = OutputTarget.create(context, project.projectName + labelSuffix + nameSuffix, outputDir)
                 t.output = out
                 t.muxer = out.openMuxer()
             }

@@ -117,7 +117,8 @@ object VideoExporter {
         project: ProjectDef,
         keyframes: List<BakedKeyframe>,
         amplitudeSettings: com.example.data.AmplitudeSettings = com.example.data.AmplitudeSettings(),
-        onProgress: (progress: Float, etaSec: Float?) -> Unit
+        onProgress: (progress: Float, etaSec: Float?) -> Unit,
+        outputDir: File? = null
     ): List<ExportResult> = withContext(Dispatchers.Default) {
 
         val settings   = project.exportSettings
@@ -231,7 +232,7 @@ object VideoExporter {
                     encoder.start()
 
                     val labelSuffix = if (aspectsToExport.size > 1) "_${aspect.replace(":", "x")}" else ""
-                    val output = OutputTarget.create(context, project.projectName + labelSuffix)
+                    val output = OutputTarget.create(context, project.projectName + labelSuffix, outputDir)
                     createdOutput = output
                     val muxer  = output.openMuxer()
 
@@ -504,12 +505,40 @@ object VideoExporter {
         abstract fun abort(context: Context)
 
         companion object {
-            fun create(context: Context, projectName: String): OutputTarget {
+            /**
+             * [outputDir] (WP1.6b, diagnostics only) writes the file into that app-private directory instead of the
+             * public Movies collection, so a self-test never fills the person's gallery. `null` is the old behaviour.
+             */
+            fun create(context: Context, projectName: String, outputDir: File? = null): OutputTarget {
                 val safe = projectName.replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
                 val name = "${safe}_${System.currentTimeMillis()}.mp4"
+                if (outputDir != null) return PrivateFileOutput(outputDir, name)
                 return if (Build.VERSION.SDK_INT >= 29) MediaStoreOutput(context, name)
                        else LegacyFileOutput(context, name)
             }
+        }
+    }
+
+    /** A file in an app-private directory (diagnostics): no MediaStore entry, no media scan, no permission. */
+    private class PrivateFileOutput(dir: File, name: String) : OutputTarget() {
+        private val file: File
+        override val uri: Uri
+        override val location: String
+
+        init {
+            dir.mkdirs()
+            file = File(dir, name)
+            location = file.absolutePath
+            uri = Uri.fromFile(file)
+        }
+
+        override fun openMuxer(): MediaMuxer =
+            MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+        override fun finish(context: Context) {}
+
+        override fun abort(context: Context) {
+            runCatching { file.delete() }
         }
     }
 

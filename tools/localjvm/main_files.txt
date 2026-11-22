@@ -26,3 +26,9 @@ engine/TextRasterScale.kt
 engine/PolygonFringe.kt
 engine/DiagnosticsDsp.kt
 engine/GlesAcceptance.kt
+data/ProjectDef.kt
+data/AppearanceSettings.kt
+data/BackgroundMusicSettings.kt
+data/ReferenceOverlay.kt
+engine/DiagnosticsFixtures.kt
+engine/DiagnosticsFrames.kt

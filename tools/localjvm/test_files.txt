@@ -22,3 +22,5 @@ TextRasterScaleTest.kt
 PolygonFringeTest.kt
 DiagnosticsDspTest.kt
 GlesAcceptanceTest.kt
+DiagnosticsFixturesTest.kt
+DiagnosticsFramesTest.kt

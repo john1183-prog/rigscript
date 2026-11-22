@@ -32,3 +32,4 @@ data/BackgroundMusicSettings.kt
 data/ReferenceOverlay.kt
 engine/DiagnosticsFixtures.kt
 engine/DiagnosticsFrames.kt
+engine/DiagnosticsReport.kt

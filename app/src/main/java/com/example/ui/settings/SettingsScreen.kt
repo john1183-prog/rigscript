@@ -1,5 +1,6 @@
 package com.example.ui.settings
 
+import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -9,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -17,8 +19,11 @@ import com.example.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenSelfTest: () -> Unit = {}) {
     val ampSettings by vm.amplitudeSettings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    // The self-test is a developer tool: visible in debug builds only (WP1.6c).
+    val isDebuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     Scaffold(
         topBar = {
@@ -91,6 +96,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             LabeledSlider("Breath frequency (Hz)", ampSettings.breathFreqHz, 0.1f..1.0f,
                 "Breaths per second (0.3 ≈ natural)") {
                 vm.updateAmplitudeSettings(ampSettings.copy(breathFreqHz = it))
+            }
+
+            if (isDebuggable) {
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                SectionHeader("Diagnostics")
+                OutlinedButton(onClick = onOpenSelfTest, modifier = Modifier.fillMaxWidth()) {
+                    Text("GLES self-test")
+                }
             }
 
             Spacer(Modifier.height(32.dp))

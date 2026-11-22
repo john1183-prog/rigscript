@@ -176,6 +176,76 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ── Diagnostics (WP1.6c) ──────────────────────────────────────────────────
+
+    private val _diagnostics = MutableStateFlow(DiagnosticsUi())
+    val diagnostics: StateFlow<DiagnosticsUi> = _diagnostics.asStateFlow()
+    private var diagnosticsJob: Job? = null
+
+    /** True while a self-test or smoke test runs: a real export must not start then. */
+    private fun diagnosticsBusy(): Boolean = diagnosticsJob != null
+
+    private fun refuseWhileDiagnosing(): Boolean {
+        if (!diagnosticsBusy()) return false
+        viewModelScope.launch { _message.emit("Wait for the running self-test to finish first") }
+        return true
+    }
+
+    /**
+     * Runs one diagnostics job in the background: refused while an export runs or another diagnostics job holds
+     * [DiagnosticsRunner.lock]. [work] gets a callback for the one progress line and returns what to show.
+     */
+    private fun launchDiagnostics(
+        context: Context,
+        title: String,
+        maxMinutes: Long,
+        work: suspend (onLine: (String) -> Unit) -> DiagnosticsRunner.Outcome
+    ) {
+        if (exportJob != null) {
+            viewModelScope.launch { _message.emit("Wait for the running export to finish first") }
+            return
+        }
+        if (!DiagnosticsRunner.lock.tryLock()) return
+        val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:Diagnostics")
+        diagnosticsJob = viewModelScope.launch {
+            wakeLock.acquire(maxMinutes * 60 * 1000L)
+            _diagnostics.value = DiagnosticsUi(running = true, title = title, line = "Starting")
+            try {
+                val outcome = work { line -> _diagnostics.value = _diagnostics.value.copy(line = line) }
+                _diagnostics.value = DiagnosticsUi(title = title, summary = outcome.summary, directory = outcome.directory)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _diagnostics.value = DiagnosticsUi(title = title, summary = "$title cancelled")
+                throw e
+            } catch (e: Throwable) {
+                _diagnostics.value = DiagnosticsUi(title = title, summary = "$title failed: ${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                diagnosticsJob = null
+                DiagnosticsRunner.lock.unlock()
+                if (wakeLock.isHeld) wakeLock.release()
+            }
+        }
+    }
+
+    /** The full self-test (audio matrix, parity frames, report files). Takes a minute or two. */
+    fun runSelfTest(context: Context) {
+        val before = glesStore.state().toString()
+        launchDiagnostics(context, "Self-test", maxMinutes = 15) { onLine ->
+            DiagnosticsRunner.runSelfTest(context, before, onLine)
+        }
+    }
+
+    /** The "GLES smoke test (3 s)": the visual fixture on GLES only. */
+    fun runGlesSmoke(context: Context) {
+        launchDiagnostics(context, "GLES smoke test", maxMinutes = 5) { onLine ->
+            DiagnosticsRunner.runGlesSmoke(context, onLine)
+        }
+    }
+
+    fun cancelDiagnostics() {
+        diagnosticsJob?.cancel()
+    }
+
     // ── Snackbar ──────────────────────────────────────────────────────────────
 
     private val _message = MutableSharedFlow<String>()
@@ -826,6 +896,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun exportVideo(context: Context, rendererOverride: String? = null) {
         val project = _activeProject.value ?: return
+        if (refuseWhileDiagnosing()) return
         val exportProject = withRenderer(project, rendererOverride)
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:Export")
@@ -908,6 +979,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun exportPreview(context: Context, rendererOverride: String? = null) {
         val project = _activeProject.value ?: return
         if (exportJob != null) return   // a preview or a real export is already running
+        if (refuseWhileDiagnosing()) return
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:PreviewExport")
         val previewProject = project.copy(
@@ -994,6 +1066,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun exportGlesSmokeTest(context: Context, stressTest: Boolean = false) {
         if (exportJob != null) return   // a preview or a real export is already running
+        if (refuseWhileDiagnosing()) return
         val project = _activeProject.value ?: return
         val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:GlesSmokeTest")

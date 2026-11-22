@@ -24,3 +24,4 @@ DiagnosticsDspTest.kt
 GlesAcceptanceTest.kt
 DiagnosticsFixturesTest.kt
 DiagnosticsFramesTest.kt
+DiagnosticsReportTest.kt

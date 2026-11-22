@@ -7,6 +7,7 @@ import com.example.ui.editor.EditorScreen
 import com.example.ui.editor.ScriptEditorScreen
 import com.example.ui.home.HomeScreen
 import com.example.ui.poses.PoseEditorScreen
+import com.example.ui.settings.SelfTestScreen
 import com.example.ui.settings.SettingsScreen
 import com.example.viewmodel.MainViewModel
 
@@ -15,6 +16,7 @@ private const val EDITOR        = "editor/{projectId}"
 private const val SCRIPT_EDITOR = "editor/{projectId}/script?time={time}"
 private const val POSES         = "poses"
 private const val SETTINGS      = "settings"
+private const val SELF_TEST     = "selftest"
 
 @Composable
 fun MainNavGraph(vm: MainViewModel) {
@@ -100,7 +102,15 @@ fun MainNavGraph(vm: MainViewModel) {
         }
 
         composable(SETTINGS) {
-            SettingsScreen(vm = vm, onBack = { navController.popBackStack() })
+            SettingsScreen(
+                vm = vm,
+                onBack = { navController.popBackStack() },
+                onOpenSelfTest = { navController.navigate(SELF_TEST) }
+            )
+        }
+
+        composable(SELF_TEST) {
+            SelfTestScreen(vm = vm, onBack = { navController.popBackStack() })
         }
     }
 }

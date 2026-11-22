@@ -242,11 +242,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Shows [text] in the snackbar of whichever screen is collecting [message]. */
-    fun notify(text: String) {
-        viewModelScope.launch { _message.emit(text) }
-    }
-
     fun cancelDiagnostics() {
         diagnosticsJob?.cancel()
     }

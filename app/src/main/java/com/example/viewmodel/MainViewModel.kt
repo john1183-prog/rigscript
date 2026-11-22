@@ -205,11 +205,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch { _message.emit("Wait for the running export to finish first") }
             return
         }
+        // Built before the lock is taken, and fail-soft: a diagnostics job is never worth a crash (I11, I12).
+        val wakeLock = runCatching {
+            (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:Diagnostics")
+        }.getOrNull()
         if (!DiagnosticsRunner.lock.tryLock()) return
-        val pm       = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RigScript:Diagnostics")
         diagnosticsJob = viewModelScope.launch {
-            wakeLock.acquire(maxMinutes * 60 * 1000L)
+            runCatching { wakeLock?.acquire(maxMinutes * 60 * 1000L) }
             _diagnostics.value = DiagnosticsUi(running = true, title = title, line = "Starting")
             try {
                 val outcome = work { line -> _diagnostics.value = _diagnostics.value.copy(line = line) }
@@ -222,7 +225,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 diagnosticsJob = null
                 DiagnosticsRunner.lock.unlock()
-                if (wakeLock.isHeld) wakeLock.release()
+                runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
             }
         }
     }
@@ -281,7 +284,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             var attempts = 0
             while (attempts < STARTUP_CHECK_ATTEMPTS && _glesState.value is GlesState.Unknown) {
                 if (exportJob == null && diagnosticsJob == null && !playbackActive) {
-                    runGlesCheck(getApplication<Application>())
+                    // Fail-soft: a problem starting the check must never take the app down (I12).
+                    runCatching { runGlesCheck(getApplication<Application>()) }
                     return@launch
                 }
                 attempts++

@@ -2737,6 +2737,40 @@ approved by the person before implementing:**
   passed; CI run 44942194255: 228 passed).
   Not in this step: fixture generation, decoding exported files, frame sampling, the Self-test screen and the quick
   check's scheduling (WP1.6b to d: Android code that needs CI to compile).
+- **Self-test fixtures and media glue (WP1.6b: compiled by CI, not run on a device).** Craft, not Direction: nothing here
+  touches the engine or the script schema (I1, I5 unaffected; no prompt change).
+  `DiagnosticsFixtures` (pure) synthesises everything, so a run needs no bundled media: narration is 440 Hz for 6 s,
+  music 220 Hz (6 s holds whole cycles, so it loops without a click), SFX are 1 kHz bursts of 100 ms (5 ms fades) fired by
+  script cues at 1.0, 2.5 and 4.0 s through a temporary one-clip library. Levels are 0.3, 0.4 (x the 0.35 music volume)
+  and 0.4, so the worst overlap is 0.84, under `AudioMath.LIMITER_KNEE` (0.89): the real mix is linear and no limiter
+  distortion can leak a tone into a bin that must read as absent (an earlier draft at 0.5/0.4/0.6 would have reached 1.24).
+  Every audio script ends at 6.0 s, so all seven cases export for the same 7.0 s (`ExportAudioPlan.totalSec`), which is
+  therefore the one expected duration; the duration compared is the container's (video and audio), and the audio track's
+  own length is kept separately for the report. The cue windows are centred on the middle of each burst, not on the cue:
+  a +-50 ms window on the cue would see only half a burst (tested).
+  Visual fixture: a figure on a mountain scene (the diagonal filled polygons of R3), a yellow text overlay rotated 12
+  degrees and scaled 1.3 with the camera zooming to 1.25 at 1.6 s (R2, R5), and a wrapping caption, sampled at 0.6, 1.2, 2.0
+  and 2.6 s of a 3 s export. `DiagnosticsFrames` finds the figure (the product's blue bone colour) and the text (yellow)
+  in the CANVAS frame by colour and applies the same boxes to both frames, so no one guesses where the figure was drawn and
+  a backend difference cannot move the box; sky and ground are colours that match neither test. The mouth region (R4,
+  reported only) is the top 22% of the figure box, an approximation.
+  `DiagnosticsMedia` (Android) decodes the first audio track to mono (output format change handled, float PCM converted),
+  with a 60 s deadline, an idle limit and the caller's cancellation on every pass, so a hung codec ends as "no audio"
+  and not as a hang; it extracts frames with `OPTION_CLOSEST` from one retriever; and an unreadable frame, or a figure or
+  text that cannot be found, gives all-NaN metrics, which `GlesAcceptance.evaluate` always fails.
+  `VideoExporter.export` and `GlesExporter.export` gain `outputDir: File? = null` as the LAST parameter (existing
+  positional callers are unchanged) and `OutputTarget.create(..., outputDir)` a private-file variant, so the 14 audio
+  exports and the parity exports never land in the person's gallery; `null` is exactly the old behaviour.
+  Rejected: bundled media (size, and the numbers would not be known exactly); locating the figure from layout fractions
+  (unverifiable from here); writing diagnostics to MediaStore (gallery clutter).
+  Tests: `DiagnosticsFixturesTest` (18) and `DiagnosticsFramesTest` (8) run on the JVM (local run: 237 passed), among them
+  a synthetic 7 s track for each of the seven cases that must pass `GlesAcceptance.evaluateAudioCell`, a dropped cue, a
+  missing and an unexpected source that must fail it; `DiagnosticsFixturesJsonTest` (5, CI only) parses the real scripts
+  with `AppJson` and validates them. CI run 45051188033: 259 tests passed, 15 Kotlin warnings, APK 17.2 MB.
+  NOT verified: that Android's decoders behave as `DiagnosticsMedia` assumes (16-bit output unless the output format says
+  float), that `OPTION_CLOSEST` returns the frame nearest the time on this device, that the colour tests survive the
+  H.264 round trip (the tolerances are loose but untested on real output), and the mixer's own levels (the synthetic
+  tracks model a linear mix, not the mixer). Nothing is wired to a screen or a caller yet (WP1.6c and d).
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

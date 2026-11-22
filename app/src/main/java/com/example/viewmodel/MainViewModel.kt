@@ -151,14 +151,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * "Re-run GLES check". Forgets the stored verdict and any crash marker, then runs the capability probe (is there an
-     * H.264 encoder for these sizes that takes a surface). A failed probe is stored as the verdict (Auto keeps using
-     * Canvas). A passed probe is NOT a pass of the GLES check: the full on-device check (WP1.6) is what will make Auto
-     * choose GLES, so until it exists the verdict stays "not checked yet" and Auto keeps using Canvas.
+     * "Re-run GLES check". Forgets the stored verdict and any crash marker, runs the capability probe (is there an
+     * H.264 encoder for these sizes that takes a surface; a failed probe is stored as the verdict) and then the quick
+     * check ([runGlesCheck]), whose result is what `Auto` follows.
      */
     fun rerunGlesCheck() {
-        if (exportJob != null) {
-            viewModelScope.launch { _message.emit("Wait for the running export to finish first") }
+        if (exportJob != null || diagnosticsBusy()) {
+            viewModelScope.launch { _message.emit("Wait for the running export or test to finish first") }
             return
         }
         val settings = _activeProject.value?.exportSettings ?: ExportSettings()
@@ -168,11 +167,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (problem != null) {
                 glesStore.record(GlesState.Ineligible(problem))
                 _glesCheckNote.value = "GLES is not possible on this device: $problem. Auto uses Canvas."
+                _glesState.value = glesStore.state()
             } else {
-                _glesCheckNote.value = "The video encoder looks capable of the GLES path, but the full GLES check is not part " +
-                    "of this version yet, so Auto keeps using Canvas. You can still force GLES above."
+                _glesState.value = glesStore.state()
+                _glesCheckNote.value = "Running the GLES check (about half a minute)..."
+                runGlesCheck(getApplication<Application>())
             }
-            _glesState.value = glesStore.state()
         }
     }
 
@@ -242,8 +242,57 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Shows [text] in the snackbar of whichever screen is collecting [message]. */
+    fun notify(text: String) {
+        viewModelScope.launch { _message.emit(text) }
+    }
+
     fun cancelDiagnostics() {
         diagnosticsJob?.cancel()
+    }
+
+    /** Set by the editor while the preview plays: the one-time GLES check does not start then (WP1.6d). */
+    @Volatile private var playbackActive = false
+
+    fun setPlaybackActive(active: Boolean) {
+        playbackActive = active
+    }
+
+    /**
+     * The quick GLES check (WP1.6d): stores `Eligible` or `Ineligible(reason)` for this build, which is what makes `Auto`
+     * choose GLES. Shares the diagnostics lock, so it never runs together with a self-test, and a real export is refused
+     * while it runs. Its result also goes to the note under "Re-run GLES check".
+     */
+    fun runGlesCheck(context: Context) {
+        val app = getApplication<Application>()
+        launchDiagnostics(context, "GLES check", maxMinutes = 5) { onLine ->
+            val result = DiagnosticsRunner.runQuickCheck(app, glesStore, onLine)
+            _glesState.value = glesStore.state()
+            _glesCheckNote.value = result.summary
+            DiagnosticsRunner.Outcome(result.summary, null)
+        }
+    }
+
+    /**
+     * Runs the quick check once, in the background, shortly after launch, when this build has no verdict yet. Waits
+     * until no export, no self-test and no playback is running (it looks again every 20 s for about 10 minutes, then
+     * gives up until the next launch). It starts well after the start-up path, so a problem in it cannot stop the app
+     * from opening (I12).
+     */
+    private fun scheduleBackgroundGlesCheck() {
+        if (_glesState.value !is GlesState.Unknown) return
+        viewModelScope.launch {
+            delay(STARTUP_CHECK_DELAY_MS)
+            var attempts = 0
+            while (attempts < STARTUP_CHECK_ATTEMPTS && _glesState.value is GlesState.Unknown) {
+                if (exportJob == null && diagnosticsJob == null && !playbackActive) {
+                    runGlesCheck(getApplication<Application>())
+                    return@launch
+                }
+                attempts++
+                delay(STARTUP_CHECK_RETRY_MS)
+            }
+        }
     }
 
     // ── Snackbar ──────────────────────────────────────────────────────────────
@@ -1124,5 +1173,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    companion object { private const val PREF_AMPLITUDE = "amplitude_settings_json" }
+    init {
+        // Last in the class so every property it reads is initialised (WP1.6d).
+        scheduleBackgroundGlesCheck()
+    }
+
+    companion object {
+        private const val PREF_AMPLITUDE = "amplitude_settings_json"
+        private const val STARTUP_CHECK_DELAY_MS = 10_000L
+        private const val STARTUP_CHECK_RETRY_MS = 20_000L
+        private const val STARTUP_CHECK_ATTEMPTS = 30
+    }
 }

@@ -322,4 +322,72 @@ object DiagnosticsRunner {
             withContext(kotlinx.coroutines.NonCancellable) { runCatching { dir.deleteRecursively() } }
         }
     }
+
+    // ------------------------------------------------------------------------------------------------ the quick check
+
+    /** What the quick check decided: [state] is null when it was inconclusive (the stored verdict is left alone). */
+    class QuickOutcome(val state: GlesState?, val summary: String)
+
+    /**
+     * The quick GLES eligibility check (WP1.6d), about 25 s at 360p: the visual fixture on Canvas (the yardstick) and
+     * on GLES with four frames compared, then the GLES narration+music+sfx mix and the GLES sfx-only case. The verdict
+     * is [GlesAcceptance.evaluate] over those numbers, stored with [GlesEligibilityStore.record].
+     *
+     * Safety: [GlesEligibilityStore.markCheckStarted] is written before anything runs and [GlesEligibilityStore.markCheckFinished]
+     * always afterwards, so a native crash inside GL or the codec leaves the marker and the next launch stores
+     * `Ineligible("crashed")`. A GLES export that fails or times out stores `Ineligible(reason)`. A problem that is not
+     * GLES's (the Canvas reference failed, a bug in this glue, cancellation) is INCONCLUSIVE: nothing is stored and the
+     * stored verdict stays as it was. The caller holds [lock] and has checked that no export or playback runs.
+     */
+    suspend fun runQuickCheck(context: Context, store: GlesEligibilityStore, onLine: (String) -> Unit): QuickOutcome {
+        val app = context.applicationContext
+        val started = SystemClock.elapsedRealtime()
+        fun seconds(): String = "%.0f".format(Locale.ROOT, (SystemClock.elapsedRealtime() - started) / 1000.0)
+        val dir = freshWorkDir(app)
+        store.markCheckStarted()
+        try {
+            onLine("Writing the test tones")
+            val files = withContext(Dispatchers.Default) { DiagnosticsFixtures.writeAudioFiles(dir) }
+
+            onLine("Picture comparison, Canvas then GLES")
+            val pair = exportVisualPair(app, dir)
+            val canvasError = pair.canvas.error
+            if (canvasError != null) {
+                return QuickOutcome(null, "GLES check inconclusive: the Canvas reference export failed ($canvasError). " +
+                    "GLES was not judged and the stored verdict is unchanged.")
+            }
+            onLine("Comparing frames")
+            val parity = compareVisualPair(pair, null)
+
+            val cells = ArrayList<AudioCell>()
+            if (parity.glesError == null) {
+                onLine("Audio on GLES: narration + music + sfx")
+                cells += runAudioCell(app, dir, files, GlesAcceptance.ALL_SOURCES, Backend.GLES)
+                onLine("Audio on GLES: sfx only")
+                cells += runAudioCell(app, dir, files, setOf(Source.SFX), Backend.GLES)
+            }
+
+            val verdict = DiagnosticsReport.verdict(cells, parity)
+            val evaluation = verdict.evaluation
+                ?: return QuickOutcome(null, "GLES check inconclusive: ${verdict.inconclusive}. The stored verdict is unchanged.")
+            val state = evaluation.toState()
+            store.record(state)
+            val text = if (evaluation.pass) {
+                "GLES check PASSED in ${seconds()} s. Auto now uses GLES on this phone."
+            } else {
+                "GLES check FAILED in ${seconds()} s: ${evaluation.summary()}. Auto keeps using Canvas.\n" +
+                    evaluation.failures.joinToString("\n") { "- $it" }
+            }
+            Log.i(TAG, text)
+            return QuickOutcome(state, text)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.w(TAG, "Quick check could not run", e)
+            return QuickOutcome(null, "GLES check inconclusive: ${e.message ?: e.javaClass.simpleName}. The stored verdict is unchanged.")
+        } finally {
+            store.markCheckFinished()
+            withContext(kotlinx.coroutines.NonCancellable) { runCatching { dir.deleteRecursively() } }
+        }
+    }
 }

@@ -2771,6 +2771,45 @@ approved by the person before implementing:**
   float), that `OPTION_CLOSEST` returns the frame nearest the time on this device, that the colour tests survive the
   H.264 round trip (the tolerances are loose but untested on real output), and the mixer's own levels (the synthetic
   tracks model a linear mix, not the mixer). Nothing is wired to a screen or a caller yet (WP1.6c and d).
+- **The Self-test, the quick GLES check and its scheduling (WP1.6c and d: Android glue; NOT DEVICE-TESTED).**
+  Classification (A4): neither is Direction or Craft; they are diagnostics around the export, and they add no visible
+  content to any video. Files: `DiagnosticsReport` (pure, tested: the verdict assembled from cells and parity, the text
+  summary, a small JSON writer), `DiagnosticsRunner` (Android: exports, analysis, PNGs, report files, the smoke test and the
+  quick check), `SelfTestScreen`, `DiagnosticsUi`, additions to `MainViewModel`, `MainNavGraph` and `SettingsScreen`.
+  Decisions:
+  (1) The full Self-test runs 14 cells (7 source sets on Canvas and on GLES, 360p) and the parity frames, writes
+  `diagnostics_summary.txt`, `diagnostics_report.json` and one side-by-side PNG per frame (Canvas left, GLES right) to the
+  app's external files dir, and rewrites a partial report after every cell so a native crash still leaves what finished.
+  It shows the verdict the quick check WOULD give but never stores one: only the quick check produces `Eligible` (WP1.3).
+  (2) The quick check is the same code path on fewer cells: the visual fixture on Canvas and GLES (four frames), the GLES
+  narration+music+sfx mix and the GLES sfx-only case. Canvas is the yardstick: if the Canvas export fails, the result is
+  INCONCLUSIVE, nothing is stored and the old verdict stays; a GLES export that fails or times out (90 s per export,
+  cooperative cancellation) stores `Ineligible(reason)`; a bug in the glue or a cancellation is inconclusive too. The
+  crash marker is written before and cleared after (`markCheckStarted` / `markCheckFinished`), so a native crash leaves
+  `Ineligible("crashed")` at the next launch (WP1.3 rule).
+  (3) Scheduling: when the verdict is `Unknown` the check runs once per launch, 10 s after the view model is created,
+  and waits (every 20 s for about 10 minutes) while an export, a self-test or the editor's preview plays
+  (`setPlaybackActive`, set from `EditorScreen`). "Re-run GLES check" now resets the verdict, runs the encoder probe and
+  then the check.
+  (4) Mutex: the brief asks for a mutex against a concurrent export. Diagnostics hold `DiagnosticsRunner.lock` (one
+  diagnostics job at a time); against real exports the guard is the view model's own job flags, checked on the main thread
+  before either side starts (`exportJob`, `diagnosticsJob`): a check is not started while an export runs, and a real
+  export is refused with a message while a check runs. Rejected: making a real export wait on the mutex (an export would
+  look hung for up to a minute) and cancelling the check for an export (more state for a rare case).
+  (5) The Self-test screen is reachable from Settings in debug builds only (`ApplicationInfo.FLAG_DEBUGGABLE`, so no
+  `buildConfig` feature is needed). The quick check stays reachable in every build through "Re-run GLES check" in the
+  export panel. The two GLES debug buttons moved to the Self-test screen (they still render the open project; the 3 s one
+  and the full-length one). The screen also has a fixture-based "GLES smoke test (3 s)" that needs no open project and no
+  storage permission.
+  (6) Low priority is approximated by timing (after launch, idle only), not by thread priority: the exporters switch
+  dispatchers themselves.
+  Verification: CI runs 45079262532 (WP1.6c; 273 tests, 0 failed) and 45079722472 (WP1.6d, after one fix commit; 273
+  tests). The first WP1.6d push (`66bdd4b`) failed to compile (a duplicate `notify`), so `main` was red for one commit;
+  fixed by `3aa1264`. Tests: `DiagnosticsReportTest` (13, JVM) and `DiagnosticsReportJsonTest` (1, CI only). NOT
+  verified: every export, decode, PNG and screen here has never run on a phone; the thresholds are the brief's starting
+  points and unmeasured; whether the background check noticeably stutters the UI; whether the 90 s timeout and the
+  25 s target are realistic on slow phones.
+
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

@@ -142,6 +142,8 @@ object GlesExporter {
             it.loadFidgetSchedule(envelope, envFps)
             it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
             it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
+            it.actingContext = com.example.engine.acting.ActingContext.create(
+                appearance.actingIntensity, project.id, envelope, envFps)
         }
 
         // Decoded once, shared by every target: I/O never happens inside the per-frame loop.
@@ -243,7 +245,7 @@ object GlesExporter {
                             val rootX = t.width * (overrides.x ?: appearance.rootAnchorX)
                             val rootY = t.height * (overrides.y ?: appearance.rootAnchorY) + engine.currentHipBobOffset * scale
 
-                            RigRenderer.computeFkMatrices(engine.currentAngles, rootX, rootY, scale, matrices)
+                            RigRenderer.computeFkMatrices(engine.renderAngles, rootX, rootY, scale, matrices)
                             val frame = GlesFigureFrame.fromFkMatrices(
                                 matrices, appearance, overrides, t.width, t.height, scale, showJoints,
                                 mouthShape             = engine.currentMouthShape,

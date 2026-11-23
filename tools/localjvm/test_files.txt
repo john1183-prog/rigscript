@@ -25,3 +25,4 @@ GlesAcceptanceTest.kt
 DiagnosticsFixturesTest.kt
 DiagnosticsFramesTest.kt
 DiagnosticsReportTest.kt
+ActingLayerTest.kt

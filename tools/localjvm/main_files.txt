@@ -33,3 +33,7 @@ data/ReferenceOverlay.kt
 engine/DiagnosticsFixtures.kt
 engine/DiagnosticsFrames.kt
 engine/DiagnosticsReport.kt
+engine/acting/ActingIntensity.kt
+engine/acting/ActingParams.kt
+engine/acting/ActingContext.kt
+engine/acting/ActingLayer.kt

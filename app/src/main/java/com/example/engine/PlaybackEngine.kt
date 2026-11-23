@@ -1,6 +1,11 @@
 package com.example.engine
 
 import com.example.data.AmplitudeSettings
+import com.example.engine.acting.ActingContext
+import com.example.engine.acting.ActingFault
+import com.example.engine.acting.ActingFrame
+import com.example.engine.acting.ActingIntensity
+import com.example.engine.acting.ActingLayer
 import kotlin.math.*
 
 /**
@@ -20,6 +25,14 @@ class PlaybackEngine {
 
     /** Total bone angles (defaultAngle + activeOffset) — read by RigRenderer. */
     val currentAngles: FloatArray = FloatArray(n) { i -> bones[i].defaultAngleDegrees }
+
+    /**
+     * The bone angles the renderers must draw (WP2.1). Identical to [currentAngles] (the same array) unless the acting
+     * layer (see [actingContext]) produced a different pose, so with acting OFF, or before any acting stage exists,
+     * the output is bit-identical to the legacy path. [currentAngles] stays the engine's own base state (pose capture,
+     * the hot-reload chase and the goldens read it); the acted angles never feed back into it (I2).
+     */
+    val renderAngles: FloatArray get() = if (actedActive) actingOut.angles else currentAngles
 
     /** Coarse mouth shape for the current frame — see [MouthShape]. Read by RigRenderer. */
     @Volatile var currentMouthShape: Int = MouthShape.CLOSED
@@ -253,6 +266,22 @@ class PlaybackEngine {
     private val baseAngles: FloatArray = FloatArray(n)  // target angles from timeline
     private val ampDelta:   FloatArray = FloatArray(n)  // amplitude-driven offsets
 
+    // ── Acting layer (WP2.1) ──────────────────────────────────────────────────
+    // The layer reads the base frame (a view of currentAngles) and may fill actingOut; neither is allocated per frame.
+    private val actingBase = ActingFrame(currentAngles)
+    private val actingOut = ActingFrame(FloatArray(n))
+    private var actedActive = false
+
+    /** Set by the owner of the engine (preview view or exporter). Null or OFF: the legacy path, no work. Re-applies at the current time. */
+    @Volatile var actingContext: ActingContext? = null
+        set(value) {
+            field = value
+            applyActing(currentTimeSec)
+        }
+
+    /** I11: the first fault inside the acting layer (the layer then falls back to the base state). Read by tests and diagnostics. */
+    val actingFault = ActingFault()
+
     // Bone index cache for amplitude modulation
     private val idxTorso    = rig.BONE_INDEX["torso"]    ?: -1
     private val idxHead     = rig.BONE_INDEX["head"]     ?: -1
@@ -281,6 +310,7 @@ class PlaybackEngine {
         } else {
             reloadChase = true
         }
+        applyActing(currentTimeSec)
     }
 
     /**
@@ -368,6 +398,7 @@ class PlaybackEngine {
         baseAngles.copyInto(currentAngles)
         lastCueScanTimeSec = cueScanStart(0f)
         pendingSoundEffectTriggers.clear()
+        applyActing(0f)
     }
 
     // ── Tick (called ~60fps from background thread) ───────────────────────────
@@ -416,6 +447,9 @@ class PlaybackEngine {
 
         // 4. Propagate mouth shape from AudioPlayer → renderer
         currentMouthShape = rawMouthShape
+
+        // 5. Acting layer (WP2.1): pure function of the state above; a no-op with acting OFF.
+        applyActing(currentTimeSec)
     }
 
     /** Seek without physics — instantly snaps to the correct pose at [timeSec]. */
@@ -429,6 +463,7 @@ class PlaybackEngine {
         // old and new position; just move the scan pointer, don't fire anything.
         lastCueScanTimeSec = cueScanStart(timeSec)
         pendingSoundEffectTriggers.clear()
+        applyActing(timeSec)
     }
 
     /**
@@ -452,9 +487,28 @@ class PlaybackEngine {
         baseAngles.copyInto(currentAngles)
         applyAmplitudeMotion(1f / 30f, rawAmp)
         currentMouthShape = mouthShape
+        applyActing(timeSec)
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Runs the acting layer on the state just computed and records whether the renderers should read [actingOut]
+     * ([renderAngles]). Fail-soft (I11): any exception falls back to the base state. With no context or intensity OFF
+     * it only clears the flag, so the legacy path does no work and allocates nothing.
+     */
+    private fun applyActing(timeSec: Float) {
+        val ctx = actingContext
+        if (ctx == null || ctx.intensity == ActingIntensity.OFF) {
+            actedActive = false
+            return
+        }
+        actingBase.expression = currentExpression
+        actingBase.mouthShape = currentMouthShape
+        actingBase.amplitude = smoothedAmplitude
+        val acted = actingFault.guard(actingBase) { ActingLayer.apply(actingBase, ctx, timeSec, actingOut) }
+        actedActive = acted === actingOut
+    }
 
     /**
      * Fills [baseAngles] with the target total angles at [timeSec].

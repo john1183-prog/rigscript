@@ -126,5 +126,14 @@ data class AppearanceSettings(
      * A longer caption first shrinks, then loses lines (the last one is ellipsized), so it cannot cover most of the
      * screen. 1 or more removes the cap. Default 0.5; normal one-to-three-line captions are far below it.
      */
-    val captionMaxHeightFraction: Float = 0.5f
+    val captionMaxHeightFraction: Float = 0.5f,
+
+    // ── Acting (V2 campaign, WP2.1) ───────────────────────────────────────────
+    /**
+     * How strongly the engine applies acting Craft (per-joint timing, expression blending, gaze, mouth smoothing, mood
+     * idles): "OFF" | "SUBTLE" | "NORMAL" | "BOLD". Default "NORMAL" (John, 2026-10-09). Stored as a string so a project saved
+     * by any build decodes; an unknown value is read as NORMAL (see ActingIntensity.parse). "OFF" gives the legacy motion
+     * bit for bit. Direction (the script's own `act` and `emote` fields, WP2.5) is not affected by this setting.
+     */
+    val actingIntensity: String = "NORMAL"
 )

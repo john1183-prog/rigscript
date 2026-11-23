@@ -104,6 +104,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
         overlayLayers: List<com.example.data.OverlayLayer> = emptyList()
     ) {
         val snap = !isPlaying
+        actingEnvelope = fidgetEnvelope
+        pushActing()
         renderHandler.post {
             engine.loadTimeline(keyframes, snapToCurrentTime = snap)
             engine.loadBlinkSchedule(blinkTimes, durationSec)
@@ -158,6 +160,29 @@ class AnimationSurfaceView @JvmOverloads constructor(
         }
     }
     fun setAppearance(a: AppearanceSettings) { appearance = a }
+
+    // ── Acting (WP2.1) ────────────────────────────────────────────────────────
+    private var actingIntensityName: String? = null
+    private var actingProjectId: String? = null
+    private var actingEnvelope: FloatArray = FloatArray(0)
+
+    /**
+     * Tells the engine how much acting to apply. [intensityName] is the stored setting, or "OFF" while the editor's A/B
+     * toggle is on (preview only; exports always use the stored setting). Cheap to call on every recomposition: the
+     * engine is only touched when something changed.
+     */
+    fun setActing(intensityName: String, projectId: String) {
+        if (intensityName == actingIntensityName && projectId == actingProjectId) return
+        actingIntensityName = intensityName
+        actingProjectId = projectId
+        pushActing()
+    }
+
+    private fun pushActing() {
+        val ctx = com.example.engine.acting.ActingContext.create(
+            actingIntensityName, actingProjectId ?: "", actingEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
+        renderHandler.post { engine.actingContext = ctx }
+    }
     fun setAmplitudeSettings(s: AmplitudeSettings) { renderHandler.post { engine.amplitudeSettings = s } }
     fun setAudioPlayer(player: AudioPlayer?) { audioPlayer = player }
     fun play()  { isPlaying = true;  lastTickMs = 0L }
@@ -195,7 +220,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
         try {
             // Background is now painted by RigRenderer itself (V2 — solid or
             // gradient, oversized for camera safety), so no pre-fill here.
-            renderer.draw(canvas, engine.currentAngles, appearance, width, height,
+            // Acting (WP2.1): draw the acted pose, except while the pose editor is open (its hit-testing works on the base pose).
+            renderer.draw(canvas, if (poseEditorMode) engine.currentAngles else engine.renderAngles, appearance, width, height,
                 mouthShape             = engine.currentMouthShape,
                 mouthOpenness          = engine.currentAmplitude,
                 expression             = engine.currentExpression,

@@ -112,6 +112,8 @@ fun EditorScreen(
     // unlike a bare LaunchedEffect which can race ahead of view creation).
     var lastLoadedKeyframes by remember { mutableStateOf<List<BakedKeyframe>?>(null) }
     var surfaceView by remember { mutableStateOf<AnimationSurfaceView?>(null) }
+    // Acting A/B (WP2.1): preview-only bypass that shows the exact legacy motion; exports always use the stored setting.
+    var actingBypass by remember { mutableStateOf(false) }
 
     LaunchedEffect(project?.script) {
         project?.script?.let { script -> keyframes = vm.compileTimeline(script) }
@@ -355,6 +357,7 @@ fun EditorScreen(
                         AnimationSurfaceView(ctx).also { sv ->
                             surfaceView = sv
                             sv.setAppearance(project?.appearance ?: AppearanceSettings())
+                            sv.setActing(if (actingBypass) "OFF" else (project?.appearance?.actingIntensity ?: "NORMAL"), project?.id ?: "")
                             sv.setAmplitudeSettings(ampSettings)
                             sv.setAudioPlayer(audioPlayer)
                             sv.setReferenceOverlay(project?.referenceOverlay ?: com.example.data.ReferenceOverlay())
@@ -375,12 +378,30 @@ fun EditorScreen(
                             lastLoadedKeyframes = keyframes
                         }
                         project?.appearance?.let { sv.setAppearance(it) }
+                        sv.setActing(if (actingBypass) "OFF" else (project?.appearance?.actingIntensity ?: "NORMAL"), project?.id ?: "")
                         sv.setAmplitudeSettings(ampSettings)
                         project?.referenceOverlay?.let { sv.setReferenceOverlay(it) }
                         sv.setSoundEffectLibrary(project?.soundEffects ?: emptyList())
                     },
                     onRelease = { it.release() }
                 )
+
+                // A/B chip: flips the preview between the legacy motion and the project's acting setting.
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+                        .clickable { actingBypass = !actingBypass }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        if (actingBypass) "Acting: OFF (A/B)"
+                        else "Acting: ${com.example.engine.acting.ActingIntensity.parse(project?.appearance?.actingIntensity).name} (A/B)",
+                        color = Color.White,
+                        fontSize = 10.sp
+                    )
+                }
 
                 exportProg?.let { progress ->
                     Box(
@@ -1043,6 +1064,21 @@ private fun CharacterCategoryContent(
             onAppearance(appearance.copy(eyebrowColor = newColor))
         }
         Text("Eyebrows only draw for worried/angry expressions.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+
+        // Acting (WP2.1): the intensity of the acting Craft layer. Stored per project in AppearanceSettings.
+        Text("Acting", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("OFF" to "Off", "SUBTLE" to "Subtle", "NORMAL" to "Normal", "BOLD" to "Bold").forEach { (value, label) ->
+                FilterChip(
+                    selected = com.example.engine.acting.ActingIntensity.parse(appearance.actingIntensity).name == value,
+                    onClick = { onAppearance(appearance.copy(actingIntensity = value)) },
+                    label = { Text(label, fontSize = 11.sp) }
+                )
+            }
+        }
+        Text("Controls the acting layer. Off keeps the exact original motion. No visible change until the acting stages are added (WP2.2 onward).",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
 

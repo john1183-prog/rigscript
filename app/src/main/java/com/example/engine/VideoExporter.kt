@@ -158,6 +158,8 @@ object VideoExporter {
             it.loadFidgetSchedule(envelope, envFps)
             it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
             it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
+            it.actingContext = com.example.engine.acting.ActingContext.create(
+                appearance.actingIntensity, project.id, envelope, envFps)
         }
         // One shared renderer instance across all targets — safe because targets
         // are drawn sequentially within a single thread here, not concurrently.
@@ -389,7 +391,7 @@ object VideoExporter {
                 val figureOverrides = engine.currentFigureOverrides
 
                 for (t in targets) {
-                    renderer.draw(t.canvas, engine.currentAngles, appearance, t.width, t.height,
+                    renderer.draw(t.canvas, engine.renderAngles, appearance, t.width, t.height,
                         forExport              = true,
                         mouthShape             = engine.currentMouthShape,
                         mouthOpenness          = engine.currentAmplitude,

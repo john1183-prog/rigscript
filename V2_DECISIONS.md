@@ -2810,6 +2810,42 @@ approved by the person before implementing:**
   points and unmeasured; whether the background check noticeably stutters the UI; whether the 90 s timeout and the
   25 s target are realistic on slow phones.
 
+- **WP2.1 — Acting plumbing and switch (V2 campaign, 2026-11-23; Phase 2, first step).**
+  Classification (A4): the switch is a Craft intensity setting and adds no Direction; nothing in this step changes what
+  is drawn. Phase 1 was complete and tagged (`v2-p1`) before this started (finish before expand).
+  (1) `AppearanceSettings.actingIntensity: String = "NORMAL"` (`OFF`, `SUBTLE`, `NORMAL`, `BOLD`). A string, not an
+  enum, so a project stored by any build decodes (I12); `ActingIntensity.parse` is the one place it becomes a value, and
+  an unknown, blank or missing word reads as NORMAL (I4) while the stored text is kept as it was. No Room change (I8).
+  (2) New pure package `engine/acting/`: `ActingIntensity`, `ActingParams` (the brief's parameter table, plus the
+  anticipation and overshoot constants; nothing reads it until WP2.2), `ActingContext` (intensity, a stable seed, the
+  amplitude envelope, `ActingTargets` for WP2.5), `ActingFrame` and `ActingLayer`. Seed: FNV-1a (64 bit) over the project
+  id, so it never depends on the clock or the device (I2).
+  (3) Signature deviation: the brief writes `ActingLayer.apply(base, ctx, t)`; it is `apply(base, ctx, t, out)`. The
+  layer returns `base` itself (no work, no allocation) when the context is null or OFF, and otherwise `base` or `out`,
+  and it never writes into `base`. Reason: the base angles are the engine's own state (the hot-reload spring chase
+  integrates into them), so acted values must not be written back into them. Rejected: mutating `currentAngles` in
+  place (it would corrupt the chase, pose capture and the goldens); putting acting in the renderers (I3).
+  (4) `PlaybackEngine.renderAngles` is what the renderers draw: the very same array as `currentAngles` unless the layer
+  produced a different pose, so legacy output is bit-identical by construction. `AnimationSurfaceView` (except while the
+  pose editor is open, whose hit-testing works on the base pose), `VideoExporter` and `GlesExporter` read it; pose
+  capture and the tests that read `currentAngles` keep the base. The engine runs the layer at the end of `tick`,
+  `seekTo`, `seekToWithAmplitude`, `reset`, `loadTimeline` and whenever `actingContext` is set.
+  (5) Fail-soft (I11): `ActingFault.guard` wraps the call, returns the base frame on any throwable and keeps the count and
+  the first message (the pure engine has no logger it may use on the JVM); `PlaybackEngine.actingFault` exposes it.
+  (6) Preview and export agree: the exporters build the context from the stored setting and the project id; the
+  preview builds it the same way. The editor's A/B chip is preview-only and not stored: it flips the preview between OFF
+  and the stored setting; exports always use the stored setting. Applying an appearance preset keeps the project's own
+  acting intensity (a preset is a look; acting is a motion setting).
+  (7) Only the angles are an output of the frame for now. Expression, eye and mouth outputs are added with WP2.3 and
+  WP2.4 when something actually changes them, so this step adds no unused publish paths.
+  (8) No visible effect yet, by design: every intensity returns the base frame until WP2.2 adds the first stage. The
+  Appearance caption says so.
+  Verification: `ActingLayerTest` (13 tests, JVM; the local suite passed 263 of 263 with the goldens unchanged),
+  including bit-identical output at every intensity over all seven fixtures (export-order frames and 600 live ticks),
+  determinism, seek equals sequential (1e-4) and fail-soft; `AppearanceActingJsonTest` (6 tests, CI only) decodes the
+  baseline JSON captured before the field existed. CI: see the log. NOT verified: the Appearance selector and the A/B chip
+  on a phone (Compose compiled by CI only).
+
 
 ## AI drives the pipeline — the app doesn't second-guess it
 

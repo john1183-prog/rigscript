@@ -885,7 +885,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Applies a saved preset's appearance to the ACTIVE project — same update path as any other appearance edit. */
     fun applyAppearancePreset(preset: com.example.data.AppearancePreset) {
-        updateActive { it.copy(appearance = preset.appearance) }
+        // A preset is a look; the acting intensity is a motion setting of the project, so a preset keeps the project's own.
+        updateActive { it.copy(appearance = preset.appearance.copy(actingIntensity = it.appearance.actingIntensity)) }
         saveActiveProject()
         viewModelScope.launch { _message.emit("Applied '${preset.name}'") }
     }

@@ -15,9 +15,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * WP2.1 (acting plumbing and switch). The layer has no Craft stage yet, so what is protected here is the plumbing:
- * identity when OFF (and, until WP2.2, at every intensity), determinism, seek equals sequential, fail-soft, the
- * settings default, and that a context changes nothing the renderers read. WP2.2 replaces the "no stage yet" test.
+ * WP2.1 (acting plumbing and switch): identity when OFF, determinism, seek equals sequential, fail-soft, the settings
+ * default, and that a context changes nothing the renderers read when OFF. The motion stage itself is in ActingMotionTest.
  */
 class ActingLayerTest {
 
@@ -100,8 +99,8 @@ class ActingLayerTest {
     }
 
     @Test
-    fun until_WP2_2_noStageExistsSoEveryIntensityReturnsTheBaseFrame() {
-        // Replace this test when WP2.2 adds the first Craft stage (SUBTLE, NORMAL and BOLD then return the output frame).
+    fun withoutAMotionTheLayerHasNothingToActOnAndReturnsTheBaseFrame() {
+        // WP2.2 replaced the "no stage yet" test: the stage needs the timeline (ActingFrame.motion); see ActingMotionTest.
         val base = ActingFrame(floatArrayOf(10f, -20f))
         val out = ActingFrame(FloatArray(2))
         for (i in allIntensities) {
@@ -137,14 +136,14 @@ class ActingLayerTest {
     }
 
     @Test
-    fun everyIntensityLeavesEveryFixtureFrameBitIdenticalToTheLegacyEngine() {
+    fun offLeavesEveryFixtureFrameBitIdenticalToTheLegacyEngine() {
         for (name in Fixtures.SCRIPT_NAMES) {
             val script = Fixtures.script(name)
             val kfs = EngineHarness.compile(script)
             val total = EngineHarness.totalSec(kfs, 0f)
             val envelope = GoldenSnapshot.envelopeFor(total)
             val frames = (total * EngineHarness.ENV_FPS).toInt()
-            for (intensity in allIntensities) {
+            for (intensity in listOf(ActingIntensity.OFF)) {
                 val legacy = EngineHarness.create(script, envelope, keyframes = kfs)
                 val acted = withActing(EngineHarness.create(script, envelope, keyframes = kfs), intensity)
                 for (i in 0..frames) {
@@ -160,11 +159,11 @@ class ActingLayerTest {
     }
 
     @Test
-    fun livePlaybackIsAlsoUnchangedAtEveryIntensity() {
+    fun livePlaybackIsAlsoUnchangedWhenActingIsOff() {
         val script = Fixtures.script("06_long_dense")
         val kfs = EngineHarness.compile(script)
         val envelope = GoldenSnapshot.envelopeFor(EngineHarness.totalSec(kfs, 0f))
-        for (intensity in allIntensities) {
+        for (intensity in listOf(ActingIntensity.OFF)) {
             val legacy = EngineHarness.create(script, envelope, keyframes = kfs)
             val acted = withActing(EngineHarness.create(script, envelope, keyframes = kfs), intensity)
             for (i in 0 until 600) {
@@ -222,7 +221,7 @@ class ActingLayerTest {
         val e = EngineHarness.create(script, TestEnvelopes.silence(20f), noAmplitude)
         e.seekTo(3f)
         e.actingContext = ActingContext.create("BOLD", "p")
-        assertTrue(e.renderAngles === e.currentAngles) // no stage yet (WP2.1)
+        assertTrue(e.renderAngles !== e.currentAngles) // the motion stage is active at BOLD (WP2.2)
         e.actingContext = ActingContext.create("OFF", "p")
         assertTrue(e.renderAngles === e.currentAngles)
         e.actingContext = null

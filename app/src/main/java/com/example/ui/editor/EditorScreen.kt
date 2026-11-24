@@ -1078,7 +1078,7 @@ private fun CharacterCategoryContent(
                 )
             }
         }
-        Text("Controls the acting layer. Off keeps the exact original motion. No visible change until the acting stages are added (WP2.2 onward).",
+        Text("Controls the acting layer. Off keeps the exact original motion. Subtle, Normal and Bold add overlap between joints, a small wind-up before a move and a soft settle after it (face and speech acting come later).",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
 

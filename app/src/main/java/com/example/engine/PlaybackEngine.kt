@@ -6,6 +6,7 @@ import com.example.engine.acting.ActingFault
 import com.example.engine.acting.ActingFrame
 import com.example.engine.acting.ActingIntensity
 import com.example.engine.acting.ActingLayer
+import com.example.engine.acting.ActingMotion
 import kotlin.math.*
 
 /**
@@ -271,6 +272,7 @@ class PlaybackEngine {
     private val actingBase = ActingFrame(currentAngles)
     private val actingOut = ActingFrame(FloatArray(n))
     private var actedActive = false
+    private var actingMotion: ActingMotion? = null
 
     /** Set by the owner of the engine (preview view or exporter). Null or OFF: the legacy path, no work. Re-applies at the current time. */
     @Volatile var actingContext: ActingContext? = null
@@ -506,6 +508,14 @@ class PlaybackEngine {
         actingBase.expression = currentExpression
         actingBase.mouthShape = currentMouthShape
         actingBase.amplitude = smoothedAmplitude
+        // The motion model reads the compiled timeline; it is rebuilt only when the timeline or the spring setting changes.
+        val easeAll = amplitudeSettings.easeAllWithSpring
+        var motion = actingMotion
+        if (motion == null || motion.keyframes !== timeline || motion.easeAllWithSpring != easeAll) {
+            motion = ActingMotion(timeline, easeAll)
+            actingMotion = motion
+        }
+        actingBase.motion = motion
         val acted = actingFault.guard(actingBase) { ActingLayer.apply(actingBase, ctx, timeSec, actingOut) }
         actedActive = acted === actingOut
     }

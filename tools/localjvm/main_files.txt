@@ -37,3 +37,4 @@ engine/acting/ActingIntensity.kt
 engine/acting/ActingParams.kt
 engine/acting/ActingContext.kt
 engine/acting/ActingLayer.kt
+engine/acting/ActingMotion.kt

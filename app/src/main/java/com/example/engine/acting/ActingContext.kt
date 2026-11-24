@@ -69,6 +69,8 @@ class ActingContext(
  * inputs that later work packages use (expression blending, mouth smoothing); WP2.1 only carries them.
  */
 class ActingFrame(val angles: FloatArray) {
+    /** The compiled timeline, for the motion model (WP2.2). Set by the engine; null means the layer has nothing to act on. */
+    var motion: ActingMotion? = null
     var expression: Int = 0
     var mouthShape: Int = 0
     var amplitude: Float = 0f

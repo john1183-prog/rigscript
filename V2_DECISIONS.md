@@ -2847,6 +2847,49 @@ approved by the person before implementing:**
   on a phone (Compose compiled by CI only).
 
 
+- **WP2.2 — Acting motion model: per-joint timing, wind-up, settle, retarget (V2 campaign, 2026-11-24; Phase 2).**
+  Classification (A4): CRAFT (how a pose change is executed), behind the intensity switch; it creates no Direction. The
+  script still decides what moves and when; the cue time is kept (see "shape" below).
+  What it does under SUBTLE, NORMAL, BOLD (OFF returns the engine frame itself, bit-identical, goldens unchanged): every
+  bone runs its own clock by chain level (torso 0; head, upper arms, upper legs 1; forearms, lower legs 2; mapped from the
+  real bone ids in `ActingMotionModel.levelOf`): lead/follow delay and duration stretch from `ActingParams`; an anticipation
+  wind-back (moves of at least 12 deg in events of at least 0.25 s; it lasts `anticipationLeadSec` and ends exactly when the
+  joint starts to move, so it needs no change to the event time); a damped settle kick (omega 14, zeta 0.55) that starts 40 ms
+  before the eased shape arrives and fades to exactly zero 0.9 s later (exact landing); retarget when an event lands before a
+  joint has settled (the new move starts from the acted position, and the old velocity carries on as v0*t*exp(-t/0.07), capped at
+  720 deg/s, so there is no pop and no velocity step); a moving hold (two seeded sinusoids per bone, splitmix64 over the project
+  seed, at most 0.3 deg, faded in after a joint settles). Walk and jog pose changes (either end a `walk_*`/`jog_*` pose) get
+  lead/follow only: no wind-back, no kick, no hold. `rigid` events are untouched (no delay, no kick) and break any carry.
+  Decision (shape): the acted joints use the SAME eased progress as the legacy engine (`easeAllWithSpring` spring, explicit
+  `spring`, or the named ease), not the named ease alone. The first version honoured the named ease and the prototype strips
+  showed the pose landing about 0.6 s after the cue, where the legacy spring lands within about 60 ms; that would break the
+  sync the prompt asks the AI to author (`timeSec` where the emphasis falls). Consequence: the lead/follow is a few frames
+  (25 ms per level at NORMAL), visible as a whip of forearm behind upper arm, not as a slow move. Rejected: honouring the
+  named ease (late landing), and anticipating by moving the event time (changes Direction).
+  Decision (overshoot budget): the legacy spring itself overshoots about 1 percent, so the kick is `cap - the shape's own
+  overshoot` and the total never exceeds the brief's cap (3, 5, 8 deg); `spring`, `back`, `elastic_out`, `bounce` get no kick.
+  Decision (how it meets the amplitude motion): the layer adds (acted pose - legacy pose) to the frame the engine computed, so
+  breath, talk sway and fidget stay in the result exactly as before; the joint limits of the amplitude layer are applied to
+  the result, widened to include the base value. The legacy pose is recomputed by `ActingMotionModel.legacyAngle`, pinned to
+  the engine's `baseAngles` by a test (every bone, every 1/120 s of a script with retarget, rigid and walk events).
+  Not acted (known limits, UNVERIFIED on device): `currentHipBobOffset` and the camera/scene/figure fields still follow the
+  legacy pose (walk cycles get lead/follow only, so the hip bob is at most a few frames off); hot-reload chase frames carry the
+  same delta; amplitude smoothing is unchanged (OPEN QUESTION in the log).
+  I1 note: acting defaults to NORMAL (John, 2026-10-09), so with default settings an old script now renders with acting;
+  setting Acting to OFF reproduces the old output exactly (VERIFIED-BY-TEST, `offLeavesEveryFixtureFrameBitIdenticalToTheLegacyEngine`
+  and the unchanged goldens). The Appearance caption says what the three levels add.
+  Look check (UNVERIFIED as final pixels): `tools/acting_proto/out/03_motion_strip.png` (OFF vs NORMAL vs NORMAL with a
+  hand-drawn line) and `01`, `02`, `04` were viewed before porting; they show wind-up, overlap, settle and a retarget without a
+  pop. The "hand-drawn line" rows are a look experiment in the Python drawer only; nothing like it exists in the app (it would be
+  a renderer feature for both renderers; see the log, OPEN QUESTIONS).
+  Files: `engine/acting/ActingMotion.kt` (new: `ActingMotion`, `ActingMotionModel`), `ActingLayer`, `ActingFrame.motion`,
+  `ActingParams` (`anticipationLeadSec`, `holdDriftDeg` per level, the model constants), `PlaybackEngine.applyActing`,
+  `EditorScreen` (caption only), `tools/acting_proto/`. Tests: `ActingMotionTest` (14: Python parity, hash parity, levels, legacy
+  pose equals the engine, arrival and peak-velocity order, caps, exact landing, retarget, locomotion, hold, fixtures finite and
+  bounded at every intensity, layer contract, determinism); `ActingLayerTest` now asserts identity for OFF only. Verification:
+  VERIFIED-BY-CI run 45335918614 (build success, 306 tests, 0 failed) and VERIFIED-BY-TEST locally (277 passed, goldens
+  unchanged). NOT device-tested; every constant is a starting point to tune after John compares OFF and NORMAL.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

@@ -189,8 +189,8 @@ data class GlesFigureFrame(
          * Shared by the mouth and each eye — all three are the same shape
          * (an oval, optionally rotated), just different sizes/positions/
          * colors, so one command type covers all of them rather than three
-         * near-identical ones. See [RigRenderer.computeMouthGeometry] /
-         * [RigRenderer.computeEyeGeometry] for how cx/cy/halfWidth/
+         * near-identical ones. See [FaceGeometry.mouth] /
+         * [FaceGeometry.eyes] for how cx/cy/halfWidth/
          * halfHeight/rotationDeg are derived — this class only replays
          * already-resolved geometry, same as every other [DrawCommand].
          * [rotationDeg] defaults to 0 (unrotated) since this type is also
@@ -208,7 +208,7 @@ data class GlesFigureFrame(
          * isn't a bone, and this class already draws that same distinction
          * between [Joint] and [Head] despite both being circles. Only
          * emitted for [Expression.WORRIED]/[Expression.ANGRY] — see
-         * [RigRenderer.computeEyebrowGeometry].
+         * [FaceGeometry.brows].
          */
         data class Eyebrow(
             val sx: Float, val sy: Float, val ex: Float, val ey: Float,
@@ -467,21 +467,21 @@ data class GlesFigureFrame(
                     // and before the next bone, preserving the same z-order guarantee
                     // this class's own doc comment calls out.
                     if (appearance.showMouth) {
-                        val g = RigRenderer.computeMouthGeometry(
+                        val g = FaceGeometry.mouth(
                             endX, endY, startX, startY, r,
                             mouthShape, mouthOpenness, expression, headScaleMultiplier
                         )
                         commands += DrawCommand.Oval(g.cx, g.cy, g.halfWidth, g.halfHeight, mouthColor, g.rotationDeg)
                     }
                     if (appearance.showEyes) {
-                        val eyes = RigRenderer.computeEyeGeometry(
+                        val eyes = FaceGeometry.eyes(
                             endX, endY, startX, startY, r,
                             eyeOpenness, expression, headScaleMultiplier, appearance
                         )
                         commands += DrawCommand.Oval(eyes.left.cx, eyes.left.cy, eyes.left.halfWidth, eyes.left.halfHeight, eyeColor, eyes.left.rotationDeg)
                         commands += DrawCommand.Oval(eyes.right.cx, eyes.right.cy, eyes.right.halfWidth, eyes.right.halfHeight, eyeColor, eyes.right.rotationDeg)
 
-                        val brows = RigRenderer.computeEyebrowGeometry(eyes, expression)
+                        val brows = FaceGeometry.brows(eyes, expression)
                         if (brows != null) {
                             commands += DrawCommand.Eyebrow(brows.left.sx, brows.left.sy, brows.left.ex, brows.left.ey, brows.halfWidth, eyebrowColor)
                             commands += DrawCommand.Eyebrow(brows.right.sx, brows.right.sy, brows.right.ex, brows.right.ey, brows.halfWidth, eyebrowColor)
@@ -1108,14 +1108,12 @@ data class GlesFigureFrame(
 
             if (headR > 0f) {
                 // Eyes
-                val eyeRx = headR * 0.12f
-                val eyeRy = when (layer.figureExpression) {
-                    Expression.SQUINT -> eyeRx * 0.35f
-                    Expression.WIDE, Expression.HAPPY -> eyeRx * 1.3f
-                    else -> eyeRx
-                }
-                val eyeOffsetX = headR * 0.35f
-                val eyeOffsetY = -headR * 0.1f
+                // Geometry lives in FaceGeometry.secondary (shared with RigRenderer.drawSecondaryFace).
+                val f = FaceGeometry.secondary(headR, layer.figureExpression)
+                val eyeRx = f.eyeRx
+                val eyeRy = f.eyeRy
+                val eyeOffsetX = f.eyeOffsetX
+                val eyeOffsetY = f.eyeOffsetY
                 val (wEye1X, wEye1Y) = RigRenderer.localToWorld(headCx - eyeOffsetX, headCy + eyeOffsetY, originX, originY, layer.rotationDeg, layer.scale)
                 val (wEye2X, wEye2Y) = RigRenderer.localToWorld(headCx + eyeOffsetX, headCy + eyeOffsetY, originX, originY, layer.rotationDeg, layer.scale)
                 val wEyeRx = eyeRx * layer.scale
@@ -1125,34 +1123,21 @@ data class GlesFigureFrame(
 
                 // Mouth
                 val mouthHalfWidth = headR * 0.04f * layer.scale
-                val mouthY = headCy + headR * 0.4f
-                val mouthHalfW = headR * 0.3f
-                when (layer.figureExpression) {
-                    Expression.HAPPY -> {
-                        appendQuadraticBezier(
-                            commands,
-                            headCx - mouthHalfW, mouthY,
-                            headCx, mouthY + headR * 0.35f,
-                            headCx + mouthHalfW, mouthY,
-                            mouthHalfWidth, crispColor,
-                            originX, originY, layer.rotationDeg, layer.scale
-                        )
-                    }
-                    Expression.ANGRY, Expression.WORRIED -> {
-                        appendQuadraticBezier(
-                            commands,
-                            headCx - mouthHalfW, mouthY + headR * 0.15f,
-                            headCx, mouthY - headR * 0.2f,
-                            headCx + mouthHalfW, mouthY + headR * 0.15f,
-                            mouthHalfWidth, crispColor,
-                            originX, originY, layer.rotationDeg, layer.scale
-                        )
-                    }
-                    else -> {
-                        val (wx1, wy1) = RigRenderer.localToWorld(headCx - mouthHalfW, mouthY, originX, originY, layer.rotationDeg, layer.scale)
-                        val (wx2, wy2) = RigRenderer.localToWorld(headCx + mouthHalfW, mouthY, originX, originY, layer.rotationDeg, layer.scale)
-                        commands += OverlayDrawCommand.Line(wx1, wy1, wx2, wy2, mouthHalfWidth, crispColor)
-                    }
+                val mouthY = headCy + f.mouthDy
+                val mouthHalfW = f.mouthHalfW
+                if (f.mouthCurved) {
+                    appendQuadraticBezier(
+                        commands,
+                        headCx - mouthHalfW, mouthY + f.curveEndDy,
+                        headCx, mouthY + f.curveCtrlDy,
+                        headCx + mouthHalfW, mouthY + f.curveEndDy,
+                        mouthHalfWidth, crispColor,
+                        originX, originY, layer.rotationDeg, layer.scale
+                    )
+                } else {
+                    val (wx1, wy1) = RigRenderer.localToWorld(headCx - mouthHalfW, mouthY, originX, originY, layer.rotationDeg, layer.scale)
+                    val (wx2, wy2) = RigRenderer.localToWorld(headCx + mouthHalfW, mouthY, originX, originY, layer.rotationDeg, layer.scale)
+                    commands += OverlayDrawCommand.Line(wx1, wy1, wx2, wy2, mouthHalfWidth, crispColor)
                 }
             }
 

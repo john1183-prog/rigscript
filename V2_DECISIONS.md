@@ -2890,6 +2890,26 @@ approved by the person before implementing:**
   VERIFIED-BY-CI run 45335918614 (build success, 306 tests, 0 failed) and VERIFIED-BY-TEST locally (277 passed, goldens
   unchanged). NOT device-tested; every constant is a starting point to tune after John compares OFF and NORMAL.
 
+- **2026-11-24 — WP2.3 step 1: one shared `FaceGeometry` (pure refactor, no behaviour change).** The main figure's face math
+  (`headRotationDeg`, mouth oval, both eyes, brows) already lived once in `RigRenderer.Companion` and was called by the Canvas
+  drawer and by `GlesFigureFrame`; the secondary (overlay) figure's face constants were copied in both `RigRenderer.drawSecondaryFace`
+  and the GLES overlay-figure code. All of it now lives in `engine/FaceGeometry.kt` (new, pure, no Android types), expressions moved
+  verbatim. Result types are top-level (`FaceOval`, `FaceLine`, `FaceEyes`, `FaceBrows`, `SecondaryFaceGeometry`) because a type
+  declared inside a companion cannot be named from another file (the recurring pitfall in this repo); the old companion types
+  `EyeGeometry`, `EyebrowGeometry` and `LineSegment` are gone (nothing else used them), `OvalGeometry` stays for the scene shapes.
+  The secondary face returns OFFSETS from the head centre, so each renderer still evaluates the same float additions as before
+  (`mouthY + 0f` equals `mouthY`; `mouthY - x` equals `mouthY + (-x)`). Both renderers call it with the legacy parameters; the
+  GLES overlay-figure branch lost its 3-way `when` for one `if (mouthCurved)`.
+  Evidence the refactor changes nothing: `FaceGeometryTest` keeps the legacy functions, copied from `RigRenderer.Companion` at
+  `9ed354c` (comments stripped, types renamed) as an oracle, and requires BIT-EQUAL results over a grid (mouth 10,800 cases, eyes and
+  brows 4,320, covering upright, tilted, upside-down, sideways and zero-length heads, all 6 expressions, all mouth shapes and
+  out-of-range openness, 3 head scales, 4 radii, two appearance settings). It also pins steady-state numbers for all six
+  expressions that were derived BY READING the legacy code (written in the test comments), as the brief asks; step 2's
+  `ExpressionBlender` must keep steady-state output equal to these. Renderers are not on the JVM, so the draw calls themselves are
+  VERIFIED-BY-READING (the diff of both renderers is a pure call-site change) and by compile on CI. Files: `engine/FaceGeometry.kt`
+  (new), `RigRenderer`, `GlesFigureFrame`, `FaceGeometryTest` (new, 7), `tools/localjvm` lists. Verification: local full suite 284
+  passed, goldens unchanged; CI pending when written. NOT device-tested.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

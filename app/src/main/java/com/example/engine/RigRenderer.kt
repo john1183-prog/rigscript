@@ -443,7 +443,7 @@ class RigRenderer {
         sceneShapePaint.color = constrainSceneColor(currentBoneColor, currentBoneColor, alpha = 0x66)
         // Geometry now lives in the compute* companion functions below —
         // shared with the GLES export path (Phase 4, V2_DECISIONS.md), same
-        // reasoning as computeMouthGeometry's doc comment (Phase 3).
+        // reasoning as FaceGeometry.mouth's doc comment (Phase 3).
         when (shape) {
             SceneShape.MOUNTAINS -> {
                 val pts = computeMountainPolygon(w, h, horizonYFraction, timeSec)
@@ -664,7 +664,7 @@ class RigRenderer {
         val baseColor = layer.color.toInt()
         // Geometry now lives in computeOverlayShapeParts (companion, below) —
         // shared with the GLES export path (overlay shapes — V2_DECISIONS.md),
-        // same reasoning as computeMouthGeometry's doc comment (Phase 3).
+        // same reasoning as FaceGeometry.mouth's doc comment (Phase 3).
         val parts = computeOverlayShapeParts(layer, w, h, minDim)
 
         if (layer.glow) {
@@ -867,38 +867,29 @@ class RigRenderer {
      * (there is no audio channel for a supporting figure to sync to).
      */
     private fun drawSecondaryFace(canvas: Canvas, cx: Float, cy: Float, r: Float, expression: Int, baseColor: Int, alpha: Int) {
+        // Geometry lives in FaceGeometry.secondary (shared with the GLES overlay-figure face).
+        val f = FaceGeometry.secondary(r, expression)
         figureEyePaint.color = baseColor
         figureEyePaint.alpha = alpha
-        val eyeRx = r * 0.12f
-        val eyeRy = when (expression) {
-            Expression.SQUINT -> eyeRx * 0.35f
-            Expression.WIDE, Expression.HAPPY -> eyeRx * 1.3f
-            else -> eyeRx
-        }
-        val eyeOffsetX = r * 0.35f
-        val eyeOffsetY = -r * 0.1f
+        val eyeRx = f.eyeRx
+        val eyeRy = f.eyeRy
+        val eyeOffsetX = f.eyeOffsetX
+        val eyeOffsetY = f.eyeOffsetY
         canvas.drawOval(cx - eyeOffsetX - eyeRx, cy + eyeOffsetY - eyeRy, cx - eyeOffsetX + eyeRx, cy + eyeOffsetY + eyeRy, figureEyePaint)
         canvas.drawOval(cx + eyeOffsetX - eyeRx, cy + eyeOffsetY - eyeRy, cx + eyeOffsetX + eyeRx, cy + eyeOffsetY + eyeRy, figureEyePaint)
 
         figureMouthPaint.color = baseColor
         figureMouthPaint.alpha = alpha
         figureMouthPaint.strokeWidth = r * 0.08f
-        val mouthY = cy + r * 0.4f
-        val mouthHalfW = r * 0.3f
-        when (expression) {
-            Expression.HAPPY -> {
-                val path = Path()
-                path.moveTo(cx - mouthHalfW, mouthY)
-                path.quadTo(cx, mouthY + r * 0.35f, cx + mouthHalfW, mouthY)
-                canvas.drawPath(path, figureMouthPaint)
-            }
-            Expression.ANGRY, Expression.WORRIED -> {
-                val path = Path()
-                path.moveTo(cx - mouthHalfW, mouthY + r * 0.15f)
-                path.quadTo(cx, mouthY - r * 0.2f, cx + mouthHalfW, mouthY + r * 0.15f)
-                canvas.drawPath(path, figureMouthPaint)
-            }
-            else -> canvas.drawLine(cx - mouthHalfW, mouthY, cx + mouthHalfW, mouthY, figureMouthPaint)
+        val mouthY = cy + f.mouthDy
+        val mouthHalfW = f.mouthHalfW
+        if (f.mouthCurved) {
+            val path = Path()
+            path.moveTo(cx - mouthHalfW, mouthY + f.curveEndDy)
+            path.quadTo(cx, mouthY + f.curveCtrlDy, cx + mouthHalfW, mouthY + f.curveEndDy)
+            canvas.drawPath(path, figureMouthPaint)
+        } else {
+            canvas.drawLine(cx - mouthHalfW, mouthY, cx + mouthHalfW, mouthY, figureMouthPaint)
         }
     }
 
@@ -977,12 +968,12 @@ class RigRenderer {
         expression: Int,
         headScaleMultiplier: Float
     ) {
-        // Geometry now lives in computeMouthGeometry (companion, below) —
+        // Geometry now lives in FaceGeometry.mouth (FaceGeometry.kt, WP2.3) —
         // shared with the GLES export path (Phase 3, V2_DECISIONS.md) so
         // there's exactly one implementation of this math, not two. See that
         // function's doc comment for the headScaleMultiplier-on-the-anchor
         // reasoning that used to live here.
-        val g = computeMouthGeometry(hx, hy, nx, ny, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
+        val g = FaceGeometry.mouth(hx, hy, nx, ny, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
         if (g.rotationDeg != 0f) canvas.save()
         if (g.rotationDeg != 0f) canvas.rotate(g.rotationDeg, g.cx, g.cy)
         canvas.drawOval(g.cx - g.halfWidth, g.cy - g.halfHeight, g.cx + g.halfWidth, g.cy + g.halfHeight, mouthPaint)
@@ -996,7 +987,7 @@ class RigRenderer {
      * screen-axis-aligned regardless of head rotation, which is exactly what
      * caused one eye to collapse to a sliver under real rotation (confirmed
      * via device video, not just static analysis — see V2_DECISIONS.md).
-     * [OvalGeometry.rotationDeg] ([RigRenderer.headRotationDeg]) now rotates
+     * [OvalGeometry.rotationDeg] ([FaceGeometry.headRotationDeg]) now rotates
      * the shape itself to match, so eyes turn rigidly with the head.
      *
      * [openness] is resolved analytically upstream in [PlaybackEngine] from
@@ -1029,10 +1020,10 @@ class RigRenderer {
         headScaleMultiplier: Float,
         appearance: AppearanceSettings
     ) {
-        // Geometry now lives in computeEyeGeometry (companion, below) — see
-        // computeMouthGeometry's doc comment for why this is shared with the
+        // Geometry now lives in FaceGeometry.eyes (FaceGeometry.kt, WP2.3) — see
+        // FaceGeometry's doc comment for why this is shared with the
         // GLES export path rather than duplicated.
-        val eyes = computeEyeGeometry(hx, hy, nx, ny, r, openness, expression, headScaleMultiplier, appearance)
+        val eyes = FaceGeometry.eyes(hx, hy, nx, ny, r, openness, expression, headScaleMultiplier, appearance)
         val rot = eyes.left.rotationDeg   // same for both eyes — one head, one rotation
 
         if (rot != 0f) canvas.save()
@@ -1051,11 +1042,11 @@ class RigRenderer {
         )
         if (rot != 0f) canvas.restore()
 
-        val brows = computeEyebrowGeometry(eyes, expression)
+        val brows = FaceGeometry.brows(eyes, expression)
         if (brows != null) drawEyebrows(canvas, brows)
     }
 
-    private fun drawEyebrows(canvas: Canvas, brows: EyebrowGeometry) {
+    private fun drawEyebrows(canvas: Canvas, brows: FaceBrows) {
         // Stroke width scales with eyeRadius (which itself scales with the
         // head's current drawn radius) rather than a fixed absolute value —
         // see the note where eyebrowPaint.color is set for why a fixed value
@@ -1177,12 +1168,12 @@ class RigRenderer {
         // explicitly (a function call with an inferred return type is
         // fine; an explicit type annotation elsewhere is not) — see
         // LocalShapePart's and CameraTransform's doc comments above for the
-        // two times this has already broken CI. OvalGeometry/LineSegment/
-        // EyeGeometry/EyebrowGeometry/RectGeom/TreeGeom/StarGeom/RainDrop
+        // two times this has already broken CI. OvalGeometry/
+        // RectGeom/TreeGeom/StarGeom/RainDrop
         // below all currently have this same latent placement and are only
         // "safe" today because nothing outside this file names any of them
         // explicitly yet. Not moved out in this pass — none of them are
-        // broken right now, and moving all eight is a bigger, separate
+        // broken right now, and moving all of them is a bigger, separate
         // change — but flagged here so the third occurrence of this isn't
         // a surprise to whoever hits it.
         /**
@@ -1269,183 +1260,8 @@ class RigRenderer {
          */
         data class OvalGeometry(val cx: Float, val cy: Float, val halfWidth: Float, val halfHeight: Float, val rotationDeg: Float = 0f)
 
-        /** One straight segment, in canvas-pixel space. */
-        data class LineSegment(val sx: Float, val sy: Float, val ex: Float, val ey: Float)
-
-        /** Both eyes plus the perpendicular/"up" basis eyebrow geometry needs — see [computeEyebrowGeometry]. */
-        data class EyeGeometry(
-            val left: OvalGeometry, val right: OvalGeometry,
-            val perpX: Float, val perpY: Float, val upX: Float, val upY: Float
-        )
-
-        /** Both eyebrow line segments plus their shared half-width. */
-        data class EyebrowGeometry(val left: LineSegment, val right: LineSegment, val halfWidth: Float)
-
-        /**
-         * How far the head bone (hx,hy = tip, nx,ny = origin) has rotated
-         * from its own upright rest pose, in degrees, in the same sense as
-         * [android.graphics.Canvas.rotate] (positive = clockwise, this is
-         * Y-down pixel space) — shared by [computeMouthGeometry] and
-         * [computeEyeGeometry] so both rotate identically with the head
-         * rather than each deriving it separately and risking a mismatch.
-         * At rest (bone pointing straight up, hy<ny, hx==nx) this is 0.
-         */
-        fun headRotationDeg(hx: Float, hy: Float, nx: Float, ny: Float): Float {
-            val restDeg = -90.0
-            val boneDeg = Math.toDegrees(kotlin.math.atan2((hy - ny).toDouble(), (hx - nx).toDouble()))
-            return (boneDeg - restDeg).toFloat()
-        }
-
-        /**
-         * Pure geometry for the mouth oval — no Canvas/Paint dependency, so
-         * [drawMouth] (Canvas path) and [GlesFigureFrame.fromFkMatrices] (GLES
-         * path, Phase 3) share exactly one implementation of this math instead
-         * of risking the two drifting apart — same reasoning as
-         * [computeFkMatrices]'s own doc comment.
-         *
-         * hx,hy = head circle center (bone tip); nx,ny = neck point (bone
-         * origin); r = head's drawn radius (already includes
-         * headScaleMultiplier). See [drawMouth]'s own doc comment for why
-         * headScaleMultiplier is also applied to the anchor offset below, not
-         * just to r.
-         *
-         * Anchor coefficient nudged from 0.42 to 0.36 — moves the mouth
-         * slightly higher in the head (toward hx,hy) per direct feedback
-         * that it read too low. Also now carries [OvalGeometry.rotationDeg]
-         * ([headRotationDeg]) so it turns rigidly with the head instead of
-         * staying screen-axis-aligned.
-         */
-        fun computeMouthGeometry(
-            hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
-            mouthShape: Int, mouthOpenness: Float, expression: Int,
-            headScaleMultiplier: Float
-        ): OvalGeometry {
-            // Anchor coefficient history: 0.42 (original) -> 0.36 (first
-            // upward nudge) -> 0.24 (tried, reverted after overlapping the
-            // eyes) -> 0.24 again.
-            //
-            // The revert to 0.36 was itself reverted: direct feedback was
-            // that 0.24's mouth position was correct, and the eyes/mouth
-            // overlap it exposed should be fixed by moving the EYES up
-            // (see eyeVerticalOffsetNormalized in AppearanceSettings.kt,
-            // and that field's own doc comment for the clearance math this
-            // now pairs with), not by moving the mouth back down. The
-            // ~10px-of-total-slack constraint documented in the previous
-            // version of this comment is still real -- it just means the
-            // eyes needed to move to free up room, not that 0.24 itself
-            // was wrong.
-            val cx = hx + (nx - hx) * 0.24f * headScaleMultiplier
-            var cy = hy + (ny - hy) * 0.24f * headScaleMultiplier
-
-            val (wFrac, hFrac) = when (mouthShape) {
-                MouthShape.WIDE   -> 0.44f to 0.28f
-                MouthShape.NARROW -> 0.32f to 0.10f
-                MouthShape.CLOSED -> 0.44f to 0.05f
-                else              -> 0.42f to 0.14f   // MID
-            }
-
-            val widthMul: Float
-            val cyBiasFrac: Float
-            when (expression) {
-                Expression.HAPPY -> { widthMul = 1.12f; cyBiasFrac = -0.06f }
-                Expression.WORRIED, Expression.ANGRY -> { widthMul = 0.90f; cyBiasFrac = 0.05f }
-                else -> { widthMul = 1f; cyBiasFrac = 0f }
-            }
-            cy += cyBiasFrac * r
-
-            val hw = wFrac * r * widthMul
-            val hh = hFrac * r * (0.5f + 0.5f * mouthOpenness.coerceIn(0f, 1f))
-            return OvalGeometry(cx, cy, hw, hh, headRotationDeg(hx, hy, nx, ny))
-        }
-
-        /**
-         * Pure geometry for both eyes — see [computeMouthGeometry]'s doc
-         * comment for why this is shared rather than duplicated. Mirrors
-         * [drawEyes] exactly, including the perpendicular-to-head-neck-axis
-         * technique that makes eye separation follow head tilt for free.
-         */
-        fun computeEyeGeometry(
-            hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
-            openness: Float, expression: Int, headScaleMultiplier: Float,
-            appearance: AppearanceSettings
-        ): EyeGeometry {
-            val cx = hx + (nx - hx) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
-            val cy = hy + (ny - hy) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
-
-            val rawPx = -(ny - hy)
-            val rawPy = (nx - hx)
-            val plen = kotlin.math.sqrt(rawPx * rawPx + rawPy * rawPy).let { if (it < 0.0001f) 1f else it }
-            val perpX = rawPx / plen
-            val perpY = rawPy / plen
-            val upX = -perpY
-            val upY = perpX
-
-            val eyeSpacing = appearance.eyeSpacingNormalized * r
-            val baseEyeRadius = when (expression) {
-                Expression.WIDE, Expression.HAPPY -> 0.20f * r
-                Expression.SQUINT                  -> 0.11f * r
-                else                                -> 0.15f * r
-            }
-            val openFactor = openness.coerceIn(0f, 1f)
-            val eyeRadiusY = baseEyeRadius * appearance.eyeAspectRatio * (0.12f + 0.88f * openFactor)
-
-            val leftX  = cx - perpX * eyeSpacing
-            val leftY  = cy - perpY * eyeSpacing
-            val rightX = cx + perpX * eyeSpacing
-            val rightY = cy + perpY * eyeSpacing
-
-            // Root cause of the sliver-eye bug under rotation: this oval's
-            // shape was always screen-axis-aligned (halfWidth horizontal,
-            // halfHeight vertical) even though leftX/Y and rightX/Y already
-            // correctly rotate around the head via perpX/perpY. At rest the
-            // two happen to line up, so it looked fine; under real rotation
-            // the shape's true (perpX,perpY)-aligned orientation and its
-            // drawn (screen-axis) orientation diverge, and the GLES SDF
-            // test — which assumes the shape's local axes ARE screen axes —
-            // ends up rejecting most of one eye's footprint. Passing
-            // rotationDeg through fixes both paths at once, since it's the
-            // same [OvalGeometry] both consume.
-            val rotationDeg = headRotationDeg(hx, hy, nx, ny)
-
-            return EyeGeometry(
-                left  = OvalGeometry(leftX, leftY, baseEyeRadius, eyeRadiusY, rotationDeg),
-                right = OvalGeometry(rightX, rightY, baseEyeRadius, eyeRadiusY, rotationDeg),
-                perpX = perpX, perpY = perpY, upX = upX, upY = upY
-            )
-        }
-
-        /**
-         * Pure geometry for the eyebrows — see [computeMouthGeometry]'s doc
-         * comment for why this is shared. Returns null for any expression
-         * other than WORRIED/ANGRY, mirroring [drawEyes]'s own condition for
-         * calling [drawEyebrows] at all — eyebrows aren't rig bones, they're
-         * synthetic and only drawn for those two expressions.
-         */
-        fun computeEyebrowGeometry(eyes: EyeGeometry, expression: Int): EyebrowGeometry? {
-            if (expression != Expression.WORRIED && expression != Expression.ANGRY) return null
-
-            val eyeRadius = eyes.left.halfWidth   // baseEyeRadius, same magnitude for both eyes
-            val browHeight  = eyeRadius * 1.8f
-            val browHalfLen = eyeRadius * 1.0f
-            val innerLift = eyeRadius * (if (expression == Expression.WORRIED) 0.55f else -0.55f)
-            val perpX = eyes.perpX; val perpY = eyes.perpY
-            val upX = eyes.upX; val upY = eyes.upY
-
-            val left = LineSegment(
-                eyes.left.cx - perpX * browHalfLen + upX * browHeight,
-                eyes.left.cy - perpY * browHalfLen + upY * browHeight,
-                eyes.left.cx + perpX * browHalfLen + upX * (browHeight + innerLift),
-                eyes.left.cy + perpY * browHalfLen + upY * (browHeight + innerLift)
-            )
-            val right = LineSegment(
-                eyes.right.cx + perpX * browHalfLen + upX * browHeight,
-                eyes.right.cy + perpY * browHalfLen + upY * browHeight,
-                eyes.right.cx - perpX * browHalfLen + upX * (browHeight + innerLift),
-                eyes.right.cy - perpY * browHalfLen + upY * (browHeight + innerLift)
-            )
-            // eyebrowPaint.strokeWidth = eyeRadius * 0.35f in the Canvas path — half of that for a half-width.
-            return EyebrowGeometry(left, right, eyeRadius * 0.175f)
-        }
+        // Face geometry (eyes, brows, mouth, head rotation, secondary face) moved to FaceGeometry.kt
+        // in WP2.3 step 1; its result types are top-level there.
 
         /** Axis-aligned rect, in canvas-pixel space. */
         data class RectGeom(val l: Float, val t: Float, val r: Float, val b: Float)
@@ -1778,7 +1594,7 @@ class RigRenderer {
          * Pure geometry for a resolved overlay's shape — no Canvas/Paint
          * dependency, shared between [RigRenderer.drawGmsShape] (Canvas) and
          * the GLES export path (overlay shapes — V2_DECISIONS.md), same
-         * reasoning as [computeMouthGeometry]'s doc comment. Every constant
+         * reasoning as [FaceGeometry.mouth]'s doc comment. Every constant
          * here is unchanged from the pre-extraction Canvas code — this is a
          * relocation of the math, not a rewrite of it.
          */

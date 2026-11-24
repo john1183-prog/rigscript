@@ -89,7 +89,7 @@ data class AppearanceSettings(
      * fraction of the head radius (same head-tip/neck-axis technique the
      * mouth also uses). History: 0.12 -> 0.08 (per direct feedback eyes
      * read too low) -> -0.03 (this pass, per direct feedback the eyes,
-     * not the mouth, needed to move — see RigRenderer.computeMouthGeometry's
+     * not the mouth, needed to move — see FaceGeometry.mouth's
      * own doc comment for the mouth-position decision this pairs with).
      * NEGATIVE is intentional, not a typo: it places the eye anchor
      * slightly on the head-TIP side of the head's own center point,

@@ -29,7 +29,9 @@ data class FaceLine(val sx: Float, val sy: Float, val ex: Float, val ey: Float)
 /** Both eyes plus the perpendicular/"up" basis eyebrow geometry needs. */
 data class FaceEyes(
     val left: FaceOval, val right: FaceOval,
-    val perpX: Float, val perpY: Float, val upX: Float, val upY: Float
+    val perpX: Float, val perpY: Float, val upX: Float, val upY: Float,
+    /** Gaze offset (pixels) already included in [left] and [right]; the brows subtract it (they stay on the face). 0 in the legacy path. */
+    val gazeDx: Float = 0f, val gazeDy: Float = 0f
 )
 
 /** Both eyebrow line segments plus their shared half-width. */
@@ -80,6 +82,28 @@ object FaceGeometry {
         mouthShape: Int, mouthOpenness: Float, expression: Int,
         headScaleMultiplier: Float
     ): FaceOval {
+        val widthMul: Float
+        val cyBiasFrac: Float
+        when (expression) {
+            Expression.HAPPY -> { widthMul = 1.12f; cyBiasFrac = -0.06f }
+            Expression.WORRIED, Expression.ANGRY -> { widthMul = 0.90f; cyBiasFrac = 0.05f }
+            else -> { widthMul = 1f; cyBiasFrac = 0f }
+        }
+        return mouthCore(hx, hy, nx, ny, r, mouthShape, mouthOpenness, widthMul, cyBiasFrac, headScaleMultiplier)
+    }
+
+    /** The mouth for a [ResolvedFace] (acting path). With [ResolvedFace.setLegacy] it equals [mouth] bit for bit. */
+    fun mouth(
+        hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
+        mouthShape: Int, mouthOpenness: Float, face: ResolvedFace,
+        headScaleMultiplier: Float
+    ): FaceOval = mouthCore(hx, hy, nx, ny, r, mouthShape, mouthOpenness, face.mouthWidthMul, face.mouthCyBiasFrac, headScaleMultiplier)
+
+    private fun mouthCore(
+        hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
+        mouthShape: Int, mouthOpenness: Float, widthMul: Float, cyBiasFrac: Float,
+        headScaleMultiplier: Float
+    ): FaceOval {
         val cx = hx + (nx - hx) * 0.24f * headScaleMultiplier
         var cy = hy + (ny - hy) * 0.24f * headScaleMultiplier
 
@@ -90,13 +114,6 @@ object FaceGeometry {
             else              -> 0.42f to 0.14f   // MID
         }
 
-        val widthMul: Float
-        val cyBiasFrac: Float
-        when (expression) {
-            Expression.HAPPY -> { widthMul = 1.12f; cyBiasFrac = -0.06f }
-            Expression.WORRIED, Expression.ANGRY -> { widthMul = 0.90f; cyBiasFrac = 0.05f }
-            else -> { widthMul = 1f; cyBiasFrac = 0f }
-        }
         cy += cyBiasFrac * r
 
         val hw = wFrac * r * widthMul
@@ -115,6 +132,26 @@ object FaceGeometry {
         openness: Float, expression: Int, headScaleMultiplier: Float,
         appearance: AppearanceSettings
     ): FaceEyes {
+        val baseFrac = when (expression) {
+            Expression.WIDE, Expression.HAPPY -> 0.20f
+            Expression.SQUINT -> 0.11f
+            else -> 0.15f
+        }
+        return eyesCore(hx, hy, nx, ny, r, openness, baseFrac, 1f, 0f, 0f, headScaleMultiplier, appearance)
+    }
+
+    /** The eyes for a [ResolvedFace] (acting path): its size, height multiplier, blink and gaze. With [ResolvedFace.setLegacy] it equals [eyes] bit for bit. */
+    fun eyes(
+        hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
+        face: ResolvedFace, headScaleMultiplier: Float,
+        appearance: AppearanceSettings
+    ): FaceEyes = eyesCore(hx, hy, nx, ny, r, face.eyeOpenness, face.eyeRadiusFrac, face.eyeHeightMul, face.gazeX, face.gazeY, headScaleMultiplier, appearance)
+
+    private fun eyesCore(
+        hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
+        openness: Float, baseFrac: Float, heightMul: Float, gazeX: Float, gazeY: Float,
+        headScaleMultiplier: Float, appearance: AppearanceSettings
+    ): FaceEyes {
         val cx = hx + (nx - hx) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
         val cy = hy + (ny - hy) * appearance.eyeVerticalOffsetNormalized * headScaleMultiplier
 
@@ -127,25 +164,33 @@ object FaceGeometry {
         val upY = perpX
 
         val eyeSpacing = appearance.eyeSpacingNormalized * r
-        val baseEyeRadius = when (expression) {
-            Expression.WIDE, Expression.HAPPY -> 0.20f * r
-            Expression.SQUINT                  -> 0.11f * r
-            else                                -> 0.15f * r
-        }
+        val baseEyeRadius = baseFrac * r
         val openFactor = openness.coerceIn(0f, 1f)
-        val eyeRadiusY = baseEyeRadius * appearance.eyeAspectRatio * (0.12f + 0.88f * openFactor)
+        var eyeRadiusY = baseEyeRadius * appearance.eyeAspectRatio * (0.12f + 0.88f * openFactor)
+        if (heightMul != 1f) eyeRadiusY *= heightMul
 
-        val leftX  = cx - perpX * eyeSpacing
-        val leftY  = cy - perpY * eyeSpacing
-        val rightX = cx + perpX * eyeSpacing
-        val rightY = cy + perpY * eyeSpacing
+        var leftX  = cx - perpX * eyeSpacing
+        var leftY  = cy - perpY * eyeSpacing
+        var rightX = cx + perpX * eyeSpacing
+        var rightY = cy + perpY * eyeSpacing
+
+        // Gaze: +x is screen right and +y is up for an upright head; (-perp) points screen right and (up) screen up there,
+        // so the offset turns with the head. Skipped when zero so the legacy path stays bit-equal.
+        var gdx = 0f
+        var gdy = 0f
+        if (gazeX != 0f || gazeY != 0f) {
+            gdx = -perpX * gazeX * r + upX * gazeY * r
+            gdy = -perpY * gazeX * r + upY * gazeY * r
+            leftX += gdx; leftY += gdy; rightX += gdx; rightY += gdy
+        }
 
         val rotationDeg = headRotationDeg(hx, hy, nx, ny)
 
         return FaceEyes(
             left  = FaceOval(leftX, leftY, baseEyeRadius, eyeRadiusY, rotationDeg),
             right = FaceOval(rightX, rightY, baseEyeRadius, eyeRadiusY, rotationDeg),
-            perpX = perpX, perpY = perpY, upX = upX, upY = upY
+            perpX = perpX, perpY = perpY, upX = upX, upY = upY,
+            gazeDx = gdx, gazeDy = gdy
         )
     }
 
@@ -155,25 +200,35 @@ object FaceGeometry {
      */
     fun brows(eyes: FaceEyes, expression: Int): FaceBrows? {
         if (expression != Expression.WORRIED && expression != Expression.ANGRY) return null
+        return browsCore(eyes, 1.8f, if (expression == Expression.WORRIED) 0.55f else -0.55f)
+    }
 
+    /** The brows for a [ResolvedFace]: null when it says none are drawn. With [ResolvedFace.setLegacy] it equals [brows] bit for bit. */
+    fun brows(eyes: FaceEyes, face: ResolvedFace): FaceBrows? =
+        if (!face.browsVisible) null else browsCore(eyes, face.browHeight, face.browInnerLift)
+
+    private fun browsCore(eyes: FaceEyes, heightEyeRadii: Float, innerLiftEyeRadii: Float): FaceBrows {
         val eyeRadius = eyes.left.halfWidth   // baseEyeRadius, same magnitude for both eyes
-        val browHeight  = eyeRadius * 1.8f
+        val browHeight  = eyeRadius * heightEyeRadii
         val browHalfLen = eyeRadius * 1.0f
-        val innerLift = eyeRadius * (if (expression == Expression.WORRIED) 0.55f else -0.55f)
+        val innerLift = eyeRadius * innerLiftEyeRadii
         val perpX = eyes.perpX; val perpY = eyes.perpY
         val upX = eyes.upX; val upY = eyes.upY
+        // The brows belong to the face, not to the eyeballs: they stay where the eyes would be without gaze.
+        val lcx = eyes.left.cx - eyes.gazeDx;  val lcy = eyes.left.cy - eyes.gazeDy
+        val rcx = eyes.right.cx - eyes.gazeDx; val rcy = eyes.right.cy - eyes.gazeDy
 
         val left = FaceLine(
-            eyes.left.cx - perpX * browHalfLen + upX * browHeight,
-            eyes.left.cy - perpY * browHalfLen + upY * browHeight,
-            eyes.left.cx + perpX * browHalfLen + upX * (browHeight + innerLift),
-            eyes.left.cy + perpY * browHalfLen + upY * (browHeight + innerLift)
+            lcx - perpX * browHalfLen + upX * browHeight,
+            lcy - perpY * browHalfLen + upY * browHeight,
+            lcx + perpX * browHalfLen + upX * (browHeight + innerLift),
+            lcy + perpY * browHalfLen + upY * (browHeight + innerLift)
         )
         val right = FaceLine(
-            eyes.right.cx + perpX * browHalfLen + upX * browHeight,
-            eyes.right.cy + perpY * browHalfLen + upY * browHeight,
-            eyes.right.cx - perpX * browHalfLen + upX * (browHeight + innerLift),
-            eyes.right.cy - perpY * browHalfLen + upY * (browHeight + innerLift)
+            rcx + perpX * browHalfLen + upX * browHeight,
+            rcy + perpY * browHalfLen + upY * browHeight,
+            rcx - perpX * browHalfLen + upX * (browHeight + innerLift),
+            rcy - perpY * browHalfLen + upY * (browHeight + innerLift)
         )
         // The Canvas brow paint uses strokeWidth = eyeRadius * 0.35f: half of that for a half-width.
         return FaceBrows(left, right, eyeRadius * 0.175f)

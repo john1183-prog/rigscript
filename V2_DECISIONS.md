@@ -2910,6 +2910,33 @@ approved by the person before implementing:**
   (new), `RigRenderer`, `GlesFigureFrame`, `FaceGeometryTest` (new, 7), `tools/localjvm` lists. Verification: local full suite 284
   passed, goldens unchanged; CI pending when written. NOT device-tested.
 
+- **2026-11-25 — WP2.3 step 2a and 2b: the face prototype, and `ResolvedFace` with legacy-equal overloads.** Craft (A4): how a
+  discrete expression is executed, behind the acting intensity. Step 2a is `tools/acting_proto/face_proto.py` (plots and strips
+  `out/05` to `out/11`, looked at before any Kotlin): the expression blend is a smoothstep over `expressionBlendSec` between the
+  parameter sets (eye x-radius, brow height, brow inner lift, mouth width and bias); a retarget starts from the value of the previous
+  blend at the change time, so nothing pops. The eye HEIGHT has its own multiplier: a squint before `wide` (depth 0.35) and `angry`
+  (0.25) that ramps in over the anticipation lead (40/60/80 ms) and ends exactly at the change, then the step response of an
+  underdamped system (zeta 0.45, first peak near the end of the blend) plus a sine kick sized as the "take" (WIDE 10 percent,
+  HAPPY 6, WORRIED 5, ANGRY 4, NORMAL 3, SQUINT none, scaled 0.5/1.0/1.4 by intensity); the terms of overlapping changes ADD (the system is
+  linear), which removed a 0.14 step the first version had when two changes were 50 ms apart; everything is exactly neutral after 0.6 s.
+  The plot shows the NORMAL peak at 1.084 (the brief says about 10 percent): the squint and the kick do not peak together; left as is
+  (BOLD reaches 1.117) pending a look on a device. Brows exist on every expression under acting (normal flat 1.8, happy 1.95 with a
+  slight arch, wide 2.3 high, squint 1.4 flat, worried and angry exactly the legacy numbers, in eye radii); legacy (acting OFF) still
+  draws brows only for worried and angry. Gaze: one saccade per 2.1 s slot at a seeded offset in [0, 1.1] s, so intervals are
+  1.0 to 3.2 s by construction (measured 1.002 to 3.182 over 5,000); the target of saccade k is a pure function of (seed, k) (45 percent
+  near the centre, otherwise a seeded offset of 50 to 100 percent of the 18 percent cap), the move takes 60 ms, the head follows the eyes
+  90 ms later over a 250 ms ramp and at most 3 degrees, and a shift above 12 percent of the head radius carries a blink with seeded
+  probability 0.35 (measured 0.34). The first version moved the head in the same 60 ms as the eyes and the plot showed a twitch; the
+  slower follow fixes it. The hash is splitmix64 on Long (identical in Python and Kotlin).
+  Step 2b: `engine/ResolvedFace.kt` (new, pure, mutable and reused per frame: eye radius fraction, eye height multiplier, blink
+  openness, gaze x and y, brows visible, brow height and inner lift, mouth width multiplier and bias) with `setLegacy(expression,
+  openness)`; `FaceGeometry.mouth/eyes/brows` gained overloads that take it, and the legacy functions now delegate to the same private
+  cores with the numbers the old `when` produced. The gaze offset is skipped when zero and the brows subtract it (they belong to the
+  face, not the eyeballs), so the legacy path stays BIT-EQUAL: `FaceGeometryTest` runs the oracle `LegacyFace` against the new
+  overloads over the same grids and adds 5 tests (gaze direction and head rotation, brows stay, height multiplier). `FaceEyes` gained
+  two defaulted fields (`gazeDx`, `gazeDy`). No renderer changed in this piece. Verification: local full suite 289 passed, goldens
+  unchanged; CI pending when written. NOT device-tested.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

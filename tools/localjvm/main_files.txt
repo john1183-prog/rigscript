@@ -39,3 +39,4 @@ engine/acting/ActingContext.kt
 engine/acting/ActingLayer.kt
 engine/acting/ActingMotion.kt
 engine/FaceGeometry.kt
+engine/ResolvedFace.kt

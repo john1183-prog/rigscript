@@ -7,6 +7,7 @@ import com.example.engine.FaceEyes
 import com.example.engine.FaceGeometry
 import com.example.engine.FaceOval
 import com.example.engine.MouthShape
+import com.example.engine.ResolvedFace
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -309,5 +310,86 @@ class FaceGeometryTest {
                 else -> assertTrue(!f.mouthCurved)
             }
         }
+    }
+
+    // -- WP2.3 step 2b: the ResolvedFace overloads must equal the legacy functions when built with setLegacy --------
+
+    @Test
+    fun resolvedFaceMouthEqualsLegacyOnTheWholeGrid() {
+        var n = 0
+        val face = ResolvedFace()
+        for (h in heads) for (e in expressions) for (s in shapes) for (o in opennesses) for (sc in scales) for (r in radii) {
+            face.setLegacy(e, 1f)
+            val now = FaceGeometry.mouth(h[0], h[1], h[2], h[3], r, s, o, face, sc)
+            val was = LegacyFace.mouth(h[0], h[1], h[2], h[3], r, s, o, e, sc)
+            sameOval("rf mouth e=$e s=$s o=$o sc=$sc r=$r", now, was)
+            n++
+        }
+        assertTrue(n == heads.size * expressions.size * shapes.size * opennesses.size * scales.size * radii.size)
+    }
+
+    @Test
+    fun resolvedFaceEyesAndBrowsEqualLegacyOnTheWholeGrid() {
+        var n = 0
+        val face = ResolvedFace()
+        for (a in appearances) for (h in heads) for (e in expressions) for (o in opennesses) for (sc in scales) for (r in radii) {
+            face.setLegacy(e, o)
+            val now = FaceGeometry.eyes(h[0], h[1], h[2], h[3], r, face, sc, a)
+            val was = LegacyFace.eyes(h[0], h[1], h[2], h[3], r, o, e, sc, a)
+            sameEyes("rf eyes e=$e o=$o sc=$sc r=$r", now, was)
+            val bNow = FaceGeometry.brows(now, face)
+            val bWas = LegacyFace.brows(was, e)
+            if (bWas == null) assertTrue("rf brows must be null for expression $e", bNow == null)
+            else {
+                assertTrue("rf brows must exist for expression $e", bNow != null)
+                sameLine("rf browL e=$e", bNow!!.left, bWas.left); sameLine("rf browR e=$e", bNow.right, bWas.right)
+                same("rf brow halfWidth", bNow.halfWidth, bWas.halfWidth)
+            }
+            n++
+        }
+        assertTrue(n == appearances.size * heads.size * expressions.size * opennesses.size * scales.size * radii.size)
+    }
+
+    @Test
+    fun setLegacyFillsTheLegacyNumbers() {
+        val f = ResolvedFace()
+        f.setLegacy(Expression.WIDE, 0.5f)
+        same("wide radius", f.eyeRadiusFrac, 0.20f); assertTrue(f.eyeOpenness == 0.5f && f.eyeHeightMul == 1f && !f.browsVisible)
+        f.setLegacy(Expression.ANGRY, 1f)
+        assertTrue(f.browsVisible); same("angry lift", f.browInnerLift, -0.55f); same("angry mouth w", f.mouthWidthMul, 0.90f); same("angry bias", f.mouthCyBiasFrac, 0.05f)
+        f.setLegacy(Expression.NORMAL, 1f)
+        assertTrue(!f.browsVisible); same("normal radius", f.eyeRadiusFrac, 0.15f); same("normal w", f.mouthWidthMul, 1f)
+    }
+
+    @Test
+    fun gazeMovesBothEyesTogetherAndBrowsStayOnTheFace() {
+        // Upright head (tip (100,50), neck (100,150), r = 20): +x is screen right, +y is up. Gaze (0.1, 0.05) shifts the
+        // eyes by 0.1*20 = 2 px right and 0.05*20 = 1 px up (y grows downward); the brows do not move.
+        val a = AppearanceSettings()
+        val still = ResolvedFace().setLegacy(Expression.ANGRY, 1f)
+        val look = ResolvedFace().setLegacy(Expression.ANGRY, 1f).also { it.gazeX = 0.1f; it.gazeY = 0.05f }
+        val e0 = FaceGeometry.eyes(hx, hy, nx, ny, r, still, 1f, a)
+        val e1 = FaceGeometry.eyes(hx, hy, nx, ny, r, look, 1f, a)
+        near("left dx", 2.0, e1.left.cx - e0.left.cx); near("right dx", 2.0, e1.right.cx - e0.right.cx)
+        near("left dy", -1.0, e1.left.cy - e0.left.cy); near("right dy", -1.0, e1.right.cy - e0.right.cy)
+        val b0 = FaceGeometry.brows(e0, still)!!
+        val b1 = FaceGeometry.brows(e1, look)!!
+        near("brow sx", b0.left.sx.toDouble(), b1.left.sx, 1e-4); near("brow ey", b0.left.ey.toDouble(), b1.left.ey, 1e-4)
+        near("brow rsx", b0.right.sx.toDouble(), b1.right.sx, 1e-4)
+        // Rotated head: the offset turns with the head (a head turned 90 degrees clockwise puts "screen right" gaze downward).
+        val e2 = FaceGeometry.eyes(640f, 520f, 540f, 520f, 20f, ResolvedFace().setLegacy(Expression.NORMAL, 1f).also { it.gazeX = 0.1f }, 1f, a)
+        val e3 = FaceGeometry.eyes(640f, 520f, 540f, 520f, 20f, ResolvedFace().setLegacy(Expression.NORMAL, 1f), 1f, a)
+        near("rot dx", 0.0, e2.left.cx - e3.left.cx); near("rot dy", 2.0, e2.left.cy - e3.left.cy)
+    }
+
+    @Test
+    fun heightMultiplierScalesOnlyTheEyeHeight() {
+        val a = AppearanceSettings()
+        val f = ResolvedFace().setLegacy(Expression.NORMAL, 1f)
+        val base = FaceGeometry.eyes(hx, hy, nx, ny, r, f, 1f, a)
+        f.eyeHeightMul = 0.5f
+        val sq = FaceGeometry.eyes(hx, hy, nx, ny, r, f, 1f, a)
+        near("hh", base.left.halfHeight * 0.5, sq.left.halfHeight); near("hw", base.left.halfWidth.toDouble(), sq.left.halfWidth)
+        near("cx", base.left.cx.toDouble(), sq.left.cx)
     }
 }

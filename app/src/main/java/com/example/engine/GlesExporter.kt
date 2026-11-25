@@ -265,7 +265,8 @@ object GlesExporter {
                                 overlays               = timeResolvedOverlays,
                                 captionText            = engine.currentCaption,
                                 referenceOverlay       = overlay,
-                                referenceOverlayBitmap = overlayBitmap
+                                referenceOverlayBitmap = overlayBitmap,
+                                face                   = engine.renderFace
                             )
                             glRenderer.drawFigureFrame(frame, presentationTimeNs, targetIndex)
                             drain(t, audio, untilEos = false, job = job)

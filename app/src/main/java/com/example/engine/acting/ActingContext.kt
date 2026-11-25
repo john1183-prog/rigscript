@@ -69,6 +69,12 @@ class ActingContext(
  * inputs that later work packages use (expression blending, mouth smoothing); WP2.1 only carries them.
  */
 class ActingFrame(val angles: FloatArray) {
+    /** The blink openness the engine resolved (script and natural blinks), 1 = open; an INPUT to the face model (WP2.3). */
+    var eyeOpenness: Float = 1f
+    /** The blink duration in seconds, an INPUT (the gaze-coupled blink uses the same length). */
+    var blinkDurationSec: Float = 0.15f
+    /** The acted face, an OUTPUT of [ActingLayer.apply] (WP2.3); valid only when `apply` returned this frame. */
+    val face: com.example.engine.ResolvedFace = com.example.engine.ResolvedFace()
     /** The compiled timeline, for the motion model (WP2.2). Set by the engine; null means the layer has nothing to act on. */
     var motion: ActingMotion? = null
     var expression: Int = 0

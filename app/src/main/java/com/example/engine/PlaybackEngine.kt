@@ -35,6 +35,13 @@ class PlaybackEngine {
      */
     val renderAngles: FloatArray get() = if (actedActive) actingOut.angles else currentAngles
 
+    /**
+     * The acted face for the renderers (WP2.3: blended expression, brows on every expression, gaze, coupled blink), or null
+     * when acting is OFF or produced nothing, in which case the renderers draw the legacy face from [currentExpression],
+     * [currentEyeOpenness], [currentMouthShape] and [currentAmplitude] exactly as before. Same lifetime as [renderAngles].
+     */
+    val renderFace: com.example.engine.ResolvedFace? get() = if (actedActive) actingOut.face else null
+
     /** Coarse mouth shape for the current frame — see [MouthShape]. Read by RigRenderer. */
     @Volatile var currentMouthShape: Int = MouthShape.CLOSED
 
@@ -508,6 +515,8 @@ class PlaybackEngine {
         actingBase.expression = currentExpression
         actingBase.mouthShape = currentMouthShape
         actingBase.amplitude = smoothedAmplitude
+        actingBase.eyeOpenness = resolveEyeOpenness(timeSec)
+        actingBase.blinkDurationSec = amplitudeSettings.blinkDurationSec.coerceAtLeast(0.02f)
         // The motion model reads the compiled timeline; it is rebuilt only when the timeline or the spring setting changes.
         val easeAll = amplitudeSettings.easeAllWithSpring
         var motion = actingMotion

@@ -16,6 +16,8 @@ import com.example.engine.StickFigureRig
  */
 object ActingLayer {
 
+    private val HEAD_IDX: Int = StickFigureRig.BONES.indexOfFirst { it.id == "head" }
+
     fun apply(base: ActingFrame, ctx: ActingContext?, timeSec: Float, out: ActingFrame): ActingFrame {
         if (ctx == null || ctx.intensity == ActingIntensity.OFF) return base
         val motion = base.motion ?: return base
@@ -42,9 +44,24 @@ object ActingLayer {
             }
             out.angles[i] = v
         }
+        // Stage 2 (WP2.3, face): the blended expression, brows and gaze go to out.face; the head follows the eyes by a few
+        // degrees, added to the head bone (the mouth and eyes turn with it because the renderers rotate them with the head).
+        val tilt = FaceMotionModel.resolve(motion.face, lv, ctx.seed, t, base.eyeOpenness, base.blinkDurationSec, out.face)
+        if (HEAD_IDX >= 0 && tilt != 0.0) {
+            val bone = bones[HEAD_IDX]
+            val b = base.angles[HEAD_IDX]
+            var v = (out.angles[HEAD_IDX] + tilt).toFloat()
+            if (!v.isFinite()) v = out.angles[HEAD_IDX]
+            val lo = bone.minAngleDegrees
+            val hi = bone.maxAngleDegrees
+            if (lo != null && hi != null) v = v.coerceIn(minOf(bone.defaultAngleDegrees + lo, b), maxOf(bone.defaultAngleDegrees + hi, b))
+            out.angles[HEAD_IDX] = v
+        }
         out.expression = base.expression
         out.mouthShape = base.mouthShape
         out.amplitude = base.amplitude
+        out.eyeOpenness = base.eyeOpenness
+        out.blinkDurationSec = base.blinkDurationSec
         out.motion = motion
         return out
     }

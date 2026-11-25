@@ -16,6 +16,8 @@ import kotlin.math.sqrt
  */
 class ActingMotion(val keyframes: List<BakedKeyframe>, val easeAllWithSpring: Boolean) {
     val size: Int = keyframes.size
+    /** The expression changes of the same timeline, for the face model (WP2.3). */
+    val face: FaceTimeline = FaceTimeline.fromKeyframes(keyframes)
     /** Progress at which the eased shape first reaches [ActingParams.ARRIVAL_FRACTION] of the move (0 for rigid). */
     val arrivalProgress = FloatArray(size)
     /** How far the eased shape itself overshoots 1, as a fraction of the move (the implicit spring does, slightly). */

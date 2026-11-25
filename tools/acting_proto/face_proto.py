@@ -359,15 +359,21 @@ def checks():
     return ok
 
 
+REF_SEEDS = (424242, 0xcbf29ce484222325)
+REF_TIMES = [19 / 64, 63 / 64, 65 / 64, 69 / 64, 76 / 64, 90 / 64, 131 / 64, 137 / 64, 140 / 64, 148 / 64, 3.0, 257 / 64, 269 / 64, 323 / 64, 467 / 64, 622 / 64]
+
+
 def emit_reference():
-    seed = 424242
-    tl = Timeline(NORMAL, [(1.0, WIDE), (2.1, ANGRY), (2.2, HAPPY), (4.0, SQUINT)])
-    print("// seed", seed, "timeline NORMAL; WIDE@1.0 ANGRY@2.1 HAPPY@2.2 SQUINT@4.0")
-    print("// t, level, eyeRad, mouthW, mouthB, browH, browL, heightMul, openness, gazeX, gazeY, tilt")
-    for lvn in ("SUBTLE", "NORMAL", "BOLD"):
-        for t in (0.3, 0.97, 1.013, 1.07, 1.19, 1.4, 2.03, 2.137, 2.173, 2.31, 3.0, 4.013, 4.2, 5.05, 7.3, 9.71):
-            f = resolve(tl, seed, t, lvn)
-            print("%s, %.3f, %s" % (lvn, t, ", ".join("%.9f" % f[k] for k in ("eyeRad", "mouthW", "mouthB", "browH", "browL", "heightMul", "openness", "gazeX", "gazeY", "tilt"))))
+    """Rows pinned by FaceMotionTest: seed,level,t,eyeRad,mouthW,mouthB,browH,browL,heightMul,openness,gazeX,gazeY,tilt.
+    Times are multiples of 1/64 so float32 holds them exactly (see the WP2.2 lesson about keyframe boundaries)."""
+    tl = Timeline(NORMAL, [(1.0, WIDE), (2.125, ANGRY), (2.25, HAPPY), (4.0, SQUINT)])
+    print("# timeline NORMAL; WIDE@1.0 ANGRY@2.125 HAPPY@2.25 SQUINT@4.0; legacy blink openness 0.8, blink duration 0.15")
+    for seed in REF_SEEDS:
+        for lvn in ("SUBTLE", "NORMAL", "BOLD"):
+            for t in REF_TIMES:
+                f = resolve(tl, seed, t, lvn, legacy_open=0.8)
+                print("%d,%s,%r,%s" % (seed if seed < (1 << 63) else seed - (1 << 64), lvn, t,
+                      ",".join("%.9f" % f[k] for k in ("eyeRad", "mouthW", "mouthB", "browH", "browL", "heightMul", "openness", "gazeX", "gazeY", "tilt"))))
 
 
 if __name__ == "__main__":

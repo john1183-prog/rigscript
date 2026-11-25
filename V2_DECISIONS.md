@@ -2937,6 +2937,37 @@ approved by the person before implementing:**
   two defaulted fields (`gazeDx`, `gazeDy`). No renderer changed in this piece. Verification: local full suite 289 passed, goldens
   unchanged; CI pending when written. NOT device-tested.
 
+- **2026-11-25 — WP2.3 step 2c: the face model ported, wired through the engine and both renderers.** Craft (A4). New
+  `engine/acting/FaceMotion.kt`: `FaceTimeline` (the expression that holds before the first change, and the change times, built from
+  the keyframes by the legacy rule: the rightmost keyframe at or before the time wins, the first keyframe's expression holds from
+  t = 0, a keyframe that merely carries the expression forward is no change, two keyframes at one time keep the later) and
+  `FaceMotionModel` (the prototype's blend, anticipation squint and take, brows, gaze, head tilt and coupled blink, line for line,
+  allocation-free with a per-thread scratch). `ActingMotion.face` holds the timeline; `ActingLevel` gained three trailing defaulted
+  fields (`faceAnticipationSec` 0.04/0.06/0.08, `faceTakeScale` 0.5/1.0/1.4, `gazeScale` 0.6/1.0/1.0); the constants live in
+  `ActingParams` (`FACE_*`, `GAZE_*`, `HEAD_TILT_MAX_DEG`). `ActingFrame` gained the inputs `eyeOpenness` and `blinkDurationSec` (the
+  engine's own resolved blink, so script and natural blinks still work and the coupled blink takes the SMALLER openness) and the
+  output `face`; `ActingLayer` fills it after the motion stage and adds the head tilt (at most 3 degrees, clockwise positive) to
+  the head bone, clamped to the joint limits the same way as the motion stage. `PlaybackEngine.renderFace` is the acted face or null
+  when Acting is OFF or there is no motion, and a null face means the renderers draw the legacy face from `expression`,
+  `eyeOpenness`, `mouthShape` and `amplitude` exactly as before. `RigRenderer.draw` and `GlesFigureFrame.fromFkMatrices` take
+  `face: ResolvedFace? = null` and call the `ResolvedFace` overloads of `FaceGeometry` when it is set; the three call sites
+  (`AnimationSurfaceView`, `VideoExporter`, `GlesExporter`) pass `engine.renderFace`, except that the pose editor passes null (it draws
+  the base pose, so it draws the base face). The mouth SHAPE and openness still come from the engine's amplitude path: WP2.4 owns the
+  mouth, so the acted face carries only the expression-driven mouth width and bias for now. Gaze is idle only and never a script
+  target (a target will arrive with `look_at`, WP2.5). Evidence: `FaceMotionTest` (15) pins the Kotlin model to
+  `face_proto.py --emit-reference` (96 rows, 2 seeds, 3 levels, tolerance 2e-6, times chosen exact in float32) and the splitmix hash to
+  8 Python values; steady state after the 0.6 s settle equals the legacy eye radius and mouth for all six expressions at all three
+  levels (and the legacy brow numbers for worried and angry); continuity (no step above 0.08 in the eye height or 0.01 in the eye
+  radius at 240 Hz, even with six changes within 1.1 s), bounds and finiteness; saccade intervals 1.0 to 3.2 s for 4 seeds over 3,000
+  saccades; gaze at most 0.18 and tilt at most 3 degrees over 400 s at every level; coupled blink rate about 0.35; a level with no gaze has
+  none; the face is a pure function (a shuffled evaluation order gives identical results); seek equals sequential on every fixture
+  (rendered face and head angle); Off gives a null face and an untouched legacy state. The renderer edits are three call-site
+  changes and are VERIFIED-BY-READING and by CI compile, NOT run on a device. Known soft spot: with Acting on and a script that
+  never changes expression, brows still appear (flat, at 1.8 eye radii) because the brief asks for brows on every expression; if a
+  character was designed without brows this is visible content the script did not ask for, so it is flagged in TEST_CHECKLIST for a
+  look, and `FACE_BROW_*` is the one place to change it. Verification: local full suite 304 passed, goldens unchanged;
+  CI pending when written. NOT device-tested.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

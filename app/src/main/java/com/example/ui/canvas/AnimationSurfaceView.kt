@@ -241,7 +241,9 @@ class AnimationSurfaceView @JvmOverloads constructor(
                 referenceOverlay       = referenceOverlay,
                 referenceOverlayBitmap = referenceOverlayBitmap,
                 overlays               = engine.currentOverlays,
-                overrides              = engine.currentFigureOverrides)
+                overrides              = engine.currentFigureOverrides,
+                // WP2.3: the acted face, except in the pose editor (it draws the base pose, so it draws the base face).
+                face                   = if (poseEditorMode) null else engine.renderFace)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 

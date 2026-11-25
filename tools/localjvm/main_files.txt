@@ -40,3 +40,4 @@ engine/acting/ActingLayer.kt
 engine/acting/ActingMotion.kt
 engine/FaceGeometry.kt
 engine/ResolvedFace.kt
+engine/acting/FaceMotion.kt

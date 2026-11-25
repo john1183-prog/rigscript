@@ -28,3 +28,4 @@ DiagnosticsReportTest.kt
 ActingLayerTest.kt
 ActingMotionTest.kt
 FaceGeometryTest.kt
+FaceMotionTest.kt

@@ -125,7 +125,10 @@ class RigRenderer {
         // FigureOverrides' doc comment. Defaulting to an all-null instance
         // means a project with no scripted overrides renders exactly as it
         // did before this feature existed.
-        overrides: FigureOverrides = FigureOverrides()
+        overrides: FigureOverrides = FigureOverrides(),
+        // WP2.3: the acted face (PlaybackEngine.renderFace). Null = the legacy face from expression/eyeOpenness/mouthShape,
+        // exactly as before; non-null replaces expression and eyeOpenness for the eyes, brows and mouth.
+        face: ResolvedFace? = null
     ) {
         val minDim  = min(canvasW, canvasH).toFloat()
         val figureScaleDim =
@@ -353,10 +356,10 @@ class RigRenderer {
                 val r = bone.headNormalizedRadius * scale * headScaleMultiplier
                 canvas.drawCircle(endX, endY, r, headPaint)
                 if (appearance.showMouth) {
-                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
+                    drawMouth(canvas, endX, endY, startX, startY, r, mouthShape, mouthOpenness, expression, headScaleMultiplier, face)
                 }
                 if (appearance.showEyes) {
-                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, headScaleMultiplier, appearance)
+                    drawEyes(canvas, endX, endY, startX, startY, r, eyeOpenness, expression, headScaleMultiplier, appearance, face)
                 }
             } else {
                 canvas.drawLine(startX, startY, endX, endY, bonePaint)
@@ -966,14 +969,16 @@ class RigRenderer {
         r: Float,
         mouthShape: Int, mouthOpenness: Float,
         expression: Int,
-        headScaleMultiplier: Float
+        headScaleMultiplier: Float,
+        face: ResolvedFace? = null
     ) {
         // Geometry now lives in FaceGeometry.mouth (FaceGeometry.kt, WP2.3) —
         // shared with the GLES export path (Phase 3, V2_DECISIONS.md) so
         // there's exactly one implementation of this math, not two. See that
         // function's doc comment for the headScaleMultiplier-on-the-anchor
         // reasoning that used to live here.
-        val g = FaceGeometry.mouth(hx, hy, nx, ny, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
+        val g = if (face != null) FaceGeometry.mouth(hx, hy, nx, ny, r, mouthShape, mouthOpenness, face, headScaleMultiplier)
+                else FaceGeometry.mouth(hx, hy, nx, ny, r, mouthShape, mouthOpenness, expression, headScaleMultiplier)
         if (g.rotationDeg != 0f) canvas.save()
         if (g.rotationDeg != 0f) canvas.rotate(g.rotationDeg, g.cx, g.cy)
         canvas.drawOval(g.cx - g.halfWidth, g.cy - g.halfHeight, g.cx + g.halfWidth, g.cy + g.halfHeight, mouthPaint)
@@ -1018,12 +1023,14 @@ class RigRenderer {
         openness: Float,
         expression: Int,
         headScaleMultiplier: Float,
-        appearance: AppearanceSettings
+        appearance: AppearanceSettings,
+        face: ResolvedFace? = null
     ) {
         // Geometry now lives in FaceGeometry.eyes (FaceGeometry.kt, WP2.3) — see
         // FaceGeometry's doc comment for why this is shared with the
         // GLES export path rather than duplicated.
-        val eyes = FaceGeometry.eyes(hx, hy, nx, ny, r, openness, expression, headScaleMultiplier, appearance)
+        val eyes = if (face != null) FaceGeometry.eyes(hx, hy, nx, ny, r, face, headScaleMultiplier, appearance)
+                   else FaceGeometry.eyes(hx, hy, nx, ny, r, openness, expression, headScaleMultiplier, appearance)
         val rot = eyes.left.rotationDeg   // same for both eyes — one head, one rotation
 
         if (rot != 0f) canvas.save()
@@ -1042,7 +1049,7 @@ class RigRenderer {
         )
         if (rot != 0f) canvas.restore()
 
-        val brows = FaceGeometry.brows(eyes, expression)
+        val brows = if (face != null) FaceGeometry.brows(eyes, face) else FaceGeometry.brows(eyes, expression)
         if (brows != null) drawEyebrows(canvas, brows)
     }
 

@@ -412,7 +412,8 @@ object VideoExporter {
                         referenceOverlay       = overlay,
                         referenceOverlayBitmap = overlayBitmap,
                         overlays               = timeResolvedOverlays,
-                        overrides              = figureOverrides)
+                        overrides              = figureOverrides,
+                        face                   = engine.renderFace)
 
                     t.bitmap.getPixels(t.pixels, 0, t.width, 0, 0, t.width, t.height)
                     argbToNV12(t.pixels, t.width, t.height, t.nv12)

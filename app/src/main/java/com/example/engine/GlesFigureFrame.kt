@@ -400,7 +400,9 @@ data class GlesFigureFrame(
             captionText: String? = null,
             // Text phase, sub-phase 3 (V2_DECISIONS.md) — see ReferenceOverlayDraw's own doc comment.
             referenceOverlay: ReferenceOverlay? = null,
-            referenceOverlayBitmap: Bitmap? = null
+            referenceOverlayBitmap: Bitmap? = null,
+            // WP2.3: the acted face (PlaybackEngine.renderFace); null = the legacy face from expression/eyeOpenness.
+            face: ResolvedFace? = null
         ): GlesFigureFrame {
             val rig    = StickFigureRig
             val bones  = rig.BONES
@@ -467,21 +469,27 @@ data class GlesFigureFrame(
                     // and before the next bone, preserving the same z-order guarantee
                     // this class's own doc comment calls out.
                     if (appearance.showMouth) {
-                        val g = FaceGeometry.mouth(
+                        val g = if (face != null) FaceGeometry.mouth(
+                            endX, endY, startX, startY, r,
+                            mouthShape, mouthOpenness, face, headScaleMultiplier
+                        ) else FaceGeometry.mouth(
                             endX, endY, startX, startY, r,
                             mouthShape, mouthOpenness, expression, headScaleMultiplier
                         )
                         commands += DrawCommand.Oval(g.cx, g.cy, g.halfWidth, g.halfHeight, mouthColor, g.rotationDeg)
                     }
                     if (appearance.showEyes) {
-                        val eyes = FaceGeometry.eyes(
+                        val eyes = if (face != null) FaceGeometry.eyes(
+                            endX, endY, startX, startY, r,
+                            face, headScaleMultiplier, appearance
+                        ) else FaceGeometry.eyes(
                             endX, endY, startX, startY, r,
                             eyeOpenness, expression, headScaleMultiplier, appearance
                         )
                         commands += DrawCommand.Oval(eyes.left.cx, eyes.left.cy, eyes.left.halfWidth, eyes.left.halfHeight, eyeColor, eyes.left.rotationDeg)
                         commands += DrawCommand.Oval(eyes.right.cx, eyes.right.cy, eyes.right.halfWidth, eyes.right.halfHeight, eyeColor, eyes.right.rotationDeg)
 
-                        val brows = FaceGeometry.brows(eyes, expression)
+                        val brows = if (face != null) FaceGeometry.brows(eyes, face) else FaceGeometry.brows(eyes, expression)
                         if (brows != null) {
                             commands += DrawCommand.Eyebrow(brows.left.sx, brows.left.sy, brows.left.ex, brows.left.ey, brows.halfWidth, eyebrowColor)
                             commands += DrawCommand.Eyebrow(brows.right.sx, brows.right.sy, brows.right.ex, brows.right.ey, brows.halfWidth, eyebrowColor)

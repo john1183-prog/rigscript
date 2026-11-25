@@ -27,7 +27,9 @@ class ActingLevel(
     /** Face (WP2.3): scales the anticipation squint depth and the take (eye-height overshoot). */
     val faceTakeScale: Float = 0f,
     /** Face (WP2.3): scales the idle gaze (the cap of [ActingParams.GAZE_CAP] is never exceeded). 0 = no gaze. */
-    val gazeScale: Float = 0f
+    val gazeScale: Float = 0f,
+    /** Speech (WP2.4): scales the acted mouth opening (clamped to 0..1 after scaling). 1 = the legacy class heights. */
+    val mouthOpenScale: Float = 1f
 )
 
 /** All acting constants, in one place (brief A8 "Tunables in one place"). */
@@ -35,9 +37,9 @@ object ActingParams {
 
     /** OFF: every Craft amount is zero (the layer does not run at all; see [ActingLayer]). */
     val OFF_LEVEL = ActingLevel(0f, 0f, 0f, 0f, 0f, 0f, 0f)
-    val SUBTLE_LEVEL = ActingLevel(0.012f, 0.03f, 0.03f, 4f, 0.025f, 3f, 0.12f, 0.07f, 0.15f, 0.040f, 0.5f, 0.6f)
-    val NORMAL_LEVEL = ActingLevel(0.025f, 0.06f, 0.06f, 6f, 0.05f, 5f, 0.18f, 0.10f, 0.25f, 0.060f, 1.0f, 1.0f)
-    val BOLD_LEVEL = ActingLevel(0.040f, 0.09f, 0.09f, 9f, 0.08f, 8f, 0.24f, 0.13f, 0.30f, 0.080f, 1.4f, 1.0f)
+    val SUBTLE_LEVEL = ActingLevel(0.012f, 0.03f, 0.03f, 4f, 0.025f, 3f, 0.12f, 0.07f, 0.15f, 0.040f, 0.5f, 0.6f, 0.85f)
+    val NORMAL_LEVEL = ActingLevel(0.025f, 0.06f, 0.06f, 6f, 0.05f, 5f, 0.18f, 0.10f, 0.25f, 0.060f, 1.0f, 1.0f, 1.0f)
+    val BOLD_LEVEL = ActingLevel(0.040f, 0.09f, 0.09f, 9f, 0.08f, 8f, 0.24f, 0.13f, 0.30f, 0.080f, 1.4f, 1.0f, 1.15f)
 
     fun levelFor(intensity: ActingIntensity): ActingLevel = when (intensity) {
         ActingIntensity.OFF -> OFF_LEVEL
@@ -104,4 +106,32 @@ object ActingParams {
     /** A shift larger than this fraction of the head radius may carry a blink, with this seeded probability. */
     const val GAZE_BLINK_SHIFT: Double = 0.12
     const val GAZE_P_BLINK: Double = 0.35
+
+    // WP2.4 speech mouth (prototype: tools/acting_proto/mouth_proto.py; the constants are the same).
+    /** The envelope rate (AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS) and the track samples per envelope frame (120 Hz). */
+    const val MOUTH_ENV_FPS: Int = 30
+    const val MOUTH_SUBSTEPS: Int = 4
+    /** Time constants in seconds: the opening rises with the attack and falls with the release; width and roundness co-articulate. */
+    const val MOUTH_TAU_ATTACK: Double = 0.035
+    const val MOUTH_TAU_RELEASE: Double = 0.085
+    const val MOUTH_TAU_WIDTH: Double = 0.060
+    const val MOUTH_TAU_ROUND: Double = 0.090
+    /** Gate hysteresis as a fraction of the silence threshold, and the sustained silence that closes the mouth fully. */
+    const val MOUTH_HYSTERESIS: Double = 0.08
+    const val MOUTH_SILENCE_HOLD_SEC: Double = 0.10
+    /** A class change must last this many envelope frames to count. */
+    const val MOUTH_CLASS_DWELL: Int = 2
+    /** A closed mouth snaps to exactly 0 below this opening. */
+    const val MOUTH_SNAP_CLOSED: Double = 0.004
+    /** Half-width and half-height as fractions of the head radius at parameter 0 and 1 (H0 is the legacy closed 0.05 x 0.5). */
+    const val MOUTH_W_MIN: Double = 0.32
+    const val MOUTH_W_MAX: Double = 0.46
+    const val MOUTH_H0: Double = 0.025
+    const val MOUTH_HMAX: Double = 0.28
+    /** Legacy closed half-width. */
+    const val MOUTH_CLOSED_HALF_WIDTH: Double = 0.44
+    /** A loud WIDE vowel rounds up to this much; roundness narrows the mouth by up to MOUTH_ROUND_W_CUT and opens it by up to MOUTH_ROUND_H_GAIN. */
+    const val MOUTH_ROUND_MAX: Double = 0.5
+    const val MOUTH_ROUND_W_CUT: Double = 0.12
+    const val MOUTH_ROUND_H_GAIN: Double = 0.25
 }

@@ -16,6 +16,10 @@ import com.example.engine.StickFigureRig
  */
 object ActingLayer {
 
+    /** Per-thread scratch for the mouth evaluation (I7: nothing is allocated per frame); read through a non-null helper. */
+    private val mouthScratchLocal: ThreadLocal<DoubleArray> = ThreadLocal.withInitial { DoubleArray(3) }
+    private fun mouthScratch(): DoubleArray = mouthScratchLocal.get()!!
+
     private val HEAD_IDX: Int = StickFigureRig.BONES.indexOfFirst { it.id == "head" }
 
     fun apply(base: ActingFrame, ctx: ActingContext?, timeSec: Float, out: ActingFrame): ActingFrame {
@@ -57,12 +61,28 @@ object ActingLayer {
             if (lo != null && hi != null) v = v.coerceIn(minOf(bone.defaultAngleDegrees + lo, b), maxOf(bone.defaultAngleDegrees + hi, b))
             out.angles[HEAD_IDX] = v
         }
+        // Stage 3 (WP2.4, speech): the baked continuous mouth. No track (no envelope, or amplitude motion off) keeps the legacy
+        // shape table, which is what the renderers draw when mouthActed is false.
+        val track = base.mouthTrack
+        val face = out.face
+        if (track != null && !track.isEmpty) {
+            val m = mouthScratch()
+            track.evaluate(t, m)
+            val open = (m[0] * lv.mouthOpenScale).coerceIn(0.0, 1.0)
+            if (open.isFinite() && m[1].isFinite() && m[2].isFinite()) {
+                face.mouthActed = true
+                face.mouthOpen = open.toFloat()
+                face.mouthWidth = m[1].coerceIn(0.0, 1.0).toFloat()
+                face.mouthRound = m[2].coerceIn(0.0, 1.0).toFloat()
+            } else face.mouthActed = false
+        } else face.mouthActed = false
         out.expression = base.expression
         out.mouthShape = base.mouthShape
         out.amplitude = base.amplitude
         out.eyeOpenness = base.eyeOpenness
         out.blinkDurationSec = base.blinkDurationSec
         out.motion = motion
+        out.mouthTrack = track
         return out
     }
 }

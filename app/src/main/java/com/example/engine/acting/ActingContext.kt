@@ -28,7 +28,9 @@ class ActingContext(
     /** Amplitude envelope (0..1) sampled at [envelopeFps]; empty when there is none. */
     val envelope: FloatArray = FloatArray(0),
     val envelopeFps: Int = 30,
-    val targets: ActingTargets = ActingTargets.NONE
+    val targets: ActingTargets = ActingTargets.NONE,
+    /** Mouth class per envelope frame (`MouthShape`), for the speech mouth (WP2.4); empty = every frame counts as MID. */
+    val mouthShapes: IntArray = IntArray(0)
 ) {
     /** Envelope sample at [timeSec]: the index is clamped, and 0 when there is no envelope. Allocation-free. */
     fun envelopeAt(timeSec: Float): Float {
@@ -38,7 +40,7 @@ class ActingContext(
     }
 
     /** The same context with another intensity (the editor's A/B toggle uses this). */
-    fun withIntensity(other: ActingIntensity): ActingContext = ActingContext(other, seed, envelope, envelopeFps, targets)
+    fun withIntensity(other: ActingIntensity): ActingContext = ActingContext(other, seed, envelope, envelopeFps, targets, mouthShapes)
 
     companion object {
         /** FNV-1a (64 bit) over the characters of the project id: stable across runs, devices and builds. */
@@ -57,9 +59,10 @@ class ActingContext(
             projectId: String,
             envelope: FloatArray = FloatArray(0),
             envelopeFps: Int = 30,
-            targets: ActingTargets = ActingTargets.NONE
+            targets: ActingTargets = ActingTargets.NONE,
+            mouthShapes: IntArray = IntArray(0)
         ): ActingContext =
-            ActingContext(ActingIntensity.parse(intensityName), seedForProject(projectId), envelope, envelopeFps, targets)
+            ActingContext(ActingIntensity.parse(intensityName), seedForProject(projectId), envelope, envelopeFps, targets, mouthShapes)
     }
 }
 
@@ -77,6 +80,8 @@ class ActingFrame(val angles: FloatArray) {
     val face: com.example.engine.ResolvedFace = com.example.engine.ResolvedFace()
     /** The compiled timeline, for the motion model (WP2.2). Set by the engine; null means the layer has nothing to act on. */
     var motion: ActingMotion? = null
+    /** The baked speech mouth (WP2.4), an INPUT set by the engine; null or empty means the legacy mouth is drawn. */
+    var mouthTrack: MouthTrack? = null
     var expression: Int = 0
     var mouthShape: Int = 0
     var amplitude: Float = 0f

@@ -27,6 +27,15 @@ class ResolvedFace {
     /** Mouth width multiplier and vertical bias as a fraction of the head radius (legacy: HAPPY 1.12/-0.06, WORRIED/ANGRY 0.90/+0.05). */
     var mouthWidthMul: Float = 1f
     var mouthCyBiasFrac: Float = 0f
+    /**
+     * Speech mouth (WP2.4). When [mouthActed] the mouth is drawn from the continuous parameters below (each 0..1) and the
+     * discrete shape and openness the renderers pass are ignored; false (legacy, and acting with no envelope) keeps the
+     * legacy shape table. [mouthOpen] is the vertical aperture, [mouthWidth] 0 = narrow .. 1 = wide, [mouthRound] 0..1.
+     */
+    var mouthActed: Boolean = false
+    var mouthOpen: Float = 0f
+    var mouthWidth: Float = 0f
+    var mouthRound: Float = 0f
 
     /** Fills the legacy face for a discrete [expression] and the blink [openness]. Returns this. */
     fun setLegacy(expression: Int, openness: Float): ResolvedFace {
@@ -51,6 +60,8 @@ class ResolvedFace {
             Expression.WORRIED, Expression.ANGRY -> { mouthWidthMul = 0.90f; mouthCyBiasFrac = 0.05f }
             else -> { mouthWidthMul = 1f; mouthCyBiasFrac = 0f }
         }
+        mouthActed = false
+        mouthOpen = 0f; mouthWidth = 0f; mouthRound = 0f
         return this
     }
 
@@ -59,5 +70,6 @@ class ResolvedFace {
         gazeX = o.gazeX; gazeY = o.gazeY
         browsVisible = o.browsVisible; browHeight = o.browHeight; browInnerLift = o.browInnerLift
         mouthWidthMul = o.mouthWidthMul; mouthCyBiasFrac = o.mouthCyBiasFrac
+        mouthActed = o.mouthActed; mouthOpen = o.mouthOpen; mouthWidth = o.mouthWidth; mouthRound = o.mouthRound
     }
 }

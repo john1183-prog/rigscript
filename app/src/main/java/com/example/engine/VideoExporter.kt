@@ -159,7 +159,7 @@ object VideoExporter {
             it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
             it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
             it.actingContext = com.example.engine.acting.ActingContext.create(
-                appearance.actingIntensity, project.id, envelope, envFps)
+                appearance.actingIntensity, project.id, envelope, envFps, mouthShapes = mouthEnvelope)
         }
         // One shared renderer instance across all targets — safe because targets
         // are drawn sequentially within a single thread here, not concurrently.

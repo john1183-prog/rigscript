@@ -297,6 +297,29 @@ class FaceMotionTest {
     }
 
     @Test
+    fun theIdleGazeLooksInEveryDirection() {
+        // Sampled every 0.1 s over 400 s: left, right, up and down must all occur (all four quadrants), for each level
+        // that has gaze, and the eyes must reach well past the centre (more than half the cap) in each horizontal direction.
+        for ((name, lv) in levels) {
+            if (lv.gazeScale <= 0f) continue
+            val q = IntArray(4); var minX = 0.0; var maxX = 0.0; var minY = 0.0; var maxY = 0.0
+            val f = ResolvedFace()
+            val tl = FaceTimeline(Expression.NORMAL, FloatArray(0), IntArray(0))
+            for (i in 0 until 4000) {
+                FaceMotionModel.resolve(tl, lv, seed, i / 10.0, 1f, 0.15f, f)
+                val x = f.gazeX.toDouble(); val y = f.gazeY.toDouble()
+                if (abs(x) < 1e-6 && abs(y) < 1e-6) continue
+                q[(if (x >= 0) 0 else 1) + (if (y >= 0) 0 else 2)]++
+                minX = minOf(minX, x); maxX = maxOf(maxX, x); minY = minOf(minY, y); maxY = maxOf(maxY, y)
+            }
+            assertTrue("$name quadrants ${q.toList()}", q.all { it > 100 })
+            val reach = ActingParams.GAZE_CAP * lv.gazeScale
+            assertTrue("$name reaches left ($minX) and right ($maxX)", minX < -0.5 * reach && maxX > 0.5 * reach)
+            assertTrue("$name reaches up ($maxY) and down ($minY)", minY < -0.2 * reach && maxY > 0.2 * reach)
+        }
+    }
+
+    @Test
     fun gazeAndHeadTiltStayInsideTheirCaps() {
         for ((name, lv) in levels) for (sd in listOf(seed, 424242L, -3750763034362895579L)) {
             val f = ResolvedFace()
@@ -420,8 +443,8 @@ class FaceMotionTest {
 
     @Test
     fun theFaceNeverReadsTheEnvelopeSoTheMouthStaysWithTheLegacyShapeForNow() {
-        // WP2.4 will give the mouth continuous parameters; until then the acted face carries the expression-driven mouth
-        // width and bias only, and the renderers still take the mouth SHAPE and openness from the engine.
+        // The face model itself carries only the expression-driven mouth width and bias; the speech parameters (WP2.4) are
+        // filled by the acting layer from the baked mouth track (MouthMotionTest), never by FaceMotionModel.resolve.
         val f = ResolvedFace()
         FaceMotionModel.resolve(refTimeline, ActingParams.NORMAL_LEVEL, seed, 10.0, 1f, 0.15f, f)
         near("steady squint mouth width", 1.0, f.mouthWidthMul.toDouble(), 1e-9)

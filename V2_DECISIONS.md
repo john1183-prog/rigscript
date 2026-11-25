@@ -2968,6 +2968,51 @@ approved by the person before implementing:**
   look, and `FACE_BROW_*` is the one place to change it. Verification: local full suite 304 passed, goldens unchanged;
   CI pending when written. NOT device-tested.
 
+- **2026-11-25 — WP2.4 Speech and mouth (Craft; Python prototype `tools/acting_proto/mouth_proto.py`, port `engine/acting/MouthMotion.kt`).**
+  Classification (A4): CRAFT. The mouth only EXECUTES the amplitude and the classes the audio analysis already stored; no new visible
+  content, no script field, nothing in the prompt. Under Acting (Subtle, Normal, Bold) the mouth is three continuous parameters (open,
+  width, roundness, each 0..1) instead of one of four coarse shapes switched per frame. Design: the model is BAKED once from (envelope,
+  mouth classes, `AmplitudeSettings.silenceThreshold`) into a track sampled at 120 Hz (four steps per 30 fps envelope frame, exact
+  exponential coefficients) and the mouth at time t is a linear interpolation into it. So it is a pure function of the envelope and t:
+  seek equals sequential (I2) and, unlike the legacy smoothing, the result does not depend on the export frame rate. This is why the
+  brief's attack and release smoothing needed no closed form (the OPEN QUESTION about frame-rate independent smoothing still concerns
+  the LEGACY `smoothedAmplitude` and stays open; I1). Steps per envelope frame: (1) class: CLOSED counts as MID (quiet but voiced speech
+  opens a little; the legacy classes call it closed up to a linear 0.06), and a class change must last 2 frames, so one-frame blips are
+  ignored; (2) gate: opens above th x 1.08, closes only after 0.10 s below th x 0.92 (hysteresis about 8 percent, sustained silence),
+  th = the existing silence threshold; (3) targets: gate closed = closed mouth; open = the legacy class half-height at this amplitude,
+  the legacy class half-width, and a roundness of up to 0.5 for loud WIDE vowels; (4) open follows its target with attack 35 ms and
+  release 85 ms, width 60 ms and roundness 90 ms (co-articulation by smoothing between parameter sets); a closed mouth snaps to exactly
+  0. Geometry: `FaceGeometry.mouth(..., face)` draws from the parameters when `ResolvedFace.mouthActed` (half-width 0.32 to 0.46 and
+  half-height 0.025 to 0.28 of the head radius; roundness narrows by up to 12 percent and opens by up to 25 percent); otherwise the
+  legacy shape table, bit-equal (`FaceGeometryTest.LegacyFace` unchanged and green, goldens unchanged). Steady state at a class and
+  amplitude equals the legacy class oval (MID, NARROW and CLOSED exactly; a loud WIDE vowel differs by the roundness, deliberately).
+  Plumbing: `ActingContext.mouthShapes` (both exporters and the preview pass the same stored classes, so preview equals export),
+  `PlaybackEngine` bakes lazily and caches by identity of the envelope and classes and by the threshold, `ActingFrame.mouthTrack`,
+  stage 3 of `ActingLayer`, a per-level `ActingLevel.mouthOpenScale` (0.85, 1.0, 1.15; clamped to 1). The legacy mouth stays when
+  Acting is Off, when there is no envelope, when the envelope is not at 30 fps, or when `AmplitudeSettings.enabled` is false (that
+  switch means "no audio reaction"); a bake failure is recorded by `ActingFault` and also leaves the legacy mouth (I11). Rejected:
+  evaluating the mouth from the engine's per-call `smoothedAmplitude` (stateful, frame-rate dependent, would break seek equals
+  sequential); a transcript or phoneme mouth (the brief excludes it); more than three parameters. Looked at before porting:
+  `out/12` (step response), `out/13` (speech: envelope, class, gate, parameters, legacy against acted height), `out/14` (noisy worst
+  case) and `out/15` (strips). Findings that changed the work: the first flicker metric (direction reversals) counted real syllable
+  rhythm and failed, so the check counts visible JUMPS (a half-height step above 0.04 of the head radius between two 60 fps frames):
+  on the noisy worst case the legacy mouth jumps 9.3 times a second and the acted mouth 0.5 (onsets only). Evidence: `MouthMotionTest`
+  (10) pins the Kotlin track to `mouth_proto.py --emit-reference` (the envelope and 52 rows, tolerance 1e-3), steady state against the
+  legacy oval through `FaceGeometry`, exact closure, the dip shorter than the hold, attack faster than release, jumps on a noisy
+  envelope, bounds and finiteness with NaN and out-of-range input, determinism and sampling-order independence, 30 against 60 fps
+  sampling, seek equals sequential through the engine, legacy mouth when OFF or without an envelope, level scaling. `FaceMotionTest`
+  gained `theIdleGazeLooksInEveryDirection` (see the gaze note). The renderer path is unchanged (the existing call sites already pass
+  the face); VERIFIED-BY-READING and by CI compile, NOT run on a device. Untuned on a device: all `MOUTH_*` constants and
+  `mouthOpenScale`. Verification: local full suite 315 passed, goldens unchanged; CI pending when written. NOT device-tested.
+- **2026-11-25 — Gaze directions confirmed (WP2.3 follow-up; no behaviour change).** John asked to confirm the figure can look in different
+  directions. Idle gaze targets are drawn over the full circle (squashed to 70 percent vertically) up to the 18 percent cap, so left,
+  right, up, down and the diagonals all occur: `tools/acting_proto/gaze_sheet.py` renders the face looking in nine directions
+  (`out/16`) and the spread of 400 seeded targets (`out/17`, all four quadrants 89 to 109 each); `FaceMotionTest.theIdleGazeLooksInEveryDirection`
+  asserts all four quadrants and a reach of more than half the cap left and right over 400 s at every level. Honest limits: the
+  look is small by design (at most 18 percent of the head radius, a few pixels on a phone) and is idle only; a directed look
+  (`look_at`, a bigger angle, a target) arrives with WP2.5 and would raise or bypass the cap there. The PIL drawer is not the app's
+  renderer, so what the shift looks like in the app is for the device check.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

@@ -7,6 +7,8 @@ import com.example.engine.acting.ActingFrame
 import com.example.engine.acting.ActingIntensity
 import com.example.engine.acting.ActingLayer
 import com.example.engine.acting.ActingMotion
+import com.example.engine.acting.ActingParams
+import com.example.engine.acting.MouthTrack
 import kotlin.math.*
 
 /**
@@ -280,6 +282,12 @@ class PlaybackEngine {
     private val actingOut = ActingFrame(FloatArray(n))
     private var actedActive = false
     private var actingMotion: ActingMotion? = null
+    // Speech mouth (WP2.4): baked from the context's envelope and classes; rebuilt only when one of them (by identity) or the
+    // silence threshold changes. Touched only by the thread that calls applyActing.
+    private var mouthTrack: MouthTrack? = null
+    private var mouthTrackEnvelope: FloatArray? = null
+    private var mouthTrackShapes: IntArray? = null
+    private var mouthTrackThreshold: Float = Float.NaN
 
     /** Set by the owner of the engine (preview view or exporter). Null or OFF: the legacy path, no work. Re-applies at the current time. */
     @Volatile var actingContext: ActingContext? = null
@@ -525,8 +533,29 @@ class PlaybackEngine {
             actingMotion = motion
         }
         actingBase.motion = motion
+        // I11: a failing bake leaves the legacy mouth and is recorded like any other acting fault.
+        actingBase.mouthTrack = try { speechMouthTrack(ctx) } catch (e: Throwable) { actingFault.record(e); null }
         val acted = actingFault.guard(actingBase) { ActingLayer.apply(actingBase, ctx, timeSec, actingOut) }
         actedActive = acted === actingOut
+    }
+
+    /**
+     * The baked speech mouth for [ctx], or null when the legacy mouth must stay: amplitude motion switched off, no envelope,
+     * or an envelope that is not at the analysis rate. The bake runs once per (envelope, classes, threshold).
+     */
+    private fun speechMouthTrack(ctx: ActingContext): MouthTrack? {
+        val s = amplitudeSettings
+        if (!s.enabled || ctx.envelope.isEmpty() || ctx.envelopeFps != ActingParams.MOUTH_ENV_FPS) return null
+        var track = mouthTrack
+        if (track == null || mouthTrackEnvelope !== ctx.envelope || mouthTrackShapes !== ctx.mouthShapes ||
+            mouthTrackThreshold != s.silenceThreshold) {
+            track = MouthTrack.bake(ctx.envelope, ctx.mouthShapes, s.silenceThreshold)
+            mouthTrack = track
+            mouthTrackEnvelope = ctx.envelope
+            mouthTrackShapes = ctx.mouthShapes
+            mouthTrackThreshold = s.silenceThreshold
+        }
+        return track
     }
 
     /**

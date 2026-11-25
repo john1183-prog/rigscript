@@ -165,6 +165,14 @@ class AnimationSurfaceView @JvmOverloads constructor(
     private var actingIntensityName: String? = null
     private var actingProjectId: String? = null
     private var actingEnvelope: FloatArray = FloatArray(0)
+    private var actingMouthShapes: IntArray = IntArray(0)
+
+    /** Mouth classes per envelope frame for the acted speech mouth (WP2.4); the same data the exporters use, so preview matches export. */
+    fun setMouthShapes(shapes: IntArray) {
+        if (shapes === actingMouthShapes) return
+        actingMouthShapes = shapes
+        pushActing()
+    }
 
     /**
      * Tells the engine how much acting to apply. [intensityName] is the stored setting, or "OFF" while the editor's A/B
@@ -180,7 +188,8 @@ class AnimationSurfaceView @JvmOverloads constructor(
 
     private fun pushActing() {
         val ctx = com.example.engine.acting.ActingContext.create(
-            actingIntensityName, actingProjectId ?: "", actingEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
+            actingIntensityName, actingProjectId ?: "", actingEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS,
+            mouthShapes = actingMouthShapes)
         renderHandler.post { engine.actingContext = ctx }
     }
     fun setAmplitudeSettings(s: AmplitudeSettings) { renderHandler.post { engine.amplitudeSettings = s } }

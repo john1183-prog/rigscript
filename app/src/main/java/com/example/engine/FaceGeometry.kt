@@ -97,7 +97,32 @@ object FaceGeometry {
         hx: Float, hy: Float, nx: Float, ny: Float, r: Float,
         mouthShape: Int, mouthOpenness: Float, face: ResolvedFace,
         headScaleMultiplier: Float
-    ): FaceOval = mouthCore(hx, hy, nx, ny, r, mouthShape, mouthOpenness, face.mouthWidthMul, face.mouthCyBiasFrac, headScaleMultiplier)
+    ): FaceOval =
+        if (face.mouthActed) mouthActed(hx, hy, nx, ny, r, face, headScaleMultiplier)
+        else mouthCore(hx, hy, nx, ny, r, mouthShape, mouthOpenness, face.mouthWidthMul, face.mouthCyBiasFrac, headScaleMultiplier)
+
+    /**
+     * WP2.4: the mouth from the continuous speech parameters (see `MouthTrack`). Same anchor and head rotation as
+     * [mouthCore]; half-width and half-height are fractions of the head radius, so steady state at a class and amplitude
+     * equals the legacy class oval (`MouthMotionTest`, except the roundness of a loud WIDE vowel).
+     */
+    private fun mouthActed(
+        hx: Float, hy: Float, nx: Float, ny: Float, r: Float, face: ResolvedFace, headScaleMultiplier: Float
+    ): FaceOval {
+        val cx = hx + (nx - hx) * 0.24f * headScaleMultiplier
+        val cy = hy + (ny - hy) * 0.24f * headScaleMultiplier + face.mouthCyBiasFrac * r
+        val round = face.mouthRound.coerceIn(0f, 1f)
+        val wFrac = (MOUTH_W_MIN + (MOUTH_W_MAX - MOUTH_W_MIN) * face.mouthWidth.coerceIn(0f, 1f)) * (1f - MOUTH_ROUND_W_CUT * round)
+        val hFrac = (MOUTH_H0 + (MOUTH_HMAX - MOUTH_H0) * face.mouthOpen.coerceIn(0f, 1f)) * (1f + MOUTH_ROUND_H_GAIN * round)
+        return FaceOval(cx, cy, wFrac * r * face.mouthWidthMul, hFrac * r, headRotationDeg(hx, hy, nx, ny))
+    }
+
+    private const val MOUTH_W_MIN = 0.32f
+    private const val MOUTH_W_MAX = 0.46f
+    private const val MOUTH_H0 = 0.025f
+    private const val MOUTH_HMAX = 0.28f
+    private const val MOUTH_ROUND_W_CUT = 0.12f
+    private const val MOUTH_ROUND_H_GAIN = 0.25f
 
     private fun mouthCore(
         hx: Float, hy: Float, nx: Float, ny: Float, r: Float,

@@ -41,3 +41,4 @@ engine/acting/ActingMotion.kt
 engine/FaceGeometry.kt
 engine/ResolvedFace.kt
 engine/acting/FaceMotion.kt
+engine/acting/MouthMotion.kt

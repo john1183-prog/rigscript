@@ -143,7 +143,7 @@ object GlesExporter {
             it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
             it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
             it.actingContext = com.example.engine.acting.ActingContext.create(
-                appearance.actingIntensity, project.id, envelope, envFps)
+                appearance.actingIntensity, project.id, envelope, envFps, mouthShapes = mouthEnvelope)
         }
 
         // Decoded once, shared by every target: I/O never happens inside the per-frame loop.

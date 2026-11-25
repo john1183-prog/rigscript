@@ -29,3 +29,4 @@ ActingLayerTest.kt
 ActingMotionTest.kt
 FaceGeometryTest.kt
 FaceMotionTest.kt
+MouthMotionTest.kt

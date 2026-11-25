@@ -131,6 +131,15 @@ fun EditorScreen(
         } ?: FloatArray(0)
     }
 
+    // WP2.4: the mouth classes for the acted speech mouth, read once like the envelope (the exporters read the same files).
+    val mouthShapesArray = remember(project?.mouthShapeEnvelopePath, project?.audioFilePath) {
+        project?.let { p ->
+            @Suppress("DEPRECATION")
+            EnvelopeStore.readMouthShapesWithFallback(p.mouthShapeEnvelopePath, p.mouthShapeEnvelope)
+        } ?: IntArray(0)
+    }
+    LaunchedEffect(mouthShapesArray, surfaceView) { surfaceView?.setMouthShapes(mouthShapesArray) }
+
     // Keeps blink/fidget schedules in sync when AmplitudeSettings changes
     // (naturalBlinkEnabled, idleFidgetEnabled, interval ranges, ...) without
     // requiring an unrelated script edit to happen to reload them — see

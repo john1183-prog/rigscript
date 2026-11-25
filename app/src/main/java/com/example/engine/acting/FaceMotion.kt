@@ -200,13 +200,14 @@ object FaceMotionModel {
 
     /** Per-thread scratch so the per-frame evaluation allocates nothing (I7): [a] and [b] hold two gaze targets, [c] and [d] results. */
     private class Scratch { val a = DoubleArray(2); val b = DoubleArray(2); val c = DoubleArray(2); val d = DoubleArray(2) }
-    private val scratch: ThreadLocal<Scratch> = ThreadLocal.withInitial { Scratch() }
+    private val scratchLocal: ThreadLocal<Scratch> = ThreadLocal.withInitial { Scratch() }
+    private fun scratch(): Scratch = scratchLocal.get()!!
 
     /** Gaze at [t] into [out] (size 2); [ramp] is how long a move takes (a saccade for the eyes, slower for the head). */
     fun gazeAt(seed: Long, t: Double, scale: Double, ramp: Double, out: DoubleArray) {
         val k = latestSaccade(seed, t)
         if (k < 0) { out[0] = 0.0; out[1] = 0.0; return }
-        val sc = scratch.get()
+        val sc = scratch()
         val prev = sc.a
         val cur = sc.b
         gazeTarget(seed, k - 1, scale, prev)
@@ -219,7 +220,7 @@ object FaceMotionModel {
     /** Head tilt in degrees (clockwise positive): the head follows the eyes later and slower, at most [ActingParams.HEAD_TILT_MAX_DEG]. */
     fun headTilt(seed: Long, t: Double, scale: Double): Double {
         if (scale <= 0.0) return 0.0
-        val g = scratch.get().c
+        val g = scratch().c
         gazeAt(seed, t - ActingParams.GAZE_EYE_LEAD_SEC, scale, ActingParams.GAZE_HEAD_RAMP_SEC, g)
         val v = ActingParams.HEAD_TILT_MAX_DEG * g[0] / (ActingParams.GAZE_CAP * scale)
         return max(-ActingParams.HEAD_TILT_MAX_DEG, min(ActingParams.HEAD_TILT_MAX_DEG, v))
@@ -230,7 +231,7 @@ object FaceMotionModel {
         if (scale <= 0.0) return 1.0
         val k = latestSaccade(seed, t)
         if (k < 0) return 1.0
-        val sc = scratch.get()
+        val sc = scratch()
         val prev = sc.a
         val cur = sc.b
         gazeTarget(seed, k - 1, scale, prev)
@@ -263,7 +264,7 @@ object FaceMotionModel {
         val gs = lv.gazeScale.toDouble()
         var open = legacyOpenness
         if (gs > 0.0) {
-            val g = scratch.get().d
+            val g = scratch().d
             gazeAt(seed, timeSec, gs, ActingParams.GAZE_SACCADE_SEC, g)
             out.gazeX = g[0].toFloat()
             out.gazeY = g[1].toFloat()

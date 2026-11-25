@@ -200,7 +200,7 @@ object FaceMotionModel {
 
     /** Per-thread scratch so the per-frame evaluation allocates nothing (I7): [a] and [b] hold two gaze targets, [c] and [d] results. */
     private class Scratch { val a = DoubleArray(2); val b = DoubleArray(2); val c = DoubleArray(2); val d = DoubleArray(2) }
-    private val scratch = ThreadLocal.withInitial { Scratch() }
+    private val scratch: ThreadLocal<Scratch> = ThreadLocal.withInitial { Scratch() }
 
     /** Gaze at [t] into [out] (size 2); [ramp] is how long a move takes (a saccade for the eyes, slower for the head). */
     fun gazeAt(seed: Long, t: Double, scale: Double, ramp: Double, out: DoubleArray) {

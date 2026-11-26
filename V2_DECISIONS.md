@@ -3067,6 +3067,22 @@ approved by the person before implementing:**
   dropped invalid verbs, wrist-on-target, cross-fade, aimed looks, OFF and ON engine paths, layer targets), local harness stubs gained Double and message overloads.
   Verification: VERIFIED-BY-TEST locally (336 tests); CI see the log; NOT device-tested (tuning the amounts is a device job, see TEST_CHECKLIST).
 
+- **2026-11-26 — WP2.5 step 3: emotes as ordinary overlay layers (DIRECTION).**
+  Decision: an `emote` on an event expands, in shared code, into at most four ordinary `OverlayLayer`s parented to the head bone (`EmoteExpander`, called from
+  `TimelineCompiler.extractOverlayLayers`, the one seam the preview and both exporters already use). So the shared resolver, the Canvas renderer and the GLES
+  renderer need no new code (I3), seeking anywhere reproduces them (static data, I2) and nothing is stored per frame. A script without `emote` gets exactly its
+  own sorted layers back (verified by test), so legacy output is unchanged. Nine marks: `exclaim` and `question` (a bold "!" / "?" that pops in and drifts up),
+  `sweat` (a blue drop that slides down), `sparkle` (three glowing yellow dots, staggered), `heart` (a pink text heart), `idea` (a glowing bulb circle with a
+  base), `anger` (a red cross rotated 45 degrees that pulses), `zzz` (three growing z, staggered), `dots` (three grey dots, staggered). Each mark lives 1.0 to 1.9 s
+  (pop in 0.15, fade out 0.35). Its opacity is the figure's `figureOpacity` carried forward to the event, so a faded figure does not get a full-strength mark;
+  a figureOpacity animated DURING the mark is not followed (the value at the event is used).
+  Known limits, flagged for the device check (nothing here has been seen on a screen): (1) offsets and text sizes are canvas fractions tuned for 9:16, and a fraction of
+  the width is 1.78 times larger on a 16:9 canvas, so on landscape the marks sit farther from the head and text marks are larger (the circle radius and font size
+  use the smaller canvas side, offsets use width and height); a per-aspect scale in the resolver is the fix if it looks wrong. (2) The heart is the text glyph
+  U+2665, drawn by the system font; if a device lacks it the mark shows a box, and the fix is a shape-built heart. (3) The marks are drawn in front of the
+  figure and move with the head bone position only (position-only parenting), not its rotation.
+  Files: `engine/EmoteExpander.kt`, `TimelineCompiler.extractOverlayLayers`, `EmoteExpanderTest` (5 tests). Verification: VERIFIED-BY-TEST locally (341 tests); CI see the log; NOT device-tested.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

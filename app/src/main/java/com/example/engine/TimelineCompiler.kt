@@ -407,6 +407,9 @@ object TimelineCompiler {
      * "compilation" needed. Per-frame resolution happens later, in
      * [OverlayResolver.resolve].
      */
-    fun extractOverlayLayers(script: AnimScript): List<com.example.data.OverlayLayer> =
-        script.overlayLayers.sortedBy { it.startSec }
+    fun extractOverlayLayers(script: AnimScript): List<com.example.data.OverlayLayer> {
+        val emotes = EmoteExpander.expand(script)   // WP2.5: empty for every script without `emote`, so legacy output is unchanged
+        return if (emotes.isEmpty()) script.overlayLayers.sortedBy { it.startSec }
+        else (script.overlayLayers + emotes).sortedBy { it.startSec }
+    }
 }

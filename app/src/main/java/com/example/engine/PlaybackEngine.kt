@@ -540,7 +540,7 @@ class PlaybackEngine {
         place.rootY = (currentFigureY ?: stage.rootY).toDouble()
         place.characterScale = (currentFigureScale ?: stage.characterScale).toDouble()
         actingBase.verbTargets = verbTargets
-        if (off || ctx == null) {
+        if (ctx == null || off) {
             actingBase.motion = null
             actingBase.mouthTrack = null
         } else {

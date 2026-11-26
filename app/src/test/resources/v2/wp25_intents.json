@@ -1,0 +1,131 @@
+{
+ "version": "1.0",
+ "events": [
+  {
+   "timeSec": 0.0,
+   "pose": "stand_straight",
+   "duration": 0.3
+  },
+  {
+   "timeSec": 2.0,
+   "act": "nod"
+  },
+  {
+   "timeSec": 5.0,
+   "act": "shake_head"
+  },
+  {
+   "timeSec": 8.0,
+   "pose": "explain",
+   "act": "emphasize"
+  },
+  {
+   "timeSec": 11.0,
+   "act": "react_surprise"
+  },
+  {
+   "timeSec": 14.0,
+   "pose": "think",
+   "act": "react_think"
+  },
+  {
+   "timeSec": 17.0,
+   "pose": "stand_straight",
+   "expression": "happy",
+   "act": "react_laugh"
+  },
+  {
+   "timeSec": 20.0,
+   "expression": "neutral",
+   "act": "react_sad"
+  },
+  {
+   "timeSec": 24.0,
+   "act": "look_at",
+   "actTarget": "right"
+  },
+  {
+   "timeSec": 27.0,
+   "act": "look_at",
+   "actTarget": "layer:logo"
+  },
+  {
+   "timeSec": 30.0,
+   "act": "look_away",
+   "actTarget": "left"
+  },
+  {
+   "timeSec": 33.0,
+   "act": "point_at",
+   "actTarget": "0.8,0.3"
+  },
+  {
+   "timeSec": 36.0,
+   "act": "point_at",
+   "actTarget": "layer:logo"
+  },
+  {
+   "timeSec": 39.0,
+   "act": "point_at",
+   "actTarget": "left"
+  },
+  {
+   "timeSec": 42.0,
+   "expression": "happy"
+  },
+  {
+   "timeSec": 46.0,
+   "emote": "exclaim"
+  },
+  {
+   "timeSec": 49.0,
+   "emote": "question"
+  },
+  {
+   "timeSec": 52.0,
+   "emote": "sweat"
+  },
+  {
+   "timeSec": 55.0,
+   "emote": "sparkle"
+  },
+  {
+   "timeSec": 58.0,
+   "emote": "heart"
+  },
+  {
+   "timeSec": 61.0,
+   "emote": "idea"
+  },
+  {
+   "timeSec": 64.0,
+   "emote": "anger"
+  },
+  {
+   "timeSec": 67.0,
+   "emote": "zzz"
+  },
+  {
+   "timeSec": 70.0,
+   "emote": "dots"
+  },
+  {
+   "timeSec": 74.0,
+   "pose": "stand_straight",
+   "expression": "neutral"
+  }
+ ],
+ "overlayLayers": [
+  {
+   "id": "logo",
+   "type": "shape",
+   "shape": "circle",
+   "x": 0.8,
+   "y": 0.3,
+   "radius": 0.05,
+   "startSec": 25.0,
+   "endSec": 45.0,
+   "color": 4294198070
+  }
+ ]
+}

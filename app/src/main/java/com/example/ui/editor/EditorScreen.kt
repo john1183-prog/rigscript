@@ -1728,7 +1728,7 @@ private fun ConsolidatedTimeline(
 
                         nearestLabel = when {
                             nearEv != null && evDiff <= thresholdSec && evDiff <= layDiff -> {
-                                "${nearEv.pose} @ %.1fs".format(nearEv.timeSec)
+                                "${nearEv.pose ?: "hold"} @ %.1fs".format(nearEv.timeSec)
                             }
                             activeLayer != null && (
                                 (timeSec >= activeLayer.startSec && timeSec <= activeLayer.endSec) ||
@@ -1799,7 +1799,7 @@ private fun ConsolidatedTimeline(
                                         nearestEv != null && evDiffSec <= hitRadiusSec && evDiffSec <= layDiffSec -> {
                                             val target = nearestEv.timeSec.coerceIn(0f, dur)
                                             currentOnSeek(target)
-                                            nearestLabel = "${nearestEv.pose} @ %.1fs".format(nearestEv.timeSec)
+                                            nearestLabel = "${nearestEv.pose ?: "hold"} @ %.1fs".format(nearestEv.timeSec)
                                         }
                                         nearestLay != null && layDiffSec <= hitRadiusSec -> {
                                             val target = nearestLay.startSec.coerceIn(0f, dur)

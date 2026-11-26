@@ -126,7 +126,12 @@ data class BakedKeyframe(
     val fromEyebrowColor: Long?,
     val toEyebrowColor: Long?,
     val fromPoseId: String,
-    val toPoseId: String
+    val toPoseId: String,
+    /** WP2.5 intent verbs and emote carried from the event (null = none); read by `engine.acting.ActVerbTimeline` and `EmoteExpander`. */
+    val act: String? = null,
+    val actTarget: String? = null,
+    val actIntensity: Float = 0.7f,
+    val emote: String? = null
 )
 
 /**
@@ -235,17 +240,21 @@ object TimelineCompiler {
         var prevEyebrowColor: Long?  = null
 
         for (event in sorted) {
-            val pose = poseResolver(event.pose)
-            if (pose == null) {
-                android.util.Log.w("TimelineCompiler", "Pose '${event.pose}' not found, skipping.")
-                continue
+            // WP2.5: a missing or unknown pose no longer drops the event. It HOLDS the current pose (from == to), and every
+            // other field of the event (expression, camera, scene, colors, caption, act, emote ...) still applies.
+            val poseId = event.pose
+            val pose = if (poseId.isNullOrBlank()) null else poseResolver(poseId)
+            val hold = pose == null
+            if (hold && !poseId.isNullOrBlank()) {
+                android.util.Log.w("TimelineCompiler", "Pose '$poseId' not found, holding the current pose.")
             }
 
-            // Compute target total angles: defaultAngle + poseRelativeOffset
-            val toAngles = FloatArray(n) { i ->
+            // Compute target total angles: defaultAngle + poseRelativeOffset (a hold keeps the previous target)
+            val toAngles = if (pose == null) prevAngles.copyOf() else FloatArray(n) { i ->
                 val boneId = bones[i].id
                 bones[i].defaultAngleDegrees + (pose.joints[boneId] ?: 0f)
             }
+            val toPoseId = if (hold) prevPoseId else poseId!!
 
             if (event.expression != null) {
                 currentExpression = Expression.fromString(event.expression)
@@ -335,11 +344,15 @@ object TimelineCompiler {
                 fromEyebrowColor = prevEyebrowColor,
                 toEyebrowColor    = toEyebrowColor,
                 fromPoseId      = prevPoseId,
-                toPoseId        = event.pose
+                toPoseId        = toPoseId,
+                act             = event.act,
+                actTarget       = event.actTarget,
+                actIntensity    = event.actIntensity,
+                emote           = event.emote
             )
 
             prevAngles = toAngles.copyOf()
-            prevPoseId = event.pose
+            prevPoseId = toPoseId
             prevZoom = toZoom
             prevPanX = toPanX
             prevPanY = toPanY

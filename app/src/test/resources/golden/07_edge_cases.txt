@@ -1,7 +1,7 @@
 golden 1 fixture=07_edge_cases
 input events=11 layers=15 blinks=3 total=12.5000
 warnings 28
-warn Unknown pose id(s) — those events will be SKIPPED entirely: moonwalk
+warn Unknown pose id(s) — those events keep their other fields but HOLD the current pose: moonwalk
 warn Unknown ease value(s), treated as linear: wobble
 warn Unknown sceneShape value(s), treated as none: castle
 warn Unknown sceneAtmosphere value(s), treated as none: meteors
@@ -29,22 +29,23 @@ warn Overlay layer 'e_cycle_b' has a parentLayer cycle (directly or through a ch
 warn Overlay layer(s) with endSec <= startSec will never be visible: e_never
 warn Overlay layers 'e_particles' and 'e_text_null' overlap in both time and position — they may visually collide on screen.
 warn Overlay layers 'e_bone' and 'e_both' overlap in both time and position — they may visually collide on screen.
-keyframes 10
+keyframes 11
 kf 0 t=0.0000 d=0.3000 ease=ease_out spring=280.0000/28.0000 expr=0 pose=stand_straight>stand_straight zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=0.0000
-kf 1 t=2.0000 d=0.6000 ease=wobble spring=280.0000/28.0000 expr=0 pose=stand_straight>wave zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-60.0000 maxd=130.0000
-kf 2 t=3.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=wave>explain zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=85.0000 maxd=75.0000
-kf 3 t=4.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=explain>wave zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-60.0000 maxd=75.0000
-kf 4 t=5.0000 d=2.0000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=wave>think zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-102.0000 maxd=80.0000
-kf 5 t=5.5000 d=2.0000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=think>present zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=100.0000
-kf 6 t=8.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=present>wave zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-60.0000 maxd=100.0000
-kf 7 t=8.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=wave>think zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-102.0000 maxd=80.0000
-kf 8 t=10.5000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=think>celebrate zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=132.0000
-kf 9 t=11.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=0 pose=celebrate>stand_straight zoom=1.0000>1.0000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=132.0000
+kf 1 t=1.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=stand_straight>stand_straight zoom=1.0000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=0.0000
+kf 2 t=2.0000 d=0.6000 ease=wobble spring=280.0000/28.0000 expr=4 pose=stand_straight>wave zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-60.0000 maxd=130.0000
+kf 3 t=3.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=wave>explain zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=85.0000 maxd=75.0000
+kf 4 t=4.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=explain>wave zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-60.0000 maxd=75.0000
+kf 5 t=5.0000 d=2.0000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=wave>think zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-102.0000 maxd=80.0000
+kf 6 t=5.5000 d=2.0000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=think>present zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=100.0000
+kf 7 t=8.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=present>wave zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-60.0000 maxd=100.0000
+kf 8 t=8.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=wave>think zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=-102.0000 maxd=80.0000
+kf 9 t=10.5000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=think>celebrate zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=87.0000 maxd=132.0000
+kf 10 t=11.0000 d=0.5000 ease=ease_in_out spring=280.0000/28.0000 expr=4 pose=celebrate>stand_straight zoom=1.3000>1.3000 pan=0.0000,0.0000>0.0000,0.0000 shake=0.0000 scene=none/none sum=90.0000 maxd=132.0000
 captions 1
 cap 1.0000 3.5000 event with an unknown pose
 sfx 1
 fx 8.0000 nowhere_to_be_found 1.0000
-checkpoints 24
+checkpoints 27
 cp t=0.0000
 ang -90.0000 0.0000 160.0000 10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
 st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1170
@@ -78,10 +79,34 @@ caption -
 ov n=2 sumx=0.7000 sumy=0.7000
 o e_type hologram/rect pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o e_shape shape/star pb=- pl=- x=0.2000 y=0.2000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=0.1000 h=0.1000 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=1.0000
+ang -88.8674 -0.5663 161.2066 10.0000 -161.2066 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.6833
+cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption event with an unknown pose
+ov n=3 sumx=1.5000 sumy=1.5000
+o e_type hologram/rect pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o e_shape shape/star pb=- pl=- x=0.2000 y=0.2000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=0.1000 h=0.1000 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o e_styles text/rect pb=- pl=- x=0.8000 y=0.8000 rot=0.0000 sc=1.0000 op=0.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=styles
+cp t=1.2500
+ang -91.4261 -1.6412 158.9747 10.0000 -158.9747 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.6349
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption event with an unknown pose
+ov n=3 sumx=1.5000 sumy=1.5000
+o e_type hologram/rect pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o e_shape shape/star pb=- pl=- x=0.2000 y=0.2000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=0.1000 h=0.1000 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o e_styles text/rect pb=- pl=- x=0.8000 y=0.8000 rot=0.0000 sc=1.0000 op=0.7143 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=styles
 cp t=1.7860
 ang -90.5443 0.8077 160.0899 10.0000 -160.0899 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.4674
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.4674
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=- y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -90,32 +115,22 @@ ov n=3 sumx=1.5000 sumy=1.5000
 o e_type hologram/rect pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=0.2286 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o e_shape shape/star pb=- pl=- x=0.2000 y=0.2000 rot=0.0000 sc=1.0000 op=0.2286 col=ffffffff grad=- w=0.1000 h=0.1000 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o e_styles text/rect pb=- pl=- x=0.8000 y=0.8000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=styles
-cp t=2.0000
-ang -91.3315 0.6657 160.0000 10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=0 expr=0 eye=1.0000 hip=0.0000 amp=0.0004
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+cp t=1.9000
+ang -91.2050 0.6025 160.0000 10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=0 expr=4 eye=1.0000 hip=0.0000 amp=0.0337
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=- y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
 caption event with an unknown pose
-ov n=2 sumx=1.6000 sumy=1.4000
+ov n=3 sumx=1.5000 sumy=1.5000
+o e_type hologram/rect pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=0.0233 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o e_shape shape/star pb=- pl=- x=0.2000 y=0.2000 rot=0.0000 sc=1.0000 op=0.0233 col=ffffffff grad=- w=0.1000 h=0.1000 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o e_styles text/rect pb=- pl=- x=0.8000 y=0.8000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=styles
-o e_fig figure/rect pb=- pl=- x=0.8000 y=0.6000 rot=0.0000 sc=0.5000 op=0.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=0 front=true ss=false txt=-
-cp t=2.3000
-ang -91.3172 0.6586 30.0000 -10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=0 expr=0 eye=1.0000 hip=0.0000 amp=0.0000
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
-fig x=- y=- scale=- head=- op=-
-col bone=- head=- joint=- bg=- grad=- style=- line=- showline=- liney=- mouth=- eye=- brow=-
-scene shape=none atmos=none sky=- ground=- horizon=-
-caption event with an unknown pose
-ov n=2 sumx=1.6000 sumy=1.4000
-o e_styles text/rect pb=- pl=- x=0.8000 y=0.8000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=styles
-o e_fig figure/rect pb=- pl=- x=0.8000 y=0.6000 rot=0.0000 sc=0.5000 op=0.9971 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=0 front=true ss=false txt=-
 cp t=3.0000
 ang -89.5674 -0.2163 29.7744 -10.0000 -159.7744 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1928
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1928
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=- y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -123,10 +138,21 @@ caption event with an unknown pose
 ov n=2 sumx=1.7000 sumy=0.7000
 o e_fig figure/rect pb=- pl=- x=0.8000 y=0.6000 rot=0.0000 sc=0.5000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=0 front=true ss=false txt=-
 o e_kf shape/circle pb=- pl=- x=0.9000 y=0.1000 rot=0.0000 sc=1.0000 op=0.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=3.2500
+ang -94.3806 -0.8439 85.2327 -20.0000 -85.2326 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.2059
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption event with an unknown pose
+ov n=2 sumx=1.6333 sumy=0.7000
+o e_fig figure/rect pb=- pl=- x=0.8000 y=0.6000 rot=0.0000 sc=0.5000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=0 front=true ss=false txt=-
+o e_kf shape/circle pb=- pl=- x=0.8333 y=0.1000 rot=0.0000 sc=1.0000 op=0.9767 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=3.5710
 ang -93.4504 -0.5953 85.0306 -20.0000 -85.0306 20.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1507
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1507
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=- y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -134,43 +160,21 @@ caption -
 ov n=2 sumx=1.5477 sumy=0.7000
 o e_fig figure/rect pb=- pl=- x=0.8000 y=0.6000 rot=0.0000 sc=0.5000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=0 front=true ss=false txt=-
 o e_kf shape/circle pb=- pl=- x=0.7477 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
-cp t=4.0000
-ang -94.1771 -0.4114 85.0000 -20.0000 -85.0000 20.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1547
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
-fig x=1.2000 y=- scale=- head=- op=-
+cp t=3.9000
+ang -94.7393 -1.0777 83.9907 -20.0000 -83.9907 20.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.5909
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=- y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
 caption -
-ov n=2 sumx=0.7333 sumy=1.0000
-o e_kf shape/circle pb=- pl=- x=0.6333 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
-o e_slot text/rect pb=- pl=- x=0.1000 y=0.9000 rot=0.0000 sc=1.0000 op=0.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=slot
-cp t=4.2500
-ang -89.6240 0.1314 29.9424 -10.0000 -159.9424 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1553
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
-fig x=1.2000 y=- scale=- head=- op=-
-col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
-scene shape=none atmos=none sky=- ground=- horizon=-
-caption -
-ov n=2 sumx=0.6667 sumy=1.0000
-o e_kf shape/circle pb=- pl=- x=0.5667 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
-o e_slot text/rect pb=- pl=- x=0.1000 y=0.9000 rot=0.0000 sc=1.0000 op=0.9767 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=slot
-cp t=4.9000
-ang -91.1724 0.8189 30.0393 -10.0000 -160.0393 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.2055
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
-fig x=1.2000 y=- scale=- head=- op=-
-col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
-scene shape=none atmos=none sky=- ground=- horizon=-
-caption -
-ov n=2 sumx=0.4933 sumy=1.0000
-o e_kf shape/circle pb=- pl=- x=0.3933 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
-o e_slot text/rect pb=- pl=- x=0.1000 y=0.9000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=slot
+ov n=2 sumx=1.4600 sumy=0.7000
+o e_fig figure/rect pb=- pl=- x=0.8000 y=0.6000 rot=0.0000 sc=0.5000 op=0.0233 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=10 fe=0 front=true ss=false txt=-
+o e_kf shape/circle pb=- pl=- x=0.6600 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=5.0000
 ang -91.4000 0.7000 30.1412 -10.0000 -160.1412 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1506
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1506
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -180,8 +184,8 @@ o e_kf shape/circle pb=- pl=- x=0.3667 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 c
 o e_slot text/rect pb=- pl=- x=0.1000 y=0.9000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=slot
 cp t=5.3570
 ang -81.5406 -18.6549 80.6180 -90.5151 -160.2961 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.5308
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.5308
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -189,20 +193,54 @@ caption -
 ov n=2 sumx=0.3715 sumy=1.0000
 o e_kf shape/circle pb=- pl=- x=0.2715 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o e_slot text/rect pb=- pl=- x=0.1000 y=0.9000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=slot
+cp t=5.5000
+ang -84.2168 -20.7891 80.4472 -90.0000 -160.4472 -10.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.3962
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=1.2000 y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=2 sumx=0.3333 sumy=1.0000
+o e_kf shape/circle pb=- pl=- x=0.2333 y=0.1000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0300 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o e_slot text/rect pb=- pl=- x=0.1000 y=0.9000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=slot
 cp t=6.0000
 ang -97.1852 4.6013 59.9898 -34.9720 -59.9491 35.0229 80.0000 5.0000 100.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.6833
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.6833
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
 caption -
 ov n=1 sumx=0.5000 sumy=0.5000
 o e_text_null text/rect pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=0.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=6.5000
+ang -93.2633 6.6564 59.0513 -35.0000 -59.0513 35.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=4 eye=0.9295 hip=0.0000 amp=0.7508
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=1.2000 y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=21 sumx=10.5000 sumy=10.5000
+o e_text_null text/rect pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0119 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0156 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0067 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0147 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0098 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0147 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0075 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0090 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0110 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0126 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0073 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0075 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+o - shape/star pb=- pl=- x=0.5000 y=0.5000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0069 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=7.1430
 ang -98.0004 5.0002 60.0000 -35.0000 -60.0000 35.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=0 expr=0 eye=1.0000 hip=0.0000 amp=0.0000
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=0 expr=4 eye=1.0000 hip=0.0000 amp=0.0000
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -224,8 +262,8 @@ o - shape/star pb=- pl=- x=0.3988 y=0.5414 rot=0.0000 sc=1.0000 op=0.3570 col=ff
 o - shape/star pb=- pl=- x=0.5487 y=0.3897 rot=0.0000 sc=1.0000 op=0.3570 col=ffffffff grad=- w=- h=- r=0.0121 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=7.4000
 ang -97.5484 6.2163 59.5911 -35.0000 -59.5911 35.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.3327
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.3327
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -245,10 +283,20 @@ o - shape/star pb=- pl=- x=0.4453 y=0.6624 rot=0.0000 sc=1.0000 op=0.1000 col=ff
 o - shape/star pb=- pl=- x=0.3981 y=0.4264 rot=0.0000 sc=1.0000 op=0.1000 col=ffffffff grad=- w=- h=- r=0.0075 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o - shape/star pb=- pl=- x=0.3584 y=0.5579 rot=0.0000 sc=1.0000 op=0.1000 col=ffffffff grad=- w=- h=- r=0.0069 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 o - shape/star pb=- pl=- x=0.5682 y=0.3456 rot=0.0000 sc=1.0000 op=0.1000 col=ffffffff grad=- w=- h=- r=0.0121 fs=0.0000 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
+cp t=7.9000
+ang -100.2512 5.0967 58.9038 -35.0000 -58.9038 35.0000 80.0000 5.0000 100.0000 -5.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.6349
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
+fig x=1.2000 y=- scale=- head=- op=-
+col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
+scene shape=none atmos=none sky=- ground=- horizon=-
+caption -
+ov n=1 sumx=0.4000 sumy=0.8860
+o e_physics shape/circle pb=- pl=- x=0.4000 y=0.8860 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=8.0000
 ang -91.3315 0.6657 30.0000 -10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1928
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1928
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -257,8 +305,8 @@ ov n=1 sumx=0.4000 sumy=1.0000
 o e_physics shape/circle pb=- pl=- x=0.4000 y=1.0000 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=8.2500
 ang -82.4641 -19.2338 79.9036 -90.0000 -159.9036 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.2059
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.2059
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -267,8 +315,8 @@ ov n=1 sumx=0.4000 sumy=1.3375
 o e_physics shape/circle pb=- pl=- x=0.4000 y=1.3375 rot=0.0000 sc=1.0000 op=1.0000 col=ffffffff grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=8.9000
 ang -80.3862 -19.9813 80.1393 -90.0000 -160.1393 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.5253
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.5253
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -277,8 +325,8 @@ ov n=1 sumx=0.4000 sumy=2.5660
 o e_physics shape/circle pb=- pl=- x=0.4000 y=2.5660 rot=0.0000 sc=1.0000 op=0.0233 col=ffffffff grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=8.9290
 ang -78.6942 -18.8750 80.5489 -90.0000 -160.5489 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.5909
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.5909
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -287,8 +335,8 @@ ov n=1 sumx=0.4000 sumy=2.6326
 o e_physics shape/circle pb=- pl=- x=0.4000 y=2.6326 rot=0.0000 sc=1.0000 op=0.0083 col=ffffffff grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=10.7140
 ang -99.0544 5.9419 28.0882 -15.0001 -28.0882 15.0000 72.0000 5.0000 108.0000 -5.0000
-st mouth=1 expr=0 eye=1.0000 hip=0.0000 amp=0.1510
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=1 expr=4 eye=1.0000 hip=0.0000 amp=0.1510
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -297,8 +345,8 @@ ov n=1 sumx=0.6000 sumy=0.2000
 o e_ghost shape/circle pb=- pl=ghost x=0.6000 y=0.2000 rot=0.0000 sc=1.0000 op=0.5456 col=ffffffff grad=- w=- h=- r=0.0200 fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=11.0000
 ang -99.1326 5.5663 26.7934 -15.0000 -26.7934 15.0000 72.0000 5.0000 108.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.6833
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.6833
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -308,8 +356,8 @@ o e_cycle_a shape/rect pb=- pl=e_cycle_b x=0.3000 y=0.3000 rot=0.0000 sc=1.0000 
 o e_cycle_b shape/rect pb=- pl=e_cycle_a x=0.7000 y=0.7000 rot=0.0000 sc=1.0000 op=0.0000 col=ffffffff grad=- w=0.0500 h=0.0500 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=11.2500
 ang -92.4977 -1.1055 161.0254 10.0000 -161.0254 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=2 expr=0 eye=1.0000 hip=0.0000 amp=0.6349
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=2 expr=4 eye=1.0000 hip=0.0000 amp=0.6349
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-
@@ -319,8 +367,8 @@ o e_cycle_a shape/rect pb=- pl=e_cycle_b x=0.3000 y=0.3000 rot=0.0000 sc=1.0000 
 o e_cycle_b shape/rect pb=- pl=e_cycle_a x=0.7000 y=0.7000 rot=0.0000 sc=1.0000 op=0.9767 col=ffffffff grad=- w=0.0500 h=0.0500 r=- fs=0.0800 glow=false vel=- trail=0 pose=0 fe=0 front=true ss=false txt=-
 cp t=11.9000
 ang -88.7950 -0.6025 160.0000 10.0000 -160.0000 -10.0000 80.0000 5.0000 100.0000 -5.0000
-st mouth=0 expr=0 eye=1.0000 hip=0.0000 amp=0.0000
-cam zoom=1.0000 panx=0.0000 pany=0.0000 shake=0.0000
+st mouth=0 expr=4 eye=1.0000 hip=0.0000 amp=0.0000
+cam zoom=1.3000 panx=0.0000 pany=0.0000 shake=0.0000
 fig x=1.2000 y=- scale=- head=- op=-
 col bone=- head=- joint=- bg=- grad=- style=plaid line=- showline=- liney=- mouth=- eye=- brow=-
 scene shape=none atmos=none sky=- ground=- horizon=-

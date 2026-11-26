@@ -121,7 +121,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ScriptEvent(
     val timeSec: Float,
-    val pose: String,
+    /** Optional since WP2.5: absent or unknown means "hold the current pose" (the event's other fields still apply). */
+    val pose: String? = null,
     val duration: Float = 0.5f,
     val ease: String = "ease_in_out",
     val springStiffness: Float = 280f,
@@ -158,7 +159,16 @@ data class ScriptEvent(
     val groundLineYFraction: Float? = null,
     val mouthColor: Long? = null,
     val eyeColor: Long? = null,
-    val eyebrowColor: Long? = null
+    val eyebrowColor: Long? = null,
+    // WP2.5 intent verbs (Direction: what the character does, authored by the script; see engine.acting.ActVocabulary)
+    /** One of the closed `act` verbs (nod, shake_head, emphasize, react_*, look_at, look_away, point_at); unknown = ignored with a warning. */
+    val act: String? = null,
+    /** Where look_at / point_at aim: left | right | up | down | camera | layer:<id> | x,y (normalized screen coordinates). */
+    val actTarget: String? = null,
+    /** Strength of the verb, 0..1 (clamped). */
+    val actIntensity: Float = 0.7f,
+    /** One of the closed `emote` marks (exclaim, question, sweat, sparkle, heart, idea, anger, zzz, dots); unknown = ignored with a warning. */
+    val emote: String? = null
 )
 
 /**

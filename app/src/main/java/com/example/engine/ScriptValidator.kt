@@ -1,6 +1,8 @@
 package com.example.engine
 
 import com.example.data.AnimScript
+import com.example.data.ScriptEvent
+import com.example.engine.acting.ActVocabulary
 
 /**
  * Semantic validation for an [AnimScript] that's already valid JSON — catches
@@ -83,9 +85,11 @@ object ScriptValidator {
         val warnings = mutableListOf<String>()
         val poseIds = StickFigureRig.BUILT_IN_POSE_INDEX.keys
 
-        unknownValues(script.events.map { it.pose }, poseIds)
+        unknownValues(script.events.mapNotNull { it.pose }.filter { it.isNotBlank() }, poseIds)
             .takeIf { it.isNotEmpty() }
-            ?.let { warnings += "Unknown pose id(s) — those events will be SKIPPED entirely: ${it.joinToString()}" }
+            ?.let { warnings += "Unknown pose id(s) — those events keep their other fields but HOLD the current pose: ${it.joinToString()}" }
+
+        warnings += validateIntentVerbs(script)
 
         unknownValues(script.events.map { it.ease }, VALID_EASE)
             .takeIf { it.isNotEmpty() }
@@ -373,6 +377,54 @@ object ScriptValidator {
         events.filter { it.timeSec <= atOrBefore && selector(it) != null }
             .maxByOrNull { it.timeSec }
             ?.let(selector)
+
+    /** Events that carry nothing at all to apply: no pose and no other field (WP2.5 made `pose` optional). */
+    private fun hasPayload(e: ScriptEvent): Boolean =
+        !e.pose.isNullOrBlank() || e.expression != null || e.cameraZoom != null || e.cameraPanX != null || e.cameraPanY != null ||
+            e.cameraShake != null || !e.caption.isNullOrBlank() || e.skyColor != null || e.groundColor != null || e.horizonY != null ||
+            e.sceneShape != null || e.sceneAtmosphere != null || !e.soundEffect.isNullOrBlank() || e.figureX != null ||
+            e.figureY != null || e.figureScale != null || e.headScale != null || e.figureOpacity != null || e.boneColor != null ||
+            e.headColor != null || e.jointColor != null || e.bgColor != null || e.backgroundGradientColor != null ||
+            e.backgroundStyle != null || e.groundLineColor != null || e.showGroundLine != null || e.groundLineYFraction != null ||
+            e.mouthColor != null || e.eyeColor != null || e.eyebrowColor != null || e.act != null || e.emote != null
+
+    /** WP2.5: the rules of `pose` (optional), `act`, `actTarget`, `actIntensity` and `emote`. Nothing here throws. */
+    private fun validateIntentVerbs(script: AnimScript): List<String> {
+        val out = mutableListOf<String>()
+        val events = script.events
+        val empty = events.filter { !hasPayload(it) }
+        if (empty.isNotEmpty()) {
+            out += "Event(s) with no pose and no other field do nothing (at ${empty.joinToString { "%.2fs".format(it.timeSec) }})."
+        }
+        unknownValues(events.mapNotNull { it.act }, ActVocabulary.VERBS.toSet())
+            .takeIf { it.isNotEmpty() }
+            ?.let { out += "Unknown act verb(s), ignored: ${it.joinToString()}" }
+        unknownValues(events.mapNotNull { it.emote }, ActVocabulary.EMOTES.toSet())
+            .takeIf { it.isNotEmpty() }
+            ?.let { out += "Unknown emote(s), ignored: ${it.joinToString()}" }
+        val layerIds = script.overlayLayers.map { it.id }.filter { it.isNotBlank() }.toSet()
+        for (e in events) {
+            if (!ActVocabulary.isVerb(e.act)) continue
+            if (e.actIntensity.isNaN() || e.actIntensity < 0f || e.actIntensity > 1f) {
+                out += "act at ${"%.2f".format(e.timeSec)}s: actIntensity ${e.actIntensity} is outside 0..1, it will be clamped."
+            }
+            if (!ActVocabulary.needsTarget(e.act)) continue
+            val target = ActVocabulary.parseTarget(e.actTarget)
+            if (target == null) {
+                out += "act ${e.act} at ${"%.2f".format(e.timeSec)}s needs a valid actTarget (left, right, up, down, camera, layer:<id> or x,y), it will be ignored."
+            } else if (target.kind == ActVocabulary.T_LAYER && target.layerId !in layerIds) {
+                out += "act ${e.act} at ${"%.2f".format(e.timeSec)}s: actTarget layer '${target.layerId}' doesn't match any layer's id, it will be ignored."
+            }
+        }
+        val acts = events.filter { ActVocabulary.isVerb(it.act) }.sortedBy { it.timeSec }
+        for (i in 1 until acts.size) {
+            if (acts[i].timeSec - acts[i - 1].timeSec < 1.0f) {
+                out += "act verbs at ${"%.2f".format(acts[i - 1].timeSec)}s and ${"%.2f".format(acts[i].timeSec)}s are under 1 s apart: they stack (add up); one act per 3 to 4 seconds reads best."
+                break
+            }
+        }
+        return out
+    }
 
     private fun unknownValues(values: List<String>, allowed: Set<String>, caseInsensitive: Boolean = false): List<String> {
         val allowedNorm = if (caseInsensitive) allowed.map { it.lowercase() }.toSet() else allowed

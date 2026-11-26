@@ -3013,6 +3013,27 @@ approved by the person before implementing:**
   (`look_at`, a bigger angle, a target) arrives with WP2.5 and would raise or bypass the cap there. The PIL drawer is not the app's
   renderer, so what the shift looks like in the app is for the device check.
 
+- **2026-11-26 — WP2.5 step 1: intent-verb schema, optional `pose`, hold semantics (DIRECTION; schema additions).**
+  Decision: `ScriptEvent` gains four optional fields, `act`, `actTarget`, `actIntensity` (0..1, default 0.7) and `emote`, and `pose` becomes optional
+  (`String? = null`). Classification (A4): all four are DIRECTION (what the character does, authored by the script), so they execute at every acting
+  intensity including OFF; only the Craft around them (timing, blending, idle gaze) is switched by the intensity. An event with no pose, or a pose that does
+  not resolve, HOLDS the current pose (a keyframe with `from == to`, same pose id) and every other field of the event still applies. This fixes the B3 item
+  where the compiler dropped the whole event (camera, scene, colors, expression, caption, sound) when its pose was unknown. Closed vocabulary (I4, one place:
+  `engine/acting/ActVocabulary`): 10 verbs (`nod shake_head emphasize react_surprise react_think react_laugh react_sad look_at look_away point_at`), 9 emotes
+  (`exclaim question sweat sparkle heart idea anger zzz dots`), `actTarget` grammar `left|right|up|down|camera|layer:<id>|x,y`. `BakedKeyframe` carries the four
+  values (defaults at the end of the constructor) so the engine needs no second data path.
+  Validator (all warnings, nothing throws): unknown pose (reworded: "keep their other fields but HOLD the current pose"), an event with nothing to apply,
+  unknown verb, unknown emote, `look_at`/`point_at` without a valid target, `layer:<id>` that matches no layer, `actIntensity` outside 0..1 (clamped), two `act`
+  verbs under 1 s apart (they add up). The prompt is NOT touched (I5): the fields are documented in WP4.4, so the prompt may lag but does not lead.
+  I1 exception (the brief orders it): a script whose event names an unknown pose used to lose that whole event; now its other fields apply. Only fixture
+  `07_edge_cases` (event `moonwalk`) contains one: its golden was regenerated, the diff is exactly that event's expression, zoom and caption taking effect plus
+  the reworded warning; the other six goldens are byte-identical. Known trade-off: a hold keyframe that starts while the previous pose transition is still
+  running makes the LEGACY pose jump to that transition's target (the same overlap pop any two overlapping pose events already have; the acted pose retargets
+  smoothly, WP2.2).
+  Rejected: `pose = ""` as the "absent" marker (nullable is the honest type; the encoded JSON of legacy events is unchanged because a pose is present).
+  Files: `data/AnimScript.kt`, `engine/TimelineCompiler.kt`, `engine/ScriptValidator.kt`, `engine/acting/ActVocabulary.kt`, `ui/editor/EditorScreen.kt` (two labels),
+  `IntentSchemaTest` (7 tests), golden `07_edge_cases`. Verification: VERIFIED-BY-TEST locally; CI see the log. NOT device-tested.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

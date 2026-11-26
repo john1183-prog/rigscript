@@ -30,3 +30,4 @@ ActingMotionTest.kt
 FaceGeometryTest.kt
 FaceMotionTest.kt
 MouthMotionTest.kt
+IntentSchemaTest.kt

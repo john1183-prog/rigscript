@@ -159,7 +159,7 @@ class AnimationSurfaceView @JvmOverloads constructor(
             engine.loadFidgetSchedule(fidgetEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS)
         }
     }
-    fun setAppearance(a: AppearanceSettings) { appearance = a }
+    fun setAppearance(a: AppearanceSettings) { appearance = a; pushActing() }
 
     // ── Acting (WP2.1) ────────────────────────────────────────────────────────
     private var actingIntensityName: String? = null
@@ -189,7 +189,10 @@ class AnimationSurfaceView @JvmOverloads constructor(
     private fun pushActing() {
         val ctx = com.example.engine.acting.ActingContext.create(
             actingIntensityName, actingProjectId ?: "", actingEnvelope, AmplitudeAnalyzer.AMPLITUDE_ANALYSIS_FPS,
-            mouthShapes = actingMouthShapes)
+            mouthShapes = actingMouthShapes,
+            stage = com.example.engine.acting.ActingStage.of(
+                if (width > 0 && height > 0) width.toFloat() / height else 9f / 16f,
+                appearance.rootAnchorX, appearance.rootAnchorY, appearance.characterScale))
         renderHandler.post { engine.actingContext = ctx }
     }
     fun setAmplitudeSettings(s: AmplitudeSettings) { renderHandler.post { engine.amplitudeSettings = s } }

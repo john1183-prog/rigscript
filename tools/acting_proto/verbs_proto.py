@@ -390,6 +390,9 @@ def emit_reference():
     for (sx, sy, tx, ty, pa) in [(0.0, -0.22, 0.15, -0.20, -90.0), (0.0, -0.22, -0.12, -0.05, -90.0), (0.0, -0.22, 0.05, -0.40, -75.0), (0.0, -0.22, 0.60, -0.22, -90.0)]:
         up, fo, ok, d = ik_two_bone(sx, sy, tx, ty, pa, side=1 if tx >= sx else -1)
         print('"%s,%s,%s,%s,%s,%.6f,%.6f",' % (sx, sy, tx, ty, pa, up, fo))
+    print("// point weight: u -> weight")
+    for u in (0.0, 0.03, 0.06, 0.1, 0.2, 0.35, 0.8, 1.55, 1.7, 1.8, 2.0):
+        print('"%s,%.9f",' % (u, point_weight(u)))
 
 
 def main():

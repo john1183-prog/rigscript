@@ -14,10 +14,18 @@ object Assert {
     @JvmStatic fun assertFalse(message: String?, condition: Boolean) { if (condition) bad(message) }
     @JvmStatic fun assertNull(o: Any?) { if (o != null) bad("expected null but was <$o>") }
     @JvmStatic fun assertNotNull(o: Any?) { if (o == null) bad("expected not null") }
+    @JvmStatic fun assertNull(message: String?, o: Any?) { if (o != null) bad("$message expected null but was <$o>") }
+    @JvmStatic fun assertNotNull(message: String?, o: Any?) { if (o == null) bad("$message expected not null") }
     @JvmStatic fun assertEquals(expected: Any?, actual: Any?) { if (expected != actual) bad("expected:<$expected> but was:<$actual>") }
     @JvmStatic fun assertEquals(message: String?, expected: Any?, actual: Any?) { if (expected != actual) bad("$message expected:<$expected> but was:<$actual>") }
     @JvmStatic fun assertEquals(expected: Float, actual: Float, delta: Float) {
         if (!(Math.abs(expected - actual) <= delta)) bad("expected:<$expected> but was:<$actual>")
+    }
+    @JvmStatic fun assertEquals(expected: Double, actual: Double, delta: Double) {
+        if (!(Math.abs(expected - actual) <= delta)) bad("expected:<$expected> but was:<$actual> (delta $delta)")
+    }
+    @JvmStatic fun assertEquals(message: String?, expected: Double, actual: Double, delta: Double) {
+        if (!(Math.abs(expected - actual) <= delta)) bad("$message expected:<$expected> but was:<$actual> (delta $delta)")
     }
     @JvmStatic fun assertEquals(message: String?, expected: Float, actual: Float, delta: Float) {
         if (!(Math.abs(expected - actual) <= delta)) bad("$message expected:<$expected> but was:<$actual>")

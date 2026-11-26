@@ -23,7 +23,14 @@ object ActingLayer {
     private val HEAD_IDX: Int = StickFigureRig.BONES.indexOfFirst { it.id == "head" }
 
     fun apply(base: ActingFrame, ctx: ActingContext?, timeSec: Float, out: ActingFrame): ActingFrame {
-        if (ctx == null || ctx.intensity == ActingIntensity.OFF) return base
+        // WP2.5 verbs are Direction: they run at every intensity, OFF included. With no verb window holding the time the OFF path is
+        // exactly as before: the base frame itself, no work, no allocation.
+        val vt = base.verbs
+        val verbsMaybe = vt != null && vt.mayBeActive(timeSec)
+        if (ctx == null || ctx.intensity == ActingIntensity.OFF) {
+            if (!verbsMaybe || out.angles.size != base.angles.size) return base
+            return applyVerbsOnly(base, timeSec, out)
+        }
         val motion = base.motion ?: return base
         val n = base.angles.size
         if (motion.size == 0 || n != ActingMotionModel.LEVEL_BY_BONE.size || out.angles.size != n) return base
@@ -76,6 +83,8 @@ object ActingLayer {
                 face.mouthRound = m[2].coerceIn(0.0, 1.0).toFloat()
             } else face.mouthActed = false
         } else face.mouthActed = false
+        // Stage 4 (WP2.5, intent verbs): added on top of everything above (Direction).
+        if (verbsMaybe) applyVerbs(base, timeSec, out)
         out.expression = base.expression
         out.mouthShape = base.mouthShape
         out.amplitude = base.amplitude
@@ -84,6 +93,70 @@ object ActingLayer {
         out.motion = motion
         out.mouthTrack = track
         return out
+    }
+
+    /** OFF with a verb active: the legacy face and the base pose, plus the verb offsets. Returns [base] when no verb holds the time after all. */
+    private fun applyVerbsOnly(base: ActingFrame, timeSec: Float, out: ActingFrame): ActingFrame {
+        base.angles.copyInto(out.angles)
+        out.face.setLegacy(base.expression, base.eyeOpenness)
+        if (!applyVerbs(base, timeSec, out)) return base
+        out.expression = base.expression
+        out.mouthShape = base.mouthShape
+        out.amplitude = base.amplitude
+        out.eyeOpenness = base.eyeOpenness
+        out.blinkDurationSec = base.blinkDurationSec
+        out.motion = base.motion
+        out.mouthTrack = base.mouthTrack
+        return out
+    }
+
+    /** Evaluates the verbs over [out]'s angles and face and adds them. False (and nothing changed) when no verb holds the time. */
+    private fun applyVerbs(base: ActingFrame, timeSec: Float, out: ActingFrame): Boolean {
+        val vt = base.verbs ?: return false
+        val o = out.verbOffsets
+        ActVerbModel.evaluate(vt, timeSec.toDouble(), base.verbPlacement, base.verbTargets, out.angles, o)
+        if (!o.active) return false
+        val bones = StickFigureRig.BONES
+        for (i in 0 until out.angles.size) {
+            val d = o.b[i]
+            if (d == 0.0) continue
+            val b = base.angles[i]
+            var v = (out.angles[i] + d).toFloat()
+            if (!v.isFinite()) v = out.angles[i]
+            val bone = bones[i]
+            val lo = bone.minAngleDegrees
+            val hi = bone.maxAngleDegrees
+            if (lo != null && hi != null) v = v.coerceIn(minOf(bone.defaultAngleDegrees + lo, b), maxOf(bone.defaultAngleDegrees + hi, b))
+            out.angles[i] = v
+        }
+        val f = out.face
+        if (o.eyeH.isFinite()) f.eyeHeightMul = maxOf(0.2f, f.eyeHeightMul + o.eyeH.toFloat())
+        if (o.eyeR.isFinite()) f.eyeRadiusFrac += o.eyeR.toFloat()
+        val gw = o.gw.coerceIn(0.0, 1.0)
+        if (o.gx.isFinite() && o.gy.isFinite() && gw.isFinite()) {
+            f.gazeX = (f.gazeX * (1.0 - gw) + o.gx).toFloat()
+            f.gazeY = (f.gazeY * (1.0 - gw) + o.gy).toFloat()
+        }
+        // Brows only move where they are already drawn (the acting levels draw them on every expression; legacy only WORRIED and ANGRY),
+        // so a verb never makes a brow appear from nothing.
+        if (f.browsVisible) {
+            if (o.browH.isFinite()) f.browHeight += o.browH.toFloat()
+            if (o.browL.isFinite()) f.browInnerLift += o.browL.toFloat()
+        }
+        if (o.mouthW.isFinite()) f.mouthWidthMul += o.mouthW.toFloat()
+        if (o.mouthB.isFinite()) f.mouthCyBiasFrac += o.mouthB.toFloat()
+        if (o.laugh > 0.05 && o.laugh.isFinite()) {
+            val open = o.laugh.coerceIn(0.0, 1.0).toFloat()
+            val wide = (0.7 * o.laugh).coerceIn(0.0, 1.0).toFloat()
+            if (f.mouthActed) {
+                f.mouthOpen = maxOf(f.mouthOpen, open)
+                f.mouthWidth = maxOf(f.mouthWidth, wide)
+            } else {
+                f.mouthActed = true
+                f.mouthOpen = open; f.mouthWidth = wide; f.mouthRound = 0f
+            }
+        }
+        return true
     }
 }
 

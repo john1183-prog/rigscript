@@ -30,7 +30,10 @@ object ActVocabulary {
     const val T_POINT = 6
 
     /** A parsed `actTarget`. [x] and [y] are normalized screen coordinates for [T_POINT] (y down); [layerId] is set for [T_LAYER]. */
-    class ActTarget(val kind: Int, val layerId: String? = null, val x: Float = 0f, val y: Float = 0f)
+    class ActTarget(val kind: Int, val layerId: String? = null, val x: Float = 0f, val y: Float = 0f) {
+        /** `layer:<id>` for a layer target (built once, so the per-frame lookup allocates nothing), else null. */
+        val key: String? = if (layerId != null) "layer:$layerId" else null
+    }
 
     /** Parses `left|right|up|down|camera|layer:<id>|x,y`; null when it is none of these (or a number is not finite). */
     fun parseTarget(text: String?): ActTarget? {

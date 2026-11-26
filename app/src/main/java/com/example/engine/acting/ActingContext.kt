@@ -30,7 +30,9 @@ class ActingContext(
     val envelopeFps: Int = 30,
     val targets: ActingTargets = ActingTargets.NONE,
     /** Mouth class per envelope frame (`MouthShape`), for the speech mouth (WP2.4); empty = every frame counts as MID. */
-    val mouthShapes: IntArray = IntArray(0)
+    val mouthShapes: IntArray = IntArray(0),
+    /** Where the figure stands, for the verbs that aim at a screen point (WP2.5); the appearance defaults when not given. */
+    val stage: ActingStage = ActingStage.DEFAULT
 ) {
     /** Envelope sample at [timeSec]: the index is clamped, and 0 when there is no envelope. Allocation-free. */
     fun envelopeAt(timeSec: Float): Float {
@@ -40,7 +42,7 @@ class ActingContext(
     }
 
     /** The same context with another intensity (the editor's A/B toggle uses this). */
-    fun withIntensity(other: ActingIntensity): ActingContext = ActingContext(other, seed, envelope, envelopeFps, targets, mouthShapes)
+    fun withIntensity(other: ActingIntensity): ActingContext = ActingContext(other, seed, envelope, envelopeFps, targets, mouthShapes, stage)
 
     companion object {
         /** FNV-1a (64 bit) over the characters of the project id: stable across runs, devices and builds. */
@@ -60,9 +62,10 @@ class ActingContext(
             envelope: FloatArray = FloatArray(0),
             envelopeFps: Int = 30,
             targets: ActingTargets = ActingTargets.NONE,
-            mouthShapes: IntArray = IntArray(0)
+            mouthShapes: IntArray = IntArray(0),
+            stage: ActingStage = ActingStage.DEFAULT
         ): ActingContext =
-            ActingContext(ActingIntensity.parse(intensityName), seedForProject(projectId), envelope, envelopeFps, targets, mouthShapes)
+            ActingContext(ActingIntensity.parse(intensityName), seedForProject(projectId), envelope, envelopeFps, targets, mouthShapes, stage)
     }
 }
 
@@ -82,6 +85,13 @@ class ActingFrame(val angles: FloatArray) {
     var motion: ActingMotion? = null
     /** The baked speech mouth (WP2.4), an INPUT set by the engine; null or empty means the legacy mouth is drawn. */
     var mouthTrack: MouthTrack? = null
+    /** The intent verbs of the timeline (WP2.5, Direction: they run at every intensity, including OFF), an INPUT set by the engine; null or empty = none. */
+    var verbs: ActVerbTimeline? = null
+    /** The stage for this frame (figure overrides applied) and the targets the aimed verbs resolve, INPUTS set by the engine. */
+    val verbPlacement: VerbPlacement = VerbPlacement()
+    var verbTargets: ActingTargets = ActingTargets.NONE
+    /** The verb offsets of this frame, an OUTPUT of [ActingLayer.apply] (valid when it returned this frame). */
+    val verbOffsets: VerbOffsets = VerbOffsets()
     var expression: Int = 0
     var mouthShape: Int = 0
     var amplitude: Float = 0f

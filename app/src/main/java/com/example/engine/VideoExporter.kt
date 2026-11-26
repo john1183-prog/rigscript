@@ -159,7 +159,10 @@ object VideoExporter {
             it.loadCaptions(TimelineCompiler.extractCaptions(project.script))
             it.loadOverlayLayers(TimelineCompiler.extractOverlayLayers(project.script))
             it.actingContext = com.example.engine.acting.ActingContext.create(
-                appearance.actingIntensity, project.id, envelope, envFps, mouthShapes = mouthEnvelope)
+                appearance.actingIntensity, project.id, envelope, envFps, mouthShapes = mouthEnvelope,
+                stage = com.example.engine.acting.ActingStage.of(
+                    if (!settings.dualAspectExport && settings.aspectRatio == "16:9") 16f / 9f else 9f / 16f,
+                    appearance.rootAnchorX, appearance.rootAnchorY, appearance.characterScale))
         }
         // One shared renderer instance across all targets — safe because targets
         // are drawn sequentially within a single thread here, not concurrently.

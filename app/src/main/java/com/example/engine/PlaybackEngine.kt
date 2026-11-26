@@ -1,6 +1,7 @@
 package com.example.engine
 
 import com.example.data.AmplitudeSettings
+import com.example.engine.acting.ActVerbTimeline
 import com.example.engine.acting.ActingContext
 import com.example.engine.acting.ActingFault
 import com.example.engine.acting.ActingFrame
@@ -8,6 +9,8 @@ import com.example.engine.acting.ActingIntensity
 import com.example.engine.acting.ActingLayer
 import com.example.engine.acting.ActingMotion
 import com.example.engine.acting.ActingParams
+import com.example.engine.acting.ActingStage
+import com.example.engine.acting.ActingTargets
 import com.example.engine.acting.MouthTrack
 import kotlin.math.*
 
@@ -516,7 +519,11 @@ class PlaybackEngine {
      */
     private fun applyActing(timeSec: Float) {
         val ctx = actingContext
-        if (ctx == null || ctx.intensity == ActingIntensity.OFF) {
+        val off = ctx == null || ctx.intensity == ActingIntensity.OFF
+        // WP2.5: the intent verbs are Direction and run at every intensity. A script without verbs (every legacy script) has an empty
+        // timeline, so OFF stays the no-work path it always was.
+        val verbs = verbsFor()
+        if (off && !verbs.mayBeActive(timeSec)) {
             actedActive = false
             return
         }
@@ -525,18 +532,63 @@ class PlaybackEngine {
         actingBase.amplitude = smoothedAmplitude
         actingBase.eyeOpenness = resolveEyeOpenness(timeSec)
         actingBase.blinkDurationSec = amplitudeSettings.blinkDurationSec.coerceAtLeast(0.02f)
-        // The motion model reads the compiled timeline; it is rebuilt only when the timeline or the spring setting changes.
-        val easeAll = amplitudeSettings.easeAllWithSpring
-        var motion = actingMotion
-        if (motion == null || motion.keyframes !== timeline || motion.easeAllWithSpring != easeAll) {
-            motion = ActingMotion(timeline, easeAll)
-            actingMotion = motion
+        actingBase.verbs = verbs
+        val stage = ctx?.stage ?: ActingStage.DEFAULT
+        val place = actingBase.verbPlacement
+        place.aspect = stage.aspect.toDouble()
+        place.rootX = (currentFigureX ?: stage.rootX).toDouble()
+        place.rootY = (currentFigureY ?: stage.rootY).toDouble()
+        place.characterScale = (currentFigureScale ?: stage.characterScale).toDouble()
+        actingBase.verbTargets = verbTargets
+        if (off || ctx == null) {
+            actingBase.motion = null
+            actingBase.mouthTrack = null
+        } else {
+            // The motion model reads the compiled timeline; it is rebuilt only when the timeline or the spring setting changes.
+            val easeAll = amplitudeSettings.easeAllWithSpring
+            var motion = actingMotion
+            if (motion == null || motion.keyframes !== timeline || motion.easeAllWithSpring != easeAll) {
+                motion = ActingMotion(timeline, easeAll)
+                actingMotion = motion
+            }
+            actingBase.motion = motion
+            // I11: a failing bake leaves the legacy mouth and is recorded like any other acting fault.
+            actingBase.mouthTrack = try { speechMouthTrack(ctx) } catch (e: Throwable) { actingFault.record(e); null }
         }
-        actingBase.motion = motion
-        // I11: a failing bake leaves the legacy mouth and is recorded like any other acting fault.
-        actingBase.mouthTrack = try { speechMouthTrack(ctx) } catch (e: Throwable) { actingFault.record(e); null }
         val acted = actingFault.guard(actingBase) { ActingLayer.apply(actingBase, ctx, timeSec, actingOut) }
         actedActive = acted === actingOut
+    }
+
+    // ── Intent verbs (WP2.5) ───────────────────────────────────────────────────
+    private var verbTimeline: ActVerbTimeline? = null
+    private var verbTimelineSource: List<BakedKeyframe>? = null
+
+    /** The verbs of the current timeline, rebuilt only when the timeline object changes (identity). Empty for every script without `act`. */
+    private fun verbsFor(): ActVerbTimeline {
+        var vt = verbTimeline
+        if (vt == null || verbTimelineSource !== timeline) {
+            vt = ActVerbTimeline.fromKeyframes(timeline)
+            verbTimeline = vt
+            verbTimelineSource = timeline
+        }
+        return vt
+    }
+
+    /** Resolves `layer:<id>` for the aimed verbs from this engine's own overlay layers (normalized screen position at the time; camera not applied). */
+    private val verbTargets: ActingTargets = object : ActingTargets {
+        override fun resolve(targetId: String, timeSec: Float, out: FloatArray): Boolean {
+            if (!targetId.startsWith("layer:")) return false
+            val id = targetId.substring(6)
+            val layers = overlayLayers
+            if (layers.none { it.id == id }) return false
+            val partials = OverlayResolver.resolveTimeBased(layers, timeSec)
+            val j = partials.indexOfFirst { it.id == id }
+            if (j < 0) return false
+            val resolved = OverlayResolver.applyParenting(partials, emptyMap())
+            out[0] = resolved[j].x
+            out[1] = resolved[j].y
+            return true
+        }
     }
 
     /**

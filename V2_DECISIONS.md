@@ -3034,6 +3034,39 @@ approved by the person before implementing:**
   Files: `data/AnimScript.kt`, `engine/TimelineCompiler.kt`, `engine/ScriptValidator.kt`, `engine/acting/ActVocabulary.kt`, `ui/editor/EditorScreen.kt` (two labels),
   `IntentSchemaTest` (7 tests), golden `07_edge_cases`. Verification: VERIFIED-BY-TEST locally; CI see the log. NOT device-tested.
 
+- **2026-11-26 — WP2.5 step 2: the `act` verb model (DIRECTION), IK pointing, aimed looks.**
+  Decision: each verb is an ADDITIVE offset over the pose and face the engine (and, when on, the acting Craft stages) already produced, a pure function of
+  time (I2). Shapes are `sin^2` lobes and smoothstep plateaus that start and end at exactly zero with zero slope, so a verb returns to the base pose
+  with no pop and overlapping verbs simply add (the validator warns under 1 s). Direction (A4): verbs run at EVERY intensity, OFF included; the acting
+  intensity only switches the Craft around them. With no verb window holding the time, OFF is still the no-work path (`ActingLayer.apply` returns the base frame
+  itself; the goldens and the OFF bit-equality tests are unchanged). With a verb active at OFF the engine publishes a face built by `ResolvedFace.setLegacy`
+  (proven bit-equal to the legacy geometry by `FaceGeometryTest`) plus the verb deltas, and the base angles plus the verb offsets.
+  The ten verbs (a = `actIntensity`, default 0.7; amounts at a = 1; windows in seconds): `nod` head 16, torso 3, gaze down, lids 0.45; `shake_head` head 18
+  over two cycles 0.6; `emphasize` torso 6, head -7, both arms 16/10, brows 0.35; `react_surprise` squint then take (eye height -0.35 then +0.50, eyes +0.045,
+  brows +0.55), lean back 7 with arms up, settles by 0.7; `react_think` head 15, gaze up and aside, inner brows, 0.8; `react_laugh` 3.5 cycles of torso 3.5 / head
+  -2.5 / arms 4, squint, wide mouth with a continuous opening, 1.0; `react_sad` slump (head 16, torso 5, arms 7), gaze down, inner brows, frown, held, 1.8;
+  `look_at` gaze to the target held 2.0 s (or until the next gaze verb starts, the two cross-fade over 0.18 s so the gaze never jumps), `look_away` a
+  glance aside and down (the side opposite a left/right target, else a seeded side from the start time) 0.8; `point_at` the nearer arm by two-bone IK
+  (elbow down on either arm, clamped to 98 % of the reach), a small wind-back, rise 0.35, held to 1.55, back at 1.8, plus a 60 % look at the target.
+  Look strength is NOT scaled by `actIntensity` (a look points where it points); every other verb is linear in it.
+  Face rules: brow deltas apply only where brows are already drawn (the acting levels draw them on every expression, legacy only WORRIED/ANGRY), so a verb
+  never makes a brow pop into existence at OFF; a laugh switches the mouth to the continuous parameters (open and width are the max of the speech mouth and
+  the laugh); a directed gaze replaces the idle gaze by its weight (idle * (1 - w) + target).
+  Targets: `left|right|up|down|camera` are fixed directions (`camera` = eyes centred); `x,y` are normalized screen coordinates; `layer:<id>` is resolved from the
+  engine's own overlay layers (time-based position with layer-to-layer parenting, camera zoom/pan NOT applied, a layer parented to a bone falls back to its local
+  position, a layer outside its window is unresolvable and the verb does nothing). Aimed verbs need the figure's place: `ActingStage` (aspect, pelvis anchor,
+  character scale) rides in `ActingContext` from the appearance (preview: the view's aspect; export: the export aspect, 9:16 for dual aspect because the
+  acting evaluation is shared by both targets) with the scripted figureX/Y/scale applied per frame; hip bob is ignored. A direction word for `point_at` points
+  one arm length away that way.
+  Prototype findings that changed the numbers (looked at, `tools/acting_proto/out/18..23`): the head bone is a 0.05 lever, so a 9 degree nod moved the head circle by
+  under 1 % of the figure and was invisible, the head verbs were raised to 15 to 18 degrees and lean on the face (gaze, lids, brows); the first IK picked the
+  elbow-up solution for high targets, fixed per arm (th2 sign by side). The strips judge motion shape only, not app pixels.
+  Files: `engine/acting/ActVerbs.kt` (VerbParams, ActingStage, VerbOffsets, ActVerbTimeline, ActVerbModel), `ActingLayer` (stage 4 and the OFF path),
+  `ActingContext` (stage, frame inputs), `PlaybackEngine` (timeline cache by identity, placement, layer targets), the three context sites, `tools/acting_proto/verbs_proto.py`,
+  `ActVerbTest` (14 tests: 100 curve rows, 4 IK rows, 11 weight rows pinned to the prototype, return-to-zero for all ten verbs at a = 1, pure-function seek order,
+  dropped invalid verbs, wrist-on-target, cross-fade, aimed looks, OFF and ON engine paths, layer targets), local harness stubs gained Double and message overloads.
+  Verification: VERIFIED-BY-TEST locally (336 tests); CI see the log; NOT device-tested (tuning the amounts is a device job, see TEST_CHECKLIST).
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

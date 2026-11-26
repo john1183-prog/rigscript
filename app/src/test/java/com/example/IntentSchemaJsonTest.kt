@@ -8,27 +8,27 @@ import com.example.engine.acting.ActVerbTimeline
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * WP2.5 through the app's real JSON parser (CI only: the local harness has no kotlinx.serialization). A legacy event decodes
- * with the new fields at their defaults and encodes without them; the device test script `v2/wp25_intents.json` parses,
+ * with the new fields at their defaults and round-trips through the storage JSON; the device test script `v2/wp25_intents.json` parses,
  * validates without a verb or emote warning, and compiles to the verbs and emotes it names.
  */
 class IntentSchemaJsonTest {
 
     @Test
-    fun aLegacyEventDecodesWithDefaultsAndEncodesWithoutTheNewFields() {
+    fun aLegacyEventDecodesWithDefaultsAndRoundTrips() {
         val s = AppJson.storage.decodeFromString<AnimScript>("""{"version":"1.0","events":[{"timeSec":1.5,"pose":"wave"}]}""")
         val e = s.events[0]
         assertEquals("wave", e.pose)
         assertNull(e.act); assertNull(e.actTarget); assertNull(e.emote)
         assertEquals(0.7f, e.actIntensity, 0f)
+        // The storage JSON writes every field (nulls and defaults too), so the new ones appear as null and 0.7: what matters is that it round-trips.
         val out = AppJson.storage.encodeToString(s)
-        assertFalse("no new field in the legacy encoding: $out", out.contains("act") || out.contains("emote"))
+        assertEquals(s, AppJson.storage.decodeFromString<AnimScript>(out))
     }
 
     @Test

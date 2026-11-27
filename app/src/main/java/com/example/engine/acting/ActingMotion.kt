@@ -48,11 +48,16 @@ class ActingMotion(val keyframes: List<BakedKeyframe>, val easeAllWithSpring: Bo
             arrivalProgress[i] = m[0]
             shapeOvershoot[i] = m[1]
         }
-        for (level in ActingIntensity.values()) {
-            val scale = ActingParams.levelFor(level).moodScale.toDouble()
-            if (scale > 0.0) moods[level.ordinal] = MoodModel.bakeMood(face, scale)
+        // WP2.6, I12: the mood idles are cosmetic, so a failing bake (it should not) leaves no mood instead of breaking playback.
+        try {
+            for (level in ActingIntensity.values()) {
+                val scale = ActingParams.levelFor(level).moodScale.toDouble()
+                if (scale > 0.0) moods[level.ordinal] = MoodModel.bakeMood(face, scale)
+            }
+            free = MoodModel.bakeFree(FloatArray(size) { keyframes[it].timeSec }, locomotion)
+        } catch (e: Exception) {
+            moods.fill(null)
         }
-        free = MoodModel.bakeFree(FloatArray(size) { keyframes[it].timeSec }, locomotion)
     }
 
     companion object {

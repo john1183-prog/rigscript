@@ -27,5 +27,13 @@ object Fixtures {
 
     fun script(name: String): AnimScript = LocalJson.decode(AnimScript::class, LocalJson.parse(scriptText(name)))
 
+    fun scriptFromText(text: String): AnimScript = LocalJson.decode(AnimScript::class, LocalJson.parse(text))
+
+    fun docSample(name: String): String {
+        val roots = listOfNotNull(System.getProperty("repo.root")?.let { File(it) }, File("."), File(".."), File("../.."))
+        val root = roots.firstOrNull { File(it, "docs/samples").isDirectory } ?: error("docs/samples not found")
+        return File(root, "docs/samples/$name.json").readText(Charsets.UTF_8)
+    }
+
     fun legacyJson(name: String): String = text("fixtures/legacy_json/$name.json")
 }

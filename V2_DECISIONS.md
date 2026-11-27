@@ -3083,6 +3083,57 @@ approved by the person before implementing:**
   figure and move with the head bone position only (position-only parenting), not its rotation.
   Files: `engine/EmoteExpander.kt`, `TimelineCompiler.extractOverlayLayers`, `EmoteExpanderTest` (5 tests). Verification: VERIFIED-BY-TEST locally (341 tests); CI see the log; NOT device-tested.
 
+- **2026-11-27 — WP2.6 Mood idles (CRAFT; Python prototype `tools/acting_proto/mood_proto.py`, port `engine/acting/MoodMotion.kt`).**
+  Decision: the idle breathing rate and depth and the talk/fidget sway follow the current expression (calm below 1, energetic above), scaled by the acting
+  level, deterministic, and off while a walk/jog keyframe is active. Craft in the sense of A4: it changes how the body idles, never what the script says. The
+  multipliers per expression (`ActingParams.MOOD_RATE`, `MOOD_DEPTH`, `MOOD_SWAY`; NORMAL 1.00 for all three, ANGRY 1.30 / 1.35 / 1.30, SQUINT 0.85 / 0.85 / 0.80,
+  WIDE 1.40 / 1.25 / 1.15, WORRIED 1.35 / 0.80 / 0.85, HAPPY 1.10 / 1.10 / 1.25) are starting points, plotted and not measured on a device. Targets are
+  1 + `moodScale` * (table - 1) with `moodScale` 0.5 / 1.0 / 1.4 for Subtle / Normal / Bold (a new `ActingLevel` field, default 0, so every old constructor call
+  compiles), each clamped to 0.5 to 2.0. A mood settles over `MOOD_BLEND_SEC` 1.5 s (slower than the 0.18 s face blend: breathing does not change in a fifth of a
+  second) and the gate fades over `MOOD_LOCO_RAMP_SEC` 0.35 s.
+  Design (and why): (1) The breathing RATE changes, so the phase must be integrated: `phase = 2 pi f (t + W(t))` with `W(t) = integral of (rate - 1)`. `f(t) * t` would
+  jump at every change. The blend is a left-to-right recurrence (the value at each change time is stored) instead of the face model's depth-capped recursion, which
+  makes `W` exact in closed form (`BlendTrack`, O(log n) per frame, no per-frame integration) and keeps the rate and phase continuous, also when two changes overlap
+  (proved by the 1 ms continuity test and a closed-form-vs-numeric-integral test). (2) The layer ADDS (acted - legacy) to the frame the engine built, like stage 1, so
+  the legacy amplitude motion is never touched: `d = free * a * (depth * sin(2 pi f (t + W)) - sin(2 pi f t))` to the torso and `-0.5 d` to the head; with every
+  multiplier 1 `W` is exactly 0 and `d` is exactly 0.0. (3) The sway is stateful in the legacy engine (smoothed amplitude), so the layer does not recompute it:
+  `PlaybackEngine` now RECORDS what `applyAmplitudeMotion` added to the torso, head and upper arms (talk sway and fidgets) and the breath amplitude and frequency
+  (`ampSway`, `ampBreathDeg`, `ampBreathHz`, passed to the layer in `ActingFrame`); the layer adds `free * (sway - 1) * recorded`. The recording uses the same Float
+  operations in the same order, so the angles are unchanged (the golden snapshots and the whole local suite pass). It is cleared wherever a frame is built without
+  amplitude motion (`seekTo`, `reset`, a snapping `loadTimeline`, and before every `applyAmplitudeMotion`), so a paused scrub gets no mood (it would otherwise add
+  a phantom breath difference to a frame that has no breath). (4) Off during locomotion: the gate is one channel over the keyframes' `locomotion` flags (walk_/jog_
+  poses, the same flag the motion model uses), blended over 0.35 s; inside a walk the mood adds exactly nothing, so the figure moves exactly as the legacy engine
+  moves it. (5) OFF never runs the layer (unchanged contract), so the legacy path stays bit-equal. `moodScale` 0 in all three levels removes the feature (the tracks
+  are not baked).
+  Known, from the plots (`out/24` to `out/27`) and not device-checked: the breath is only about 1.4 to 1.9 degrees, so the mood is subtle on a phone by design; and
+  where the mood fades back in after a walk the acted and the legacy breath are out of phase, so the 0.35 s cross-fade shows a notch of about 0.4 degrees (smooth,
+  velocity-continuous, kept). The `warp` keeps accumulating during a walk (the mood is only gated, not paused), so after a long walk the acted breath is at an
+  unrelated phase to the legacy one; harmless because the legacy breath is not drawn while the mood is on. Not scaled: the idle blink and the head tilt of the face model.
+  Files: `engine/acting/MoodMotion.kt` (`BlendTrack`, `MoodModel`), `ActingParams` (`MOOD_*`, `moodScale`), `ActingMotion` (per-level tracks and the gate, baked once;
+  a failing bake leaves no mood, I12), `ActingLayer` stage 1b, `ActingFrame`, `PlaybackEngine` (recording). Tests: `MoodMotionTest` (13: pinned to the prototype rows
+  at NORMAL and BOLD, the warp integral, continuity, exact zero for an all-NORMAL timeline and inside a walk, a frame without amplitude motion untouched, the sway and
+  breath formula, determinism, and engine runs: anger changes the idle breath, a walk keeps the legacy breath, OFF is the legacy frame). Verification: VERIFIED-BY-CI
+  run 45916046958 (386 tests); `tools/localjvm` 354 before the push; NOT device-tested.
+
+- **2026-11-27 — WP2.7 Phase 2 wrap: the showcase script, the A/B checklist, the tuning guide (DOCUMENTATION; no behaviour change) and the I12 review.**
+  Discrepancy found and fixed: the brief (A-section item 8, WP2.7) says to "extend" `docs/samples/v2_showcase.json`, but it never existed (Phase 0 and Phase 1 did
+  not create it, and nothing in the repo referred to it). It is created now (125 s: settle, moods, walk, the ten `act` verbs, the nine emotes, with captions that name
+  the section on screen; the `logo` circle for `layer:logo` is at x 0.88 so the validator's overlap check stays quiet) with `docs/samples/README.md`, and
+  `ShowcaseSampleTest` keeps it honest (parses, validates with no warnings, covers every verb, emote and expression and the walk poses, runs at all four acting levels
+  with no fault and inside the joint limits, and shows the mood in the angry hold). `Fixtures` gained `scriptFromText` and `docSample` in both the Gradle and the local
+  twin. One test assumption was wrong and is recorded: OFF equals the legacy frame only until the first `act` verb, because verbs are Direction and run at every
+  level (WP2.5); the test says so. `TEST_CHECKLIST.md` gets section 3 (A/B steps 19 to 26: overlap and settle, soft expression changes, eye movement, mood breathing,
+  the walk, verbs, emotes, the calmer mouth with narration and the Canvas/GLES export comparison) and the Phase 2 tuning guide (every `ActingParams` constant by what it
+  does, the verb and emote places, and how to keep the Python twins and the pinned tests in step).
+  I12 launch-safety review for Phase 2 (read, not run on a device): (1) Persisted settings added in Phase 2: only `AppearanceSettings.actingIntensity` (WP2.1);
+  `AppearanceActingJsonTest` covers a blob saved before the field existed, a legacy project, an empty object, an unknown stored value (read as NORMAL) and a round
+  trip, and `LegacyJsonTest` still decodes the baseline captures. `ScriptEvent` gained only optional fields with legacy defaults (`IntentSchemaJsonTest`: a legacy
+  event decodes and round-trips). WP2.6 and WP2.7 add no persisted field. (2) Startup path: nothing in Phase 2 runs before a timeline is loaded; the acting layer is
+  only reached through `PlaybackEngine.applyActing`, `ActingLayer.apply` runs inside `actingFault.guard` (any exception falls back to the base frame and is counted),
+  and the one piece that builds outside that guard, `ActingMotion`'s constructor, now also contains the mood bake in a try/catch (a failure leaves no mood). (3) Screens
+  touched in Phase 2: the Appearance "Acting" selector and the preview "Acting: ... (A/B)" chip (WP2.1); both read the stored value with a default. (4) New engine state
+  per frame is a few floats (`ampBreathDeg`, `ampBreathHz`, `ampSway`), allocation-free. Result: no launch-safety defect found; nothing here was run on a device.
+
 ## AI drives the pipeline — the app doesn't second-guess it
 
 Camera motion, scene colors/shapes, and captions are all purely

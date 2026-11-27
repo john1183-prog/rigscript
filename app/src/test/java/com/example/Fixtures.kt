@@ -34,6 +34,16 @@ object Fixtures {
 
     fun script(name: String): AnimScript = AppJson.storage.decodeFromString<AnimScript>(scriptText(name))
 
+    /** A script given as text (the same parser as [script]). */
+    fun scriptFromText(text: String): AnimScript = AppJson.storage.decodeFromString<AnimScript>(text)
+
+    /** A sample under `docs/samples/` (the repo copy, not a test resource); the working directory is the module (Gradle) or the repo root. */
+    fun docSample(name: String): String {
+        val roots = listOfNotNull(System.getProperty("repo.root")?.let { java.io.File(it) }, java.io.File("."), java.io.File(".."), java.io.File("../.."))
+        val root = roots.firstOrNull { java.io.File(it, "docs/samples").isDirectory } ?: error("docs/samples not found from ${java.io.File(".").absolutePath}")
+        return java.io.File(root, "docs/samples/$name.json").readText(Charsets.UTF_8)
+    }
+
     /** JSON captured from the baseline app (commit eb6b0b3) before any V2 field existed. */
     fun legacyJson(name: String): String = text("fixtures/legacy_json/$name.json")
 }

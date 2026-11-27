@@ -202,6 +202,19 @@ import kotlinx.serialization.Serializable
  * [particleSizeMin]/[particleSizeMax] Per-particle radius range, fraction
  *                      of canvas min-dimension.
  *
+ * ── kinetic text (WP3.1; only used when [type] == "text") ───────────────
+ * [textMode]      "block" (default, the whole text enters as one) | "word" |
+ *                  "char". In a unit mode every word (or character) plays the
+ *                  layer's [enterStyle]/[enterDuration]/[enterEase] on its own,
+ *                  each starting [stagger] seconds after the previous one; the
+ *                  exit is still one for the whole layer. A text with fewer than
+ *                  2 units, or more than 40 (char falls back to word, word to
+ *                  block), is drawn as a block. Unknown values read as "block"
+ *                  ([com.example.engine.ScriptValidator] warns). With
+ *                  [enterStyle] "none" the units appear one by one (a reveal).
+ * [stagger]       Seconds between units (default 0.1). Squeezed so the last
+ *                  unit has finished entering before the exit starts.
+ *
  * ── figure layers (only used when [type] == "figure") ───────────────────
  * A supporting, illustrative second figure — see [type]'s doc comment
  * above for why this is deliberately NOT a co-equal animated character.
@@ -314,5 +327,8 @@ data class OverlayLayer(
     val particleSizeMax: Float = 0.016f,
     // Figure layers (only used when type == "figure")
     val pose: String? = null,
-    val expression: String? = null
+    val expression: String? = null,
+    // Kinetic text (WP3.1, only used when type == "text"); the defaults are the legacy block text.
+    val textMode: String = "block",
+    val stagger: Float = 0.1f
 )

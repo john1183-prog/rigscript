@@ -39,6 +39,7 @@ object ScriptValidator {
     private val VALID_OVERLAY_SHAPE = setOf("rect", "circle", "line", "arrow", "cross")
     private val VALID_PARTICLE_SHAPE = setOf("circle", "rect")
     private val VALID_PHYSICS = setOf("none", "projectile", "bounce")
+    private val VALID_TEXT_MODE = setOf("block", "word", "char")
     private val VALID_OVERLAY_STYLE = setOf("fade", "pop", "zoom", "slideup", "slidedown", "none")
     private val VALID_OVERLAY_SLOT  = setOf("upper", "center", "lower")
     // Ease values valid for enterEase/exitEase — same set VALID_EASE covers
@@ -252,6 +253,23 @@ object ScriptValidator {
         unknownValues(layers.map { it.physics }, VALID_PHYSICS)
             .takeIf { it.isNotEmpty() }
             ?.let { warnings += "Unknown overlay physics value(s), treated as none: ${it.joinToString()}" }
+
+        // Kinetic text (WP3.1): an unknown textMode reads as block, and a unit mode that cannot split the text is
+        // drawn as a block too; both are quiet degradations the author would not otherwise notice.
+        unknownValues(layers.map { it.textMode }, VALID_TEXT_MODE)
+            .takeIf { it.isNotEmpty() }
+            ?.let { warnings += "Unknown overlay textMode value(s), treated as block: ${it.joinToString()}" }
+        layers.filter { it.type == "text" && it.textMode != KineticText.MODE_BLOCK && KineticText.isKnownMode(it.textMode) }
+            .filter { KineticText.unitRanges(it.text ?: "", it.textMode).isEmpty() }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "Text layer(s) with textMode word/char but fewer than 2 words or more than ${KineticText.MAX_UNITS}, drawn as one block: ${bad.joinToString { it.id.ifBlank { "@${it.startSec}s" } }}"
+            }
+        layers.filter { it.type != "text" && it.textMode != KineticText.MODE_BLOCK }
+            .takeIf { it.isNotEmpty() }
+            ?.let { bad ->
+                warnings += "textMode is only used by text layers, ignored on: ${bad.joinToString { it.id.ifBlank { "@${it.startSec}s" } }}"
+            }
 
         val knownBoneIds = StickFigureRig.BONE_INDEX.keys
         layers.filter { layer ->

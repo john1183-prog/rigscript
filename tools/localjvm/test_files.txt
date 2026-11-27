@@ -35,3 +35,4 @@ ShowcaseSampleTest.kt
 IntentSchemaTest.kt
 ActVerbTest.kt
 EmoteExpanderTest.kt
+KineticTextTest.kt

@@ -37,7 +37,9 @@ data class ResolvedOverlay(
     /** See [com.example.data.OverlayLayer.inFrontOfFigure]. */
     val inFrontOfFigure: Boolean = true,
     /** See [com.example.data.OverlayLayer.screenSpace]. */
-    val screenSpace: Boolean = false
+    val screenSpace: Boolean = false,
+    /** Kinetic text (WP3.1): per-unit state of a word/char text layer for the whole window; null = draw as one block (legacy). */
+    val textUnits: List<TextUnitState>? = null
 )
 
 /**
@@ -83,7 +85,9 @@ data class TimeResolvedOverlay(
     /** See [com.example.data.OverlayLayer.inFrontOfFigure]. */
     val inFrontOfFigure: Boolean = true,
     /** See [com.example.data.OverlayLayer.screenSpace]. */
-    val screenSpace: Boolean = false
+    val screenSpace: Boolean = false,
+    /** Kinetic text (WP3.1): per-unit state of a word/char text layer for the whole window; null = draw as one block (legacy). */
+    val textUnits: List<TextUnitState>? = null
 )
 
 /**
@@ -165,8 +169,11 @@ object OverlayResolver {
         val tSinceStart = timeSec - layer.startSec
         val tUntilEnd   = layer.endSec - timeSec
 
+        // Kinetic text (WP3.1): in a unit mode the enter belongs to the units, so the layer itself skips it.
+        val textUnits = if (layer.type == "text") resolveTextUnits(layer, tSinceStart, enterDur, exitDur, windowLen) else null
+
         val (progress, style, ease) = when {
-            tSinceStart < enterDur -> Triple((tSinceStart / enterDur).coerceIn(0f, 1f), layer.enterStyle, layer.enterEase)
+            tSinceStart < enterDur && textUnits == null -> Triple((tSinceStart / enterDur).coerceIn(0f, 1f), layer.enterStyle, layer.enterEase)
             tUntilEnd < exitDur    -> Triple((tUntilEnd / exitDur).coerceIn(0f, 1f), layer.exitStyle, layer.exitEase)
             else                   -> Triple(1f, "none", "linear")
         }
@@ -224,8 +231,36 @@ object OverlayResolver {
             velocityAngleDeg = velocityAngle, trailPointsLocal = trailPts,
             figurePoseAngles = poseAngles, figureExpression = expressionIndex,
             inFrontOfFigure = layer.inFrontOfFigure,
-            screenSpace = layer.screenSpace
+            screenSpace = layer.screenSpace,
+            textUnits = textUnits
         )
+    }
+
+    /**
+     * Kinetic text (WP3.1): the per-unit enter of a `textMode` "word"/"char" layer at [tSinceStart], or null for a
+     * block layer. Unit i starts `i * stagger` after the layer ([KineticText.effectiveStagger]) and plays the
+     * layer's enter style, duration and ease on its own; before its start it is hidden, after it the state is the
+     * identity (the exit is the layer's). Python twin: `kinetic_proto.py`.
+     */
+    private fun resolveTextUnits(layer: OverlayLayer, tSinceStart: Float, enterDur: Float, exitDur: Float, windowLen: Float): List<TextUnitState>? {
+        val text = layer.text
+        if (text.isNullOrBlank() || layer.textMode == KineticText.MODE_BLOCK) return null
+        val ranges = KineticText.unitRanges(text, layer.textMode)
+        val n = ranges.size / 2
+        if (n < 2) return null
+        val eff = KineticText.effectiveStagger(layer.stagger, n, enterDur, exitDur, windowLen)
+        val out = ArrayList<TextUnitState>(n)
+        for (i in 0 until n) {
+            val delay = i * eff
+            if (tSinceStart < delay) {
+                out.add(TextUnitState(ranges[2 * i], ranges[2 * i + 1], 0f, 1f, 0f, 0f))
+                continue
+            }
+            val p = ((tSinceStart - delay) / enterDur).coerceIn(0f, 1f)
+            val f = animate(layer.enterStyle, EasingMath.ease(layer.enterEase, p))
+            out.add(TextUnitState(ranges[2 * i], ranges[2 * i + 1], f.a.coerceIn(0f, 1f), f.b, f.c, f.d))
+        }
+        return out
     }
 
     private data class ResolvedAnimProperties(
@@ -560,7 +595,8 @@ object OverlayResolver {
                 trailPoints = p.trailPointsLocal,
                 figurePoseAngles = p.figurePoseAngles, figureExpression = p.figureExpression,
                 inFrontOfFigure = p.inFrontOfFigure,
-                screenSpace = w.screenSpace
+                screenSpace = w.screenSpace,
+                textUnits = p.textUnits
             )
         }
     }

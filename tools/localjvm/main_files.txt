@@ -46,3 +46,4 @@ engine/acting/MoodMotion.kt
 engine/acting/ActVocabulary.kt
 engine/acting/ActVerbs.kt
 engine/EmoteExpander.kt
+engine/KineticText.kt

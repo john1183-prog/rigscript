@@ -325,6 +325,7 @@ class PlaybackEngine {
         resolveBaseAngles(currentTimeSec, useAnalyticalSpring = true)
         if (snapToCurrentTime) {
             baseAngles.copyInto(currentAngles)
+            clearAmplitudeRecord()
             springVelocities.fill(0f)
             reloadChase = false
         } else {
@@ -416,6 +417,7 @@ class PlaybackEngine {
         reloadChase = false
         resolveBaseAngles(0f, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
+        clearAmplitudeRecord()
         lastCueScanTimeSec = cueScanStart(0f)
         pendingSoundEffectTriggers.clear()
         applyActing(0f)
@@ -463,6 +465,7 @@ class PlaybackEngine {
         }
 
         // 3. Layer amplitude-driven motion on top
+        clearAmplitudeRecord()
         applyAmplitudeMotion(safeDt, rawAmp)
 
         // 4. Propagate mouth shape from AudioPlayer → renderer
@@ -479,6 +482,7 @@ class PlaybackEngine {
         reloadChase = false
         resolveBaseAngles(timeSec, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
+        clearAmplitudeRecord()
         // V2 — a seek/scrub should never replay every sound effect between the
         // old and new position; just move the scan pointer, don't fire anything.
         lastCueScanTimeSec = cueScanStart(timeSec)
@@ -505,12 +509,28 @@ class PlaybackEngine {
         reloadChase = false
         resolveBaseAngles(timeSec, useAnalyticalSpring = true)
         baseAngles.copyInto(currentAngles)
+        clearAmplitudeRecord()
         applyAmplitudeMotion(1f / 30f, rawAmp)
         currentMouthShape = mouthShape
         applyActing(timeSec)
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * WP2.6: what the legacy amplitude motion put into the CURRENT frame (idle breath amplitude and frequency, and the talk-sway plus
+     * fidget degrees on the torso, head and upper arms), for the acting layer's mood idles to scale. Zero for a frame built without
+     * amplitude motion (a paused seek, a reset); nothing here changes the legacy arithmetic.
+     */
+    private var ampBreathDeg = 0f
+    private var ampBreathHz = 0f
+    private val ampSway = FloatArray(4)
+
+    private fun clearAmplitudeRecord() {
+        ampBreathDeg = 0f
+        ampBreathHz = 0f
+        ampSway.fill(0f)
+    }
 
     /**
      * Runs the acting layer on the state just computed and records whether the renderers should read [actingOut]
@@ -532,6 +552,9 @@ class PlaybackEngine {
         actingBase.amplitude = smoothedAmplitude
         actingBase.eyeOpenness = resolveEyeOpenness(timeSec)
         actingBase.blinkDurationSec = amplitudeSettings.blinkDurationSec.coerceAtLeast(0.02f)
+        actingBase.ampBreathDeg = ampBreathDeg
+        actingBase.ampBreathHz = ampBreathHz
+        ampSway.copyInto(actingBase.ampSway)
         actingBase.verbs = verbs
         val stage = ctx?.stage ?: ActingStage.DEFAULT
         val place = actingBase.verbPlacement
@@ -892,23 +915,38 @@ class PlaybackEngine {
         val breathOsc = sin(2.0 * PI * s.breathFreqHz * t).toFloat()
         if (idxTorso  >= 0) currentAngles[idxTorso]  += breathOsc * s.idleBreathAmplitude
         if (idxHead   >= 0) currentAngles[idxHead]   -= breathOsc * (s.idleBreathAmplitude * 0.5f)
+        // WP2.6: remember what this frame carries so the mood idles can scale it (read only by the acting layer).
+        ampBreathDeg = s.idleBreathAmplitude
+        ampBreathHz = s.breathFreqHz
 
         // ── Talk motion (only when above silence threshold) ───────────────────
         if (smoothedAmplitude > s.silenceThreshold) {
             val talkOsc  = sin(2.0 * PI * s.talkFreqHz * t).toFloat()
             val strength = smoothedAmplitude - s.silenceThreshold
 
-            if (idxTorso >= 0)
-                currentAngles[idxTorso] += talkOsc * s.talkTorsoAmplitude * strength
-            if (idxHead  >= 0)
-                currentAngles[idxHead]  += talkOsc * s.talkHeadNodAmplitude * strength
+            if (idxTorso >= 0) {
+                val x = talkOsc * s.talkTorsoAmplitude * strength
+                currentAngles[idxTorso] += x
+                ampSway[0] += x
+            }
+            if (idxHead  >= 0) {
+                val x = talkOsc * s.talkHeadNodAmplitude * strength
+                currentAngles[idxHead]  += x
+                ampSway[1] += x
+            }
 
             if (s.armSwayEnabled) {
                 val armOsc = sin(2.0 * PI * (s.talkFreqHz * 0.5) * t).toFloat()
-                if (idxArmR >= 0)
-                    currentAngles[idxArmR] += armOsc * s.armSwayAmplitude * strength
-                if (idxArmL >= 0)
-                    currentAngles[idxArmL] -= armOsc * s.armSwayAmplitude * strength
+                if (idxArmR >= 0) {
+                    val x = armOsc * s.armSwayAmplitude * strength
+                    currentAngles[idxArmR] += x
+                    ampSway[2] += x
+                }
+                if (idxArmL >= 0) {
+                    val x = armOsc * s.armSwayAmplitude * strength
+                    currentAngles[idxArmL] -= x
+                    ampSway[3] -= x
+                }
             }
         }
 
@@ -919,10 +957,22 @@ class PlaybackEngine {
         if (s.idleFidgetEnabled) {
             val fidget = resolveFidgetBump(currentTimeSec)
             if (fidget != 0f) {
-                if (idxTorso >= 0) currentAngles[idxTorso] += fidget * s.fidgetAmplitude
-                if (idxHead  >= 0) currentAngles[idxHead]  -= fidget * s.fidgetAmplitude * 0.4f
+                if (idxTorso >= 0) {
+                    val x = fidget * s.fidgetAmplitude
+                    currentAngles[idxTorso] += x
+                    ampSway[0] += x
+                }
+                if (idxHead  >= 0) {
+                    val x = fidget * s.fidgetAmplitude * 0.4f
+                    currentAngles[idxHead]  -= x
+                    ampSway[1] -= x
+                }
                 val armIdx = if (fidget > 0f) idxArmR else idxArmL
-                if (armIdx >= 0) currentAngles[armIdx] += fidget * s.fidgetAmplitude * 0.6f
+                if (armIdx >= 0) {
+                    val x = fidget * s.fidgetAmplitude * 0.6f
+                    currentAngles[armIdx] += x
+                    if (fidget > 0f) ampSway[2] += x else ampSway[3] += x
+                }
             }
         }
 

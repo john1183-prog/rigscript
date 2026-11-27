@@ -92,6 +92,14 @@ class ActingFrame(val angles: FloatArray) {
     var verbTargets: ActingTargets = ActingTargets.NONE
     /** The verb offsets of this frame, an OUTPUT of [ActingLayer.apply] (valid when it returned this frame). */
     val verbOffsets: VerbOffsets = VerbOffsets()
+    /**
+     * WP2.6 INPUTS the engine records from the legacy amplitude motion of THIS frame (all zero when the frame has none, e.g. a
+     * paused seek): the idle-breath amplitude and frequency, and the talk-sway plus fidget degrees it added to the torso, head and
+     * the two upper arms. The mood idles scale these; they never change the legacy arithmetic.
+     */
+    var ampBreathDeg: Float = 0f
+    var ampBreathHz: Float = 0f
+    val ampSway: FloatArray = FloatArray(4)
     var expression: Int = 0
     var mouthShape: Int = 0
     var amplitude: Float = 0f

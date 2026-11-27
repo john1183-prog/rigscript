@@ -30,6 +30,7 @@ ActingMotionTest.kt
 FaceGeometryTest.kt
 FaceMotionTest.kt
 MouthMotionTest.kt
+MoodMotionTest.kt
 IntentSchemaTest.kt
 ActVerbTest.kt
 EmoteExpanderTest.kt

@@ -26,6 +26,14 @@ class ActingMotion(val keyframes: List<BakedKeyframe>, val easeAllWithSpring: Bo
     val locomotion = BooleanArray(size)
     /** True when no ACTING overshoot is added: locomotion, or an ease that already overshoots by design. */
     val ownOvershoot = BooleanArray(size)
+    /** WP2.6: the baked mood per level (index = [ActingIntensity] ordinal; null for OFF) and the locomotion gate. Built once, below. */
+    private val moods: Array<BlendTrack?> = arrayOfNulls(ActingIntensity.values().size)
+    /** WP2.6: 1 = free, 0 = a walk/jog keyframe is active (the mood is off there). */
+    var free: BlendTrack = MoodModel.bakeFree(FloatArray(0), BooleanArray(0))
+        private set
+
+    /** The mood track of a level, or null when the level has none (OFF). */
+    fun moodFor(intensity: ActingIntensity): BlendTrack? = moods[intensity.ordinal]
 
     init {
         val cache = HashMap<String, FloatArray>()
@@ -40,6 +48,11 @@ class ActingMotion(val keyframes: List<BakedKeyframe>, val easeAllWithSpring: Bo
             arrivalProgress[i] = m[0]
             shapeOvershoot[i] = m[1]
         }
+        for (level in ActingIntensity.values()) {
+            val scale = ActingParams.levelFor(level).moodScale.toDouble()
+            if (scale > 0.0) moods[level.ordinal] = MoodModel.bakeMood(face, scale)
+        }
+        free = MoodModel.bakeFree(FloatArray(size) { keyframes[it].timeSec }, locomotion)
     }
 
     companion object {

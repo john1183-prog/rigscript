@@ -29,7 +29,9 @@ class ActingLevel(
     /** Face (WP2.3): scales the idle gaze (the cap of [ActingParams.GAZE_CAP] is never exceeded). 0 = no gaze. */
     val gazeScale: Float = 0f,
     /** Speech (WP2.4): scales the acted mouth opening (clamped to 0..1 after scaling). 1 = the legacy class heights. */
-    val mouthOpenScale: Float = 1f
+    val mouthOpenScale: Float = 1f,
+    /** Mood idles (WP2.6): how far the breathing rate, breathing depth and sway multipliers move from 1 (1 = the full table in [ActingParams.MOOD_RATE]). */
+    val moodScale: Float = 0f
 )
 
 /** All acting constants, in one place (brief A8 "Tunables in one place"). */
@@ -37,9 +39,9 @@ object ActingParams {
 
     /** OFF: every Craft amount is zero (the layer does not run at all; see [ActingLayer]). */
     val OFF_LEVEL = ActingLevel(0f, 0f, 0f, 0f, 0f, 0f, 0f)
-    val SUBTLE_LEVEL = ActingLevel(0.012f, 0.03f, 0.03f, 4f, 0.025f, 3f, 0.12f, 0.07f, 0.15f, 0.040f, 0.5f, 0.6f, 0.85f)
-    val NORMAL_LEVEL = ActingLevel(0.025f, 0.06f, 0.06f, 6f, 0.05f, 5f, 0.18f, 0.10f, 0.25f, 0.060f, 1.0f, 1.0f, 1.0f)
-    val BOLD_LEVEL = ActingLevel(0.040f, 0.09f, 0.09f, 9f, 0.08f, 8f, 0.24f, 0.13f, 0.30f, 0.080f, 1.4f, 1.0f, 1.15f)
+    val SUBTLE_LEVEL = ActingLevel(0.012f, 0.03f, 0.03f, 4f, 0.025f, 3f, 0.12f, 0.07f, 0.15f, 0.040f, 0.5f, 0.6f, 0.85f, 0.5f)
+    val NORMAL_LEVEL = ActingLevel(0.025f, 0.06f, 0.06f, 6f, 0.05f, 5f, 0.18f, 0.10f, 0.25f, 0.060f, 1.0f, 1.0f, 1.0f, 1.0f)
+    val BOLD_LEVEL = ActingLevel(0.040f, 0.09f, 0.09f, 9f, 0.08f, 8f, 0.24f, 0.13f, 0.30f, 0.080f, 1.4f, 1.0f, 1.15f, 1.4f)
 
     fun levelFor(intensity: ActingIntensity): ActingLevel = when (intensity) {
         ActingIntensity.OFF -> OFF_LEVEL
@@ -134,4 +136,18 @@ object ActingParams {
     const val MOUTH_ROUND_MAX: Double = 0.5
     const val MOUTH_ROUND_W_CUT: Double = 0.12
     const val MOUTH_ROUND_H_GAIN: Double = 0.25
+
+    // WP2.6 mood idles (prototype: tools/acting_proto/mood_proto.py; the constants are the same). Craft: the breathing rate and
+    // depth and the talk/fidget sway follow the expression (calm below 1, energetic above). Targets are 1 + moodScale * (table - 1).
+    //                                                NORMAL WIDE  SQUINT WORRIED ANGRY HAPPY
+    val MOOD_RATE: DoubleArray = doubleArrayOf(1.00, 1.40, 0.85, 1.35, 1.30, 1.10)
+    val MOOD_DEPTH: DoubleArray = doubleArrayOf(1.00, 1.25, 0.85, 0.80, 1.35, 1.10)
+    val MOOD_SWAY: DoubleArray = doubleArrayOf(1.00, 1.15, 0.80, 0.85, 1.30, 1.25)
+    /** A mood takes this long to settle into the next (a smoothstep; slower than the face blend, breathing does not change in 180 ms). */
+    const val MOOD_BLEND_SEC: Double = 1.5
+    /** The mood fades out and in over this long around a walk/jog keyframe (off during locomotion cycles). */
+    const val MOOD_LOCO_RAMP_SEC: Double = 0.35
+    /** Every multiplier is clamped to this range, a safety net for tuning. */
+    const val MOOD_MIN: Double = 0.5
+    const val MOOD_MAX: Double = 2.0
 }

@@ -21,6 +21,9 @@ object ActingLayer {
     private fun mouthScratch(): DoubleArray = mouthScratchLocal.get()!!
 
     private val HEAD_IDX: Int = StickFigureRig.BONES.indexOfFirst { it.id == "head" }
+    private val TORSO_IDX: Int = StickFigureRig.BONES.indexOfFirst { it.id == "torso" }
+    private val ARM_R_IDX: Int = StickFigureRig.BONES.indexOfFirst { it.id == "upper_arm_r" }
+    private val ARM_L_IDX: Int = StickFigureRig.BONES.indexOfFirst { it.id == "upper_arm_l" }
 
     fun apply(base: ActingFrame, ctx: ActingContext?, timeSec: Float, out: ActingFrame): ActingFrame {
         // WP2.5 verbs are Direction: they run at every intensity, OFF included. With no verb window holding the time the OFF path is
@@ -55,6 +58,10 @@ object ActingLayer {
             }
             out.angles[i] = v
         }
+        // Stage 1b (WP2.6, mood idles): breathing rate and depth and the sway follow the expression; off while walking. Scales the
+        // legacy amplitude motion the engine recorded in the base frame, so a frame without any is left alone.
+        val mood = motion.moodFor(ctx.intensity)
+        if (mood != null) MoodModel.apply(base, mood, motion.free, t, TORSO_IDX, HEAD_IDX, ARM_R_IDX, ARM_L_IDX, out)
         // Stage 2 (WP2.3, face): the blended expression, brows and gaze go to out.face; the head follows the eyes by a few
         // degrees, added to the head bone (the mouth and eyes turn with it because the renderers rotate them with the head).
         val tilt = FaceMotionModel.resolve(motion.face, lv, ctx.seed, t, base.eyeOpenness, base.blinkDurationSec, out.face)

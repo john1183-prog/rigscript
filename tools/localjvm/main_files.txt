@@ -42,6 +42,7 @@ engine/FaceGeometry.kt
 engine/ResolvedFace.kt
 engine/acting/FaceMotion.kt
 engine/acting/MouthMotion.kt
+engine/acting/MoodMotion.kt
 engine/acting/ActVocabulary.kt
 engine/acting/ActVerbs.kt
 engine/EmoteExpander.kt

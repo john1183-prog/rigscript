@@ -44,6 +44,28 @@ class ShowcaseSampleTest {
     }
 
     @Test
+    fun itExercisesKineticText() {
+        // WP3.1: a block layer for comparison, word layers with three enter styles (one with glow, one with a gradient) and a letter-by-letter reveal.
+        val byId = script.overlayLayers.associateBy { it.id }
+        assertEquals("block", byId.getValue("kin_block").textMode)
+        assertEquals(setOf("fade", "pop", "slideup"), listOf("kin_fade", "kin_pop", "kin_slide").map { byId.getValue(it).enterStyle }.toSet())
+        assertTrue(listOf("kin_fade", "kin_pop", "kin_slide").all { byId.getValue(it).textMode == "word" })
+        assertEquals("char", byId.getValue("kin_type").textMode)
+        assertTrue(byId.getValue("kin_pop").glow && byId.getValue("kin_slide").gradientColor != null)
+        for (id in listOf("kin_fade", "kin_pop", "kin_slide", "kin_type")) {
+            val layer = byId.getValue(id)
+            val mid = (layer.startSec + layer.endSec) / 2f
+            val resolved = com.example.engine.OverlayResolver.resolveTimeBased(listOf(layer), mid).single()
+            val units = resolved.textUnits
+            assertTrue("$id has units", units != null && units.size >= 2)
+            assertTrue("$id is fully shown mid-window", units!!.all { it.opacity == 1f })
+            val early = com.example.engine.OverlayResolver.resolveTimeBased(listOf(layer), layer.startSec + 0.05f).single().textUnits!!
+            assertTrue("$id reveals unit by unit", early.last().opacity == 0f)
+        }
+        assertTrue("block text has no units", com.example.engine.OverlayResolver.resolveTimeBased(listOf(byId.getValue("kin_block")), 126f).single().textUnits == null)
+    }
+
+    @Test
     fun itRunsAtEveryActingLevelWithoutAFaultAndOffIsTheLegacyFrame() {
         val kfs = EngineHarness.compile(script)
         val total = EngineHarness.totalSec(kfs, 0f)

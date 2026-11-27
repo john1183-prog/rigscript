@@ -53,9 +53,15 @@
   {"timeSec":115.0,"emote":"anger"},
   {"timeSec":117.0,"emote":"zzz"},
   {"timeSec":119.0,"emote":"dots"},
-  {"timeSec":123.0,"pose":"stand_straight","expression":"normal"}
+  {"timeSec":123.0,"pose":"stand_straight","expression":"normal","caption":"6. Kinetic text: block, then words and letters one by one","captionDurationSec":3.5},
+  {"timeSec":150.0,"pose":"stand_straight","expression":"normal"}
 ],
 "overlayLayers":[
-  {"id":"logo","type":"shape","shape":"circle","x":0.88,"y":0.2,"radius":0.05,"startSec":84.0,"endSec":101.0,"color":4294198070}
+  {"id":"logo","type":"shape","shape":"circle","x":0.88,"y":0.2,"radius":0.05,"startSec":84.0,"endSec":101.0,"color":4294198070},
+  {"id":"kin_block","type":"text","text":"Block text enters as one piece","slot":"upper","fontSize":0.07,"startSec":124.0,"endSec":128.0,"enterStyle":"fade","enterDuration":0.5},
+  {"id":"kin_fade","type":"text","text":"Each word fades in on its own","slot":"upper","fontSize":0.07,"startSec":128.5,"endSec":133.0,"enterStyle":"fade","enterDuration":0.4,"textMode":"word","stagger":0.15},
+  {"id":"kin_pop","type":"text","text":"Words pop in one by one","slot":"upper","fontSize":0.08,"startSec":133.5,"endSec":138.0,"enterStyle":"pop","enterEase":"back","enterDuration":0.3,"glow":true,"glowRadius":0.015,"textMode":"word","stagger":0.12},
+  {"id":"kin_slide","type":"text","text":"Slide up with a stagger","slot":"upper","fontSize":0.07,"startSec":138.5,"endSec":143.0,"enterStyle":"slideup","enterDuration":0.45,"gradientColor":4294198070,"textMode":"word","stagger":0.2},
+  {"id":"kin_type","type":"text","text":"TYPE IT OUT","slot":"upper","fontSize":0.08,"startSec":143.5,"endSec":147.5,"enterStyle":"none","textMode":"char","stagger":0.12}
 ]
 }

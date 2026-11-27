@@ -16,6 +16,29 @@ class TextUnitState(
 )
 
 /**
+ * Where one text unit sits inside the wrapped text layout, in LAYOUT coordinates (before the layout's own
+ * translation): the unit's centre, its width, the baseline relative to that centre and the font's ascent (negative)
+ * and descent. Built by `RigRenderer.buildOverlayUnitLayout` for both renderers; a plain holder, no Android types.
+ */
+class OverlayUnitBox(
+    val centerX: Float,
+    val centerY: Float,
+    val width: Float,
+    val baselineFromCenter: Float,
+    val ascent: Float,
+    val descent: Float
+)
+
+/** The shared layout of a kinetic text layer: final font size, the layout's translation, its height and one [OverlayUnitBox] per unit. */
+class OverlayUnitLayout(
+    val textSize: Float,
+    val translateX: Float,
+    val translateY: Float,
+    val layoutHeight: Float,
+    val boxes: Array<OverlayUnitBox>
+)
+
+/**
  * Pure rules of kinetic text (WP3.1, brief Phase 3): how a text is cut into units and how the per-unit enter is
  * staggered. No Android types; the Python twin is `tools/acting_proto/kinetic_proto.py`.
  *

@@ -196,6 +196,9 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
     /** Keyed on every rasterization input — see [CaptionTexture]'s cache doc comment for the same reasoning, extended here to cover gradient/glow/bold/align too, since all of those affect the rendered pixels. */
     private val overlayTextTextureCache = LinkedHashMap<String, OverlayTextTexture>()
 
+    /** Kinetic text (WP3.1): the per-unit boxes of a word/char layer, keyed by every layout input and the unit count (the twin of RigRenderer's cache). */
+    private val overlayUnitLayoutCache = HashMap<String, OverlayUnitLayout>()
+
     /**
      * Text phase, sub-phase 3 (V2_DECISIONS.md) — reference overlay's IMAGE
      * sub-case. A SINGLE slot, not a keyed cache like [captionTextureCache]/
@@ -1364,6 +1367,12 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
      * [ensureCaptionTexture]'s).
      */
     private fun drawOverlayTextDraw(draw: GlesFigureFrame.OverlayTextDraw, canvasW: Int, canvasH: Int, w: Float, h: Float) {
+        // Kinetic text (WP3.1): a word/char layer is drawn unit by unit; a block layer takes the legacy path below.
+        val units = draw.units
+        if (units != null) {
+            drawOverlayTextUnits(draw, units, canvasW, canvasH, w, h)
+            return
+        }
         val tex = ensureOverlayTextTexture(draw, canvasW, canvasH)
         // 4 LOCAL corners (already include glow padding) → world, via the
         // exact same RigRenderer.localToWorld shape overlays use — draw's
@@ -1389,6 +1398,128 @@ class GlesFrameRenderer(private val outputSurfaces: List<Surface>) {
         } else {
             drawTexturedQuad(tex.texId, x0, y0, x1, y1, x2, y2, x3, y3, 1f, w, h)
         }
+    }
+
+    /**
+     * Kinetic text (WP3.1): draws every unit of a word/char layer as its own small textured quad. Placement comes from
+     * [RigRenderer.buildOverlayUnitLayout], the layout builder the Canvas renderer uses too, so a word sits where
+     * the block would put it; each unit's resolved opacity, scale (about its own centre) and offset come from
+     * [OverlayResolver]. One bitmap per unit (not a sub-rectangle of one block bitmap) so a neighbour's glow
+     * never bleeds into a word that has not entered yet, as Canvas draws each word with its own shadow.
+     */
+    private fun drawOverlayTextUnits(
+        draw: GlesFigureFrame.OverlayTextDraw, units: List<TextUnitState>, canvasW: Int, canvasH: Int, w: Float, h: Float
+    ) {
+        val key = "${draw.text}|${draw.fontSizeFraction}|${draw.bold}|${draw.align}|$canvasW|$canvasH|${draw.maxWidthPx}|${units.size}"
+        var ul = overlayUnitLayoutCache[key]
+        if (ul == null) {
+            if (overlayUnitLayoutCache.size > 200) overlayUnitLayoutCache.clear()
+            ul = RigRenderer.buildOverlayUnitLayout(
+                overlayTextPaint, draw.text, draw.fontSizeFraction, draw.bold, draw.align, canvasW, canvasH, draw.maxWidthPx, units
+            )
+            overlayUnitLayoutCache[key] = ul
+        }
+        for (i in units.indices) {
+            if (i >= ul.boxes.size) break
+            val u = units[i]
+            val alpha = (draw.opacity * u.opacity).coerceIn(0f, 1f)
+            if (alpha <= 0.001f || u.start < 0 || u.end > draw.text.length || u.end <= u.start) continue
+            val box = ul.boxes[i]
+            val tex = ensureOverlayUnitTexture(draw, ul, box, u.start, u.end, canvasW, canvasH)
+            // The unit's centre in the layer's local space, then its four corners scaled about that centre.
+            val cx = ul.translateX + box.centerX + u.offsetX * canvasW
+            val cy = ul.translateY + box.centerY + u.offsetY * canvasH
+            val (x0, y0) = RigRenderer.localToWorld(cx + tex.localL * u.scale, cy + tex.localT * u.scale, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+            val (x1, y1) = RigRenderer.localToWorld(cx + tex.localR * u.scale, cy + tex.localT * u.scale, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+            val (x2, y2) = RigRenderer.localToWorld(cx + tex.localR * u.scale, cy + tex.localB * u.scale, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+            val (x3, y3) = RigRenderer.localToWorld(cx + tex.localL * u.scale, cy + tex.localB * u.scale, draw.originX, draw.originY, draw.rotationDeg, draw.scale)
+            // Same pixel snap as block text, for a unit at rest on an unrotated layer.
+            if (draw.rotationDeg == 0f && u.scale == 1f && TextRasterScale.isOneToOne(draw.scale, tex.rasterScale)) {
+                val rx0 = kotlin.math.round(x0)
+                val ry0 = kotlin.math.round(y0)
+                val rx1 = rx0 + tex.pixelW
+                val ry2 = ry0 + tex.pixelH
+                drawTexturedQuad(tex.texId, rx0, ry0, rx1, ry0, rx1, ry2, rx0, ry2, alpha, w, h)
+            } else {
+                drawTexturedQuad(tex.texId, x0, y0, x1, y1, x2, y2, x3, y3, alpha, w, h)
+            }
+        }
+    }
+
+    /**
+     * Kinetic text (WP3.1): the cached bitmap of ONE unit, rasterized with the same Paint set-up as
+     * [ensureOverlayTextTexture] (colours opaque, the opacity is applied at draw time), at the layer's raster scale
+     * ([TextRasterScale]). Local bounds are relative to the unit's centre. Shares [overlayTextTextureCache] and its
+     * 200-entry limit with block text.
+     */
+    private fun ensureOverlayUnitTexture(
+        draw: GlesFigureFrame.OverlayTextDraw, ul: OverlayUnitLayout, box: OverlayUnitBox,
+        start: Int, end: Int, canvasW: Int, canvasH: Int
+    ): OverlayTextTexture {
+        val requestedRasterScale = TextRasterScale.rasterScale(draw.scale)
+        val key = "U|${draw.text}|$start|$end|${draw.fontSizeFraction}|${draw.bold}|${draw.align}|${draw.colorArgb}|" +
+            "${draw.gradientColorArgb}|${draw.glow}|${draw.glowColorArgb}|${draw.glowRadiusFraction}|$canvasW|$canvasH|" +
+            "${draw.maxWidthPx}|$requestedRasterScale"
+        overlayTextTextureCache[key]?.let { return it }
+
+        overlayTextPaint.isFakeBoldText = draw.bold
+        overlayTextPaint.textAlign = Paint.Align.LEFT
+        overlayTextPaint.textSize = ul.textSize
+        overlayTextPaint.shader = draw.gradientColorArgb?.let { grad ->
+            LinearGradient(0f, -box.centerY, 0f, ul.layoutHeight - box.centerY, draw.colorArgb, grad, Shader.TileMode.CLAMP)
+        }
+        overlayTextPaint.color = draw.colorArgb
+        val glowRadiusPx = (draw.glowRadiusFraction * canvasH).coerceAtLeast(1f)
+        if (draw.glow) {
+            overlayTextPaint.setShadowLayer(glowRadiusPx, 0f, 0f, draw.glowColorArgb)
+        } else {
+            overlayTextPaint.clearShadowLayer()
+        }
+
+        // Unit-local bounds around (0,0) = the unit's centre; a little margin so bold edges are not clipped.
+        val pad = if (draw.glow) glowRadiusPx * 3f else 0f
+        val margin = kotlin.math.max(pad, 2f)
+        val texL = kotlin.math.floor(-box.width / 2f - margin)
+        val texR = kotlin.math.ceil(box.width / 2f + margin)
+        val texT = kotlin.math.floor(box.baselineFromCenter + box.ascent - margin)
+        val texB = kotlin.math.ceil(box.baselineFromCenter + box.descent + margin)
+
+        var rasterScale = requestedRasterScale
+        var texW = kotlin.math.ceil((texR - texL) * rasterScale).toInt().coerceAtLeast(1)
+        var texH = kotlin.math.ceil((texB - texT) * rasterScale).toInt().coerceAtLeast(1)
+        if (!TextRasterScale.fits(texW, texH)) {
+            rasterScale = 1f
+            texW = (texR - texL).toInt().coerceAtLeast(1)
+            texH = (texB - texT).toInt().coerceAtLeast(1)
+        }
+        val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
+        val bmpCanvas = Canvas(bmp)
+        bmpCanvas.save()
+        bmpCanvas.scale(rasterScale, rasterScale)
+        bmpCanvas.translate(-texL, -texT)
+        bmpCanvas.drawText(draw.text, start, end, -box.width / 2f, box.baselineFromCenter, overlayTextPaint)
+        bmpCanvas.restore()
+        overlayTextPaint.shader = null
+        overlayTextPaint.clearShadowLayer()
+
+        val texArr = IntArray(1)
+        GLES20.glGenTextures(1, texArr, 0)
+        val texId = texArr[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+        bmp.recycle()
+
+        val result = OverlayTextTexture(texId, texL, texT, texL + texW / rasterScale, texT + texH / rasterScale, rasterScale, texW, texH)
+        if (overlayTextTextureCache.size >= 200) {
+            val oldestKey = overlayTextTextureCache.keys.first()
+            overlayTextTextureCache.remove(oldestKey)?.let { GLES20.glDeleteTextures(1, intArrayOf(it.texId), 0) }
+        }
+        overlayTextTextureCache[key] = result
+        return result
     }
 
     /**

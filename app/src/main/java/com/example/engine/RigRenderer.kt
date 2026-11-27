@@ -73,6 +73,8 @@ class RigRenderer {
     private val secondaryFigureMatrices = Array(StickFigureRig.BONE_COUNT) { Matrix() }
     // See cachedOverlayTextLayout's doc comment.
     private val overlayTextLayoutCache = HashMap<String, OverlayTextLayoutResult>()
+    /** Kinetic text (WP3.1): the per-unit boxes of a word/char layer, keyed by every layout input and the unit count. */
+    private val overlayUnitLayoutCache = HashMap<String, OverlayUnitLayout>()
 
     fun draw(
         canvas: Canvas,
@@ -755,6 +757,13 @@ class RigRenderer {
         if (text.isNullOrBlank()) return
         val baseColor = layer.color.toInt()
 
+        // Kinetic text (WP3.1): a word/char layer is drawn unit by unit; a block layer takes the legacy path below.
+        val units = layer.textUnits
+        if (units != null) {
+            drawTextUnits(canvas, w, h, layer, text, units, baseColor)
+            return
+        }
+
         // Multiline word-wrapping via StaticLayout (V2 Overlay-Text Step 2):
         // wraps lines within the room the layer's anchor leaves on the canvas
         // (TextLayoutMath, at most 0.92f * canvasWidth) at the requested
@@ -788,6 +797,54 @@ class RigRenderer {
         canvas.translate(res.layoutTranslateX, res.layoutTranslateY)
         res.layout.draw(canvas)
         canvas.restore()
+    }
+
+    /**
+     * Kinetic text (WP3.1): draws each unit (word or character) of a text layer with its own resolved opacity, scale
+     * and offset ([TextUnitState], computed once in [OverlayResolver]). Each unit is placed from the SAME wrapped
+     * layout the block text uses ([buildOverlayUnitLayout]), so the words sit exactly where the block would put them;
+     * it scales about its own centre. The GLES renderer draws the same boxes as small textures.
+     */
+    private fun drawTextUnits(canvas: Canvas, w: Int, h: Int, layer: ResolvedOverlay, text: String, units: List<TextUnitState>, baseColor: Int) {
+        val maxWidthPx = TextLayoutMath.availableWidthPx(layer.align, layer.x, w)
+        val key = "$text|${layer.fontSize}|${layer.bold}|${layer.align}|$w|$h|$maxWidthPx|${units.size}"
+        var ul = overlayUnitLayoutCache[key]
+        if (ul == null) {
+            if (overlayUnitLayoutCache.size > 200) overlayUnitLayoutCache.clear()
+            ul = buildOverlayUnitLayout(gmsTextPaint, text, layer.fontSize, layer.bold, layer.align, w, h, maxWidthPx, units)
+            overlayUnitLayoutCache[key] = ul
+        }
+        gmsTextPaint.isFakeBoldText = layer.bold
+        gmsTextPaint.textAlign = Paint.Align.LEFT
+        gmsTextPaint.textSize = ul.textSize
+        val glowBase = layer.glowColor.toInt()
+        for (i in units.indices) {
+            if (i >= ul.boxes.size) break
+            val u = units[i]
+            val a = (layer.opacity * u.opacity).coerceIn(0f, 1f)
+            if (a <= 0.001f || u.start < 0 || u.end > text.length || u.end <= u.start) continue
+            val box = ul.boxes[i]
+            gmsTextPaint.shader = if (layer.gradientColor != null) {
+                LinearGradient(0f, -box.centerY, 0f, ul.layoutHeight - box.centerY, baseColor, layer.gradientColor.toInt(), Shader.TileMode.CLAMP)
+            } else null
+            gmsTextPaint.color = baseColor
+            gmsTextPaint.alpha = combinedAlpha(baseColor, a)
+            if (layer.glow) {
+                gmsTextPaint.setShadowLayer(
+                    (layer.glowRadius * h).coerceAtLeast(1f), 0f, 0f,
+                    Color.argb(combinedAlpha(glowBase, a * 0.8f), Color.red(glowBase), Color.green(glowBase), Color.blue(glowBase))
+                )
+            } else {
+                gmsTextPaint.clearShadowLayer()
+            }
+            canvas.save()
+            canvas.translate(ul.translateX + box.centerX + u.offsetX * w, ul.translateY + box.centerY + u.offsetY * h)
+            if (u.scale != 1f) canvas.scale(u.scale, u.scale)
+            canvas.drawText(text, u.start, u.end, -box.width / 2f, box.baselineFromCenter, gmsTextPaint)
+            canvas.restore()
+        }
+        gmsTextPaint.shader = null
+        gmsTextPaint.clearShadowLayer()
     }
 
     /**
@@ -1725,6 +1782,41 @@ class RigRenderer {
          * the maximum allowed width, bounded below by a
          * safe positive minimum size (`(canvasH * 0.01f).coerceAtLeast(1f)`).
          */
+        /**
+         * Kinetic text (WP3.1): the wrapped layout of [buildOverlayTextLayout] plus the box of every unit in [units]
+         * (centre, width, baseline), measured with [paint]. Shared by both renderers, so a word is placed identically
+         * on Canvas and GLES. The unit ranges come from [OverlayResolver] (character offsets into [text]).
+         */
+        fun buildOverlayUnitLayout(
+            paint: TextPaint,
+            text: String,
+            fontSizeFraction: Float,
+            bold: Boolean,
+            align: String,
+            canvasW: Int,
+            canvasH: Int,
+            maxWidthPx: Int,
+            units: List<TextUnitState>
+        ): OverlayUnitLayout {
+            val res = buildOverlayTextLayout(paint, text, fontSizeFraction, bold, align, canvasW, canvasH, maxWidthPx)
+            paint.isFakeBoldText = bold
+            paint.textAlign = Paint.Align.LEFT
+            paint.textSize = res.textSize
+            val ascent = paint.ascent()
+            val descent = paint.descent()
+            val boxes = Array(units.size) { i ->
+                val s = units[i].start.coerceIn(0, text.length)
+                val e = units[i].end.coerceIn(s, text.length)
+                val line = res.layout.getLineForOffset(s)
+                val width = paint.measureText(text, s, e)
+                val x0 = res.layout.getPrimaryHorizontal(s)
+                val baseline = res.layout.getLineBaseline(line).toFloat()
+                val midY = baseline + (ascent + descent) / 2f
+                OverlayUnitBox(x0 + width / 2f, midY, width, baseline - midY, ascent, descent)
+            }
+            return OverlayUnitLayout(res.textSize, res.layoutTranslateX, res.layoutTranslateY, res.layout.height.toFloat().coerceAtLeast(1f), boxes)
+        }
+
         fun buildOverlayTextLayout(
             paint: TextPaint,
             text: String,

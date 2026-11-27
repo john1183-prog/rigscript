@@ -339,7 +339,15 @@ data class GlesFigureFrame(
         val rotationDeg: Float,
         val scale: Float,
         /** R6 (WP1.4): the wrap width in pixels ([TextLayoutMath.availableWidthPx] from the anchor), part of the texture cache key. */
-        val maxWidthPx: Int
+        val maxWidthPx: Int,
+        /** Kinetic text (WP3.1): per-unit states of a word/char layer, null for block text (the legacy path). */
+        val units: List<TextUnitState>? = null,
+        /**
+         * Only meaningful with [units]: the layer's own opacity. A block layer has it baked into [colorArgb]/[glowColorArgb]
+         * (and this stays 1); a unit layer keeps the colours opaque so the cached unit bitmaps do not depend on the fade,
+         * and the renderer multiplies this and the unit's opacity into the quad's alpha.
+         */
+        val opacity: Float = 1f
     )
 
     /**
@@ -865,13 +873,16 @@ data class GlesFigureFrame(
             if (layer.opacity <= 0.001f || layer.type != "text" || text.isNullOrBlank()) return null
 
             val baseColor = layer.color.toInt()
-            val colorArgb = (RigRenderer.combinedAlphaChannel(baseColor, layer.opacity) shl 24) or (baseColor and 0xFFFFFF)
+            // Kinetic text (WP3.1): the opacity (layer and unit) is applied at draw time, not baked into the colours.
+            val unitMode = layer.textUnits != null
+            val bakedOpacity = if (unitMode) 1f else layer.opacity
+            val colorArgb = (RigRenderer.combinedAlphaChannel(baseColor, bakedOpacity) shl 24) or (baseColor and 0xFFFFFF)
             val gradientColorArgb = layer.gradientColor?.toInt()?.let { g ->
-                (RigRenderer.combinedAlphaChannel(g, layer.opacity) shl 24) or (g and 0xFFFFFF)
+                (RigRenderer.combinedAlphaChannel(g, bakedOpacity) shl 24) or (g and 0xFFFFFF)
             }
             // 0.8f matches RigRenderer.drawGmsText's own glow-alpha call site exactly — not reused/re-derived, mirrored.
             val glowBase = layer.glowColor.toInt()
-            val glowColorArgb = (RigRenderer.combinedAlphaChannel(glowBase, layer.opacity * 0.8f) shl 24) or (glowBase and 0xFFFFFF)
+            val glowColorArgb = (RigRenderer.combinedAlphaChannel(glowBase, bakedOpacity * 0.8f) shl 24) or (glowBase and 0xFFFFFF)
 
             return OverlayTextDraw(
                 text = text,
@@ -887,7 +898,9 @@ data class GlesFigureFrame(
                 originY = canvasH * layer.y,
                 rotationDeg = layer.rotationDeg,
                 scale = layer.scale,
-                maxWidthPx = TextLayoutMath.availableWidthPx(layer.align, layer.x, canvasW)
+                maxWidthPx = TextLayoutMath.availableWidthPx(layer.align, layer.x, canvasW),
+                units = layer.textUnits,
+                opacity = if (unitMode) layer.opacity.coerceIn(0f, 1f) else 1f
             )
         }
 
